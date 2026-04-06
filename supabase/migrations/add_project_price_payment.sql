@@ -1,0 +1,3 @@
+ALTER TABLE projects
+  ADD COLUMN IF NOT EXISTS price INTEGER,
+  ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'pending';

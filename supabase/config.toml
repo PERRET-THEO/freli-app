@@ -1,0 +1,23 @@
+[functions.send-project-invite]
+verify_jwt = false
+
+[functions.send-project-completed-notification]
+verify_jwt = false
+
+[functions.send-reminders-batch]
+verify_jwt = false
+
+# Portail client (/p/:token) appelle sans session utilisateur
+[functions.trigger-integrations]
+verify_jwt = false
+
+# Dashboard agence — JWT requis (Supabase vérifie avant exécution)
+[functions.stripe-connect-start]
+verify_jwt = true
+
+[functions.stripe-connect-status]
+verify_jwt = true
+
+# Stripe → plateforme (signature dans le corps)
+[functions.stripe-webhook]
+verify_jwt = false
