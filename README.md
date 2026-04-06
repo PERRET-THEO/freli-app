@@ -71,3 +71,16 @@ export default defineConfig([
   },
 ])
 ```
+
+## Déploiement (Vercel via Git)
+
+1. **Créer un dépôt distant** (GitHub, etc.) et pousser cette branche :
+   ```bash
+   git remote add origin https://github.com/VOTRE_USER/VOTRE_REPO.git
+   git push -u origin main
+   ```
+2. **Vercel** : [vercel.com](https://vercel.com) → Add New → Project → importer le dépôt. **Root Directory** : `.` (la racine de ce repo est l’app Frely). Build : `npm run build`, Output : `dist`. Le fichier [`vercel.json`](vercel.json) configure les rewrites SPA pour React Router.
+3. **Variables d’environnement** (Production, et Preview si tu veux des previews fonctionnelles) : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Puis **Redeploy** (Vite injecte les `VITE_*` au build).
+4. **Supabase** → Authentication → URL Configuration : **Site URL** = `https://<projet>.vercel.app` (ou ton domaine). **Redirect URLs** : inclure `https://<projet>.vercel.app/**` (ou les URLs exactes de ton flux auth).
+5. **Smoke test** : ouvrir l’URL prod, recharger `/dashboard` et un lien `/p/<token>` ; tester login / signup.
+6. **Edge / Stripe** : une fois l’URL HTTPS fixe, définir le secret Supabase `APP_URL` sur cette URL et configurer les webhooks Stripe comme indiqué dans [`.env.example`](.env.example).
