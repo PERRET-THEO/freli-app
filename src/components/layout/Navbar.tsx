@@ -29,14 +29,14 @@ export function Navbar() {
           >
             Réserver une démo
           </a>
-          <Link to="/auth" className="font-body text-sm text-[var(--surface-warm)]">
+          <Link to="/signin" className="font-body text-sm text-[var(--surface-warm)]">
             Connexion
           </Link>
         </div>
 
-        <Link to="/auth">
+        <Link to="/signin">
           <Button variant="secondary" className="!text-sm">
-            Essai gratuit →
+            Connexion
           </Button>
         </Link>
       </nav>

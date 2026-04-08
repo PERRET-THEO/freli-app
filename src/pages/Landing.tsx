@@ -73,16 +73,15 @@ export function Landing() {
             friction.
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-            <Link to="/auth">
-              <Button>Démarrer l&apos;essai gratuit — 5 jours</Button>
-            </Link>
             <a href="https://calendly.com/freli/demo" target="_blank" rel="noreferrer">
-              <Button variant="secondary">Réserver une démo →</Button>
+              <Button>Demander un accès</Button>
             </a>
+            <Link to="/signin">
+              <Button variant="secondary">Se connecter →</Button>
+            </Link>
           </div>
           <p className="mx-auto mt-4 max-w-3xl text-[13px] font-body text-[rgba(253,252,250,0.5)]">
-            ✓ Aucune carte bancaire requise &nbsp;&nbsp; ✓ 5 jours d&apos;accès complet
-            &nbsp;&nbsp; ✓ Accompagnement personnalisé
+            ✓ Accès sur invitation &nbsp;&nbsp; ✓ Accompagnement personnalisé
           </p>
         </div>
 
@@ -222,11 +221,11 @@ export function Landing() {
             Rejoignez les agences qui gagnent 3h par client.
           </p>
           <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-            <Link to="/auth">
+            <a href="https://calendly.com/freli/demo" target="_blank" rel="noreferrer">
               <button className="rounded-[var(--radius-sm)] bg-[var(--white)] px-6 py-3 text-sm font-body font-medium text-[var(--accent)]">
-                Démarrer gratuitement — 5 jours
+                Demander un accès
               </button>
-            </Link>
+            </a>
             <a
               href="https://calendly.com/freli/demo"
               target="_blank"
@@ -258,7 +257,7 @@ export function Landing() {
             <a href="https://calendly.com/freli/demo" target="_blank" rel="noreferrer">
               Réserver une démo
             </a>
-            <Link to="/auth">Essai gratuit 5 jours</Link>
+            <Link to="/signin">Se connecter</Link>
           </div>
           <p className="text-sm font-body text-[var(--ink-muted)]">© 2025 Freli</p>
         </div>

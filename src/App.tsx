@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { supabase } from './lib/supabase'
-import { Auth } from './pages/Auth'
 import { ClientPortal } from './pages/ClientPortal'
+import { ConfirmEmail } from './pages/ConfirmEmail'
 import { Dashboard } from './pages/Dashboard'
 import { Demo } from './pages/Demo'
+import { ForgotPassword } from './pages/ForgotPassword'
 import { Landing } from './pages/Landing'
 import { NewProject } from './pages/NewProject'
 import { NotFound } from './pages/NotFound'
 import { ProjectDetail } from './pages/ProjectDetail'
+import { ResetPassword } from './pages/ResetPassword'
 import { Settings } from './pages/Settings'
+import { SignIn } from './pages/SignIn'
+import { SignUp } from './pages/SignUp'
 import { Templates } from './pages/Templates'
 import { Clients } from './pages/Clients'
 import { ClientDetail } from './pages/ClientDetail'
@@ -39,7 +43,7 @@ function RequireAuth() {
     )
   }
 
-  return isAuthenticated ? <Outlet /> : <Navigate to="/auth" replace />
+  return isAuthenticated ? <Outlet /> : <Navigate to="/signin" replace />
 }
 
 function RedirectIfAuthenticated() {
@@ -75,8 +79,13 @@ function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/demo" element={<Demo />} />
       <Route element={<RedirectIfAuthenticated />}>
-        <Route path="/auth" element={<Auth />} />
+        <Route path="/signin" element={<SignIn />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
       </Route>
+      <Route path="/signup" element={<SignUp />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/confirm" element={<ConfirmEmail />} />
+      <Route path="/auth" element={<Navigate to="/signin" replace />} />
       <Route element={<RequireAuth />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/dashboard/new" element={<NewProject />} />
