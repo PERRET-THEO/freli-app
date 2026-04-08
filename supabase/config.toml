@@ -18,6 +18,10 @@ verify_jwt = true
 [functions.stripe-connect-status]
 verify_jwt = true
 
+# Invitations agence (service role) — appelé depuis le dashboard avec JWT
+[functions.invite-user]
+verify_jwt = true
+
 # Stripe → plateforme (signature dans le corps)
 [functions.stripe-webhook]
 verify_jwt = false

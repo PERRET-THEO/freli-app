@@ -11,5 +11,12 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   db: { schema: 'public' },
-  auth: { persistSession: true },
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    /** Parse #access_token=… ou ?code=… après redirection Supabase (invite, magic link, etc.) */
+    detectSessionInUrl: true,
+    // Décommente si Authentication → URL utilise PKCE pour le client public :
+    // flowType: 'pkce',
+  },
 })
