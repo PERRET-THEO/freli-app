@@ -14,6 +14,7 @@ type ProjectRecord = {
   status: ProjectStatus
   token: string
   created_at: string
+  last_reminder_sent_at: string | null
   clients?: { company_name: string | null; phone: string | null }[] | { company_name: string | null; phone: string | null } | null
 }
 
@@ -31,9 +32,49 @@ type ProjectCardData = {
   status: ProjectStatus
   token: string
   createdAt: string
+  lastReminderSentAt: string | null
   completedCount: number
   totalCount: number
   progress: number
+}
+
+const AVATAR_PALETTE = [
+  'bg-[var(--accent)]',
+  'bg-[var(--mint)]',
+  'bg-[var(--amber)]',
+  'bg-[#F472B6]',
+  'bg-[#60A5FA]',
+  'bg-[#A78BFA]',
+]
+
+function avatarColor(seed: string): string {
+  let hash = 0
+  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) | 0
+  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length]
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '··'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+function formatRelative(iso: string | null | undefined, now: number): string {
+  if (!iso) return ''
+  const diff = now - new Date(iso).getTime()
+  if (diff < 0) return "à l'instant"
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return "à l'instant"
+  if (mins < 60) return `il y a ${mins} min`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `il y a ${hours} h`
+  const days = Math.floor(hours / 24)
+  if (days === 1) return 'hier'
+  if (days < 7) return `il y a ${days} j`
+  const weeks = Math.floor(days / 7)
+  if (weeks < 5) return `il y a ${weeks} sem`
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
 }
 
 const filterLabels: Record<StatusFilter, string> = {
@@ -41,6 +82,53 @@ const filterLabels: Record<StatusFilter, string> = {
   in_progress: 'En cours',
   pending: 'En attente',
   completed: 'Complétés',
+}
+
+const icons = {
+  overview: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3" y="3" width="7" height="9" rx="1" />
+      <rect x="14" y="3" width="7" height="5" rx="1" />
+      <rect x="14" y="12" width="7" height="9" rx="1" />
+      <rect x="3" y="16" width="7" height="5" rx="1" />
+    </svg>
+  ),
+  users: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+    </svg>
+  ),
+  plus: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 8v8M8 12h8" />
+    </svg>
+  ),
+  file: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+    </svg>
+  ),
+  link: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+    </svg>
+  ),
+  settings: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+    </svg>
+  ),
+  logout: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+    </svg>
+  ),
 }
 
 export function Dashboard() {
@@ -60,7 +148,7 @@ export function Dashboard() {
     const getUserAndProjects = async () => {
       const { data, error } = await supabase.auth.getUser()
       if (error || !data.user) {
-        navigate('/auth', { replace: true })
+        navigate('/signin', { replace: true })
         return
       }
       setEmail(data.user.email ?? null)
@@ -79,7 +167,7 @@ export function Dashboard() {
 
       const { data: projectRows, error: projectsError } = await supabase
         .from('projects')
-        .select('id, client_name, client_email, status, token, created_at, clients(company_name, phone)')
+        .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, clients(company_name, phone)')
         .eq('agency_id', agencyData.id)
         .order('created_at', { ascending: false })
 
@@ -123,6 +211,7 @@ export function Dashboard() {
           status: project.status,
           token: project.token,
           createdAt: project.created_at,
+          lastReminderSentAt: project.last_reminder_sent_at,
           completedCount: counts.completed,
           totalCount: counts.total,
           progress,
@@ -189,29 +278,75 @@ export function Dashboard() {
     })
   const now = Date.now()
   const activeProjects = projects.filter((project) => project.status === 'in_progress').length
+  const pendingProjects = projects.filter((project) => project.status === 'pending').length
   const averageCompletion = projects.length
     ? Math.round(projects.reduce((sum, project) => sum + project.progress, 0) / projects.length)
     : 0
-  const completedThisMonth = projects.filter((project) => {
-    const date = new Date(project.createdAt)
-    const current = new Date()
-    return (
-      project.status === 'completed' &&
-      date.getMonth() === current.getMonth() &&
-      date.getFullYear() === current.getFullYear()
+
+  const currentMonth = new Date().getMonth()
+  const currentYear = new Date().getFullYear()
+  const isThisMonth = (iso: string) => {
+    const d = new Date(iso)
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+  }
+
+  const completedThisMonth = projects.filter(
+    (project) => project.status === 'completed' && isThisMonth(project.createdAt),
+  ).length
+  const clientsThisMonth = projects.filter((project) => isThisMonth(project.createdAt)).length
+
+  // Chaque onboarding complété = ~3h économisées (promesse landing)
+  // + chaque auto-relance envoyée ce mois = ~10 min économisées
+  const remindersThisMonth = projects.filter(
+    (p) => p.lastReminderSentAt && isThisMonth(p.lastReminderSentAt),
+  ).length
+  const hoursSavedThisMonth = completedThisMonth * 3 + Math.round((remindersThisMonth * 10) / 60)
+
+  const recentAutoReminders = [...projects]
+    .filter((p) => p.lastReminderSentAt)
+    .sort(
+      (a, b) =>
+        new Date(b.lastReminderSentAt as string).getTime() -
+        new Date(a.lastReminderSentAt as string).getTime(),
     )
-  }).length
+    .slice(0, 3)
+
+  const urgentNeedsAction = projects.filter(
+    (p) =>
+      p.status !== 'completed' &&
+      now - new Date(p.createdAt).getTime() > 48 * 60 * 60 * 1000 &&
+      (!p.lastReminderSentAt ||
+        now - new Date(p.lastReminderSentAt).getTime() > 72 * 60 * 60 * 1000),
+  ).length
+
+  // Sous-titre narratif qui raconte l'état du jour (promesse "intuitif")
+  const narrativeSubtitle = (() => {
+    if (projects.length === 0) return 'Créez votre premier onboarding en moins de 2 minutes.'
+    if (urgentNeedsAction > 0) {
+      return `${urgentNeedsAction} projet${urgentNeedsAction > 1 ? 's attendent' : ' attend'} une attention de votre part.`
+    }
+    if (remindersThisMonth > 0 && activeProjects > 0) {
+      return `Freli a relancé ${remindersThisMonth} client${remindersThisMonth > 1 ? 's' : ''} pour vous. Tout avance sans effort.`
+    }
+    if (activeProjects > 0) {
+      return `${activeProjects} projet${activeProjects > 1 ? 's' : ''} avance${activeProjects > 1 ? 'nt' : ''} sans vous aujourd'hui.`
+    }
+    if (pendingProjects > 0) {
+      return `${pendingProjects} projet${pendingProjects > 1 ? 's' : ''} en attente de votre client.`
+    }
+    return 'Tout est à jour. Belle journée ✨'
+  })()
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
-    navigate('/auth', { replace: true })
+    navigate('/signin', { replace: true })
   }
 
-  const sidebarNavClass = ({ isActive }: { isActive: boolean }) =>
-    `block rounded-[var(--radius-sm)] px-3 py-2 text-sm font-body transition ${
+  const sidebarItemClass = (isActive: boolean) =>
+    `group flex w-full items-start gap-3 rounded-[var(--radius-sm)] px-3 py-2.5 text-left transition ${
       isActive
-        ? 'bg-[var(--ink-soft)] text-[var(--white)]'
-        : 'text-[var(--surface-warm)] hover:bg-[var(--ink-soft)]'
+        ? 'bg-[rgba(255,255,255,0.1)] text-[var(--white)] shadow-[inset_3px_0_0_0_var(--accent)]'
+        : 'text-[var(--surface-warm)] hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--white)]'
     }`
 
   if (loading) {
@@ -224,54 +359,112 @@ export function Dashboard() {
 
   return (
     <div className="min-h-screen bg-[var(--surface)]">
-      <aside className="hidden md:fixed md:inset-y-0 md:left-0 md:z-30 md:flex md:w-72 md:flex-col md:bg-[var(--ink)] md:p-5">
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <Link to="/dashboard" className="flex shrink-0 items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)] font-display text-sm font-extrabold tracking-tight text-[var(--white)]">
+      <aside className="hidden md:fixed md:inset-y-0 md:left-0 md:z-30 md:flex md:w-72 md:flex-col md:border-r md:border-[rgba(255,255,255,0.06)] md:bg-[var(--ink)] md:p-5">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+          <Link to="/dashboard" className="flex shrink-0 items-center gap-3 rounded-[var(--radius-sm)] outline-none ring-offset-2 ring-offset-[var(--ink)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)] font-display text-sm font-extrabold tracking-tight text-[var(--white)] shadow-[0_4px_12px_rgba(91,110,245,0.35)]">
               Fr
             </div>
-            <span className="font-display text-2xl font-extrabold tracking-tighter text-[var(--white)]">
-              Freli
-            </span>
+            <div>
+              <span className="font-display text-xl font-extrabold tracking-tighter text-[var(--white)]">Freli</span>
+              <p className="mt-0.5 font-body text-[11px] leading-snug text-[rgba(253,252,250,0.45)]">
+                Onboarding sans friction
+              </p>
+            </div>
           </Link>
 
-          <nav className="mt-10 space-y-2">
-            <NavLink to="/dashboard" end className={sidebarNavClass}>
-              Dashboard
+          <p className="mt-5 font-body text-[12px] leading-relaxed text-[rgba(253,252,250,0.55)]">
+            Un lien client, des relances automatiques, du temps récupéré — comme sur la page d&apos;accueil.
+          </p>
+
+          <Link
+            to="/dashboard/new"
+            className="mt-5 flex items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-3 py-2.5 font-display text-sm font-bold text-[var(--white)] shadow-[0_6px_20px_rgba(91,110,245,0.35)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--white)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ink)]"
+          >
+            <span className="h-4 w-4 [&>svg]:h-full [&>svg]:w-full">{icons.plus}</span>
+            Nouveau projet
+          </Link>
+
+          <p className="mt-8 text-[10px] font-display font-bold uppercase tracking-[0.18em] text-[rgba(253,252,250,0.35)]">
+            Activité
+          </p>
+          <nav className="mt-2 flex flex-col gap-1">
+            <NavLink to="/dashboard" end className={({ isActive }) => sidebarItemClass(isActive)}>
+              <span className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent)] opacity-90 [&>svg]:h-full [&>svg]:w-full">
+                {icons.overview}
+              </span>
+              <span className="min-w-0">
+                <span className="block font-body text-sm font-semibold">Vue d&apos;ensemble</span>
+                <span className="mt-0.5 block font-body text-[11px] leading-snug text-[rgba(253,252,250,0.42)] group-hover:text-[rgba(253,252,250,0.55)]">
+                  Projets, progression, temps gagné
+                </span>
+              </span>
             </NavLink>
-            <NavLink to="/dashboard/clients" className={sidebarNavClass}>
-              Clients
+            <NavLink to="/dashboard/clients" className={({ isActive }) => sidebarItemClass(isActive)}>
+              <span className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent)] opacity-90 [&>svg]:h-full [&>svg]:w-full">
+                {icons.users}
+              </span>
+              <span className="min-w-0">
+                <span className="block font-body text-sm font-semibold">Clients</span>
+                <span className="mt-0.5 block font-body text-[11px] leading-snug text-[rgba(253,252,250,0.42)] group-hover:text-[rgba(253,252,250,0.55)]">
+                  Annuaire & fiches
+                </span>
+              </span>
             </NavLink>
-            <NavLink to="/dashboard/new" className={sidebarNavClass}>
-              Nouveau projet
+          </nav>
+
+          <p className="mt-6 text-[10px] font-display font-bold uppercase tracking-[0.18em] text-[rgba(253,252,250,0.35)]">
+            Documents &amp; automatisation
+          </p>
+          <nav className="mt-2 flex flex-col gap-1">
+            <NavLink to="/dashboard/templates" className={({ isActive }) => sidebarItemClass(isActive)}>
+              <span className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent)] opacity-90 [&>svg]:h-full [&>svg]:w-full">
+                {icons.file}
+              </span>
+              <span className="min-w-0">
+                <span className="block font-body text-sm font-semibold">Contrats</span>
+                <span className="mt-0.5 block font-body text-[11px] leading-snug text-[rgba(253,252,250,0.42)] group-hover:text-[rgba(253,252,250,0.55)]">
+                  Modèles &amp; signature
+                </span>
+              </span>
             </NavLink>
-            <NavLink to="/dashboard/templates" className={sidebarNavClass}>
-              Contrats
+            <NavLink to="/dashboard/integrations" className={({ isActive }) => sidebarItemClass(isActive)}>
+              <span className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent)] opacity-90 [&>svg]:h-full [&>svg]:w-full">
+                {icons.link}
+              </span>
+              <span className="min-w-0">
+                <span className="block font-body text-sm font-semibold">Intégrations</span>
+                <span className="mt-0.5 block font-body text-[11px] leading-snug text-[rgba(253,252,250,0.42)] group-hover:text-[rgba(253,252,250,0.55)]">
+                  Stripe, relances, outils
+                </span>
+              </span>
             </NavLink>
-            <NavLink to="/dashboard/integrations" className={sidebarNavClass}>
-              Intégrations
-            </NavLink>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="mt-2 w-full rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-2 text-left text-sm font-body text-[var(--white)] transition hover:border-[var(--accent)]"
-            >
-              Déconnexion
-            </button>
           </nav>
         </div>
 
-        <div className="shrink-0 space-y-3 border-t border-[var(--ink-soft)] pt-4">
-          <NavLink to="/dashboard/settings" className={sidebarNavClass}>
-            Paramètres
+        <div className="shrink-0 space-y-3 border-t border-[rgba(255,255,255,0.08)] pt-4">
+          <NavLink to="/dashboard/settings" className={({ isActive }) => sidebarItemClass(isActive)}>
+            <span className="mt-0.5 h-5 w-5 shrink-0 text-[rgba(253,252,250,0.55)] [&>svg]:h-full [&>svg]:w-full">
+              {icons.settings}
+            </span>
+            <span className="min-w-0">
+              <span className="block font-body text-sm font-semibold">Paramètres</span>
+              <span className="mt-0.5 block font-body text-[11px] text-[rgba(253,252,250,0.38)]">Agence &amp; compte</span>
+            </span>
           </NavLink>
-          <div className="rounded-[var(--radius-sm)] bg-[var(--ink-soft)] px-3 py-2.5">
-            <p className="text-[10px] font-body uppercase tracking-wide text-[var(--ink-muted)]">
-              Connecté
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex w-full items-start gap-3 rounded-[var(--radius-sm)] px-3 py-2.5 text-left text-[var(--surface-warm)] transition hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--white)]"
+          >
+            <span className="mt-0.5 h-5 w-5 shrink-0 [&>svg]:h-full [&>svg]:w-full">{icons.logout}</span>
+            <span className="font-body text-sm font-medium">Déconnexion</span>
+          </button>
+          <div className="rounded-[var(--radius-sm)] border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.2)] px-3 py-2.5">
+            <p className="text-[10px] font-display font-bold uppercase tracking-wide text-[rgba(253,252,250,0.4)]">
+              Votre compte
             </p>
-            <p className="mt-0.5 break-all text-xs font-body leading-snug text-[var(--white)]">
-              {email ?? '—'}
-            </p>
+            <p className="mt-1 break-all font-body text-xs leading-snug text-[var(--white)]">{email ?? '—'}</p>
           </div>
         </div>
       </aside>
@@ -309,16 +502,16 @@ export function Dashboard() {
           ) : null}
 
           <header className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
                 Bonjour, {firstName} 👋
               </h1>
-              <p className="text-sm font-body text-[var(--ink-muted)]">
-                Suivi rapide de tes onboardings clients.
+              <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">
+                {narrativeSubtitle}
               </p>
             </div>
             <Link to="/dashboard/new">
-              <Button>Nouveau projet</Button>
+              <Button>+ Nouveau projet</Button>
             </Link>
           </header>
 
@@ -339,26 +532,97 @@ export function Dashboard() {
             ))}
           </div>
 
-          <section className="mt-6 grid gap-3 md:grid-cols-3">
-            <Card className="p-5">
-              <p className="text-sm font-body text-[var(--ink-muted)]">Projets actifs</p>
+          <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="relative overflow-hidden p-5">
+              <div className="flex items-start justify-between">
+                <p className="text-xs font-display font-bold uppercase tracking-wide text-[var(--ink-muted)]">
+                  Projets actifs
+                </p>
+                {activeProjects > 0 && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-60" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent)]" />
+                  </span>
+                )}
+              </div>
               <p className="mt-2 font-display text-3xl font-extrabold text-[var(--ink)]">
                 {activeProjects}
               </p>
-            </Card>
-            <Card className="p-5">
-              <p className="text-sm font-body text-[var(--ink-muted)]">Taux de complétion moyen</p>
-              <p className="mt-2 font-display text-3xl font-extrabold text-[var(--ink)]">
-                {averageCompletion}%
+              <p className="mt-1 text-[11px] font-body text-[var(--ink-muted)]">
+                {pendingProjects > 0 ? `+${pendingProjects} en attente` : 'aucun en attente'}
               </p>
             </Card>
-            <Card className="p-5">
-              <p className="text-sm font-body text-[var(--ink-muted)]">Projets complétés ce mois</p>
+
+            <Card className="relative overflow-hidden p-5">
+              <p className="text-xs font-display font-bold uppercase tracking-wide text-[var(--ink-muted)]">
+                Taux de complétion
+              </p>
+              <div className="mt-2 flex items-baseline gap-2">
+                <p className="font-display text-3xl font-extrabold text-[var(--ink)]">
+                  {averageCompletion}%
+                </p>
+                {averageCompletion >= 80 && (
+                  <span className="font-display text-[10px] font-bold text-[var(--mint)]">↑</span>
+                )}
+              </div>
+              <div className="mt-3 h-1.5 rounded-full bg-[var(--surface-warm)]">
+                <div
+                  className="h-full rounded-full bg-[var(--accent)] transition-all"
+                  style={{ width: `${averageCompletion}%` }}
+                />
+              </div>
+            </Card>
+
+            <Card className="relative overflow-hidden p-5">
+              <p className="text-xs font-display font-bold uppercase tracking-wide text-[var(--ink-muted)]">
+                Clients ce mois
+              </p>
               <p className="mt-2 font-display text-3xl font-extrabold text-[var(--ink)]">
-                {completedThisMonth}
+                {clientsThisMonth}
+              </p>
+              <p className="mt-1 text-[11px] font-body text-[var(--ink-muted)]">
+                {completedThisMonth} complété{completedThisMonth > 1 ? 's' : ''}
+              </p>
+            </Card>
+
+            <Card className="relative overflow-hidden border border-[var(--accent)]/25 bg-gradient-to-br from-[var(--accent-soft)] to-[var(--white)] p-5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-display font-bold uppercase tracking-wide text-[var(--accent)]">
+                  ⏱ Temps gagné
+                </p>
+              </div>
+              <p className="mt-2 font-display text-3xl font-extrabold text-[var(--ink)]">
+                {hoursSavedThisMonth}
+                <span className="text-lg">h</span>
+              </p>
+              <p className="mt-1 text-[11px] font-body text-[var(--ink-muted)]">
+                ce mois, grâce à l&apos;automatisation
               </p>
             </Card>
           </section>
+
+          {recentAutoReminders.length > 0 && (
+            <section className="mt-4 rounded-[var(--radius-md)] border border-[var(--accent)]/20 bg-gradient-to-r from-[var(--accent-soft)] to-transparent px-4 py-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--white)] text-base shadow-sm">
+                  🤖
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-display text-[13px] font-bold text-[var(--ink)]">
+                    Freli travaille pour vous
+                  </p>
+                  <p className="mt-0.5 truncate text-[12px] font-body text-[var(--ink-muted)]">
+                    Dernière auto-relance : <span className="font-semibold text-[var(--ink)]">{recentAutoReminders[0].clientName}</span>
+                    {' · '}
+                    {formatRelative(recentAutoReminders[0].lastReminderSentAt, now)}
+                  </p>
+                </div>
+                <span className="rounded-full bg-[var(--white)] px-2.5 py-1 font-display text-[11px] font-bold text-[var(--accent)]">
+                  {remindersThisMonth} ce mois
+                </span>
+              </div>
+            </section>
+          )}
 
           {filteredProjects.length === 0 ? (
             <Card className="mt-8 flex flex-col items-center justify-center py-14 text-center">
@@ -366,166 +630,313 @@ export function Dashboard() {
                 📂
               </div>
               <h2 className="mt-4 font-display text-2xl font-semibold text-[var(--ink)]">
-                Créez votre premier onboarding
+                {projects.length === 0 ? 'Créez votre premier onboarding' : 'Aucun projet dans cette vue'}
               </h2>
-              <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-                Lancez un projet pour partager un lien client en quelques secondes.
+              <p className="mt-2 max-w-md text-sm font-body text-[var(--ink-muted)]">
+                {projects.length === 0
+                  ? 'En 2 minutes : un lien à envoyer, des relances automatiques, et vous voilà débarrassé de 3h de travail.'
+                  : 'Changez de filtre pour voir les autres projets.'}
               </p>
+              {projects.length === 0 && (
+                <Link to="/dashboard/new" className="mt-5 inline-block">
+                  <Button>+ Créer mon premier projet</Button>
+                </Link>
+              )}
             </Card>
           ) : (
             <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filteredProjects.map((project) => (
-                <div key={project.id} className="relative">
-                  <Card
-                    className="cursor-pointer transition hover:-translate-y-0.5"
-                    onClick={() => navigate(`/dashboard/project/${project.id}`)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <h2 className="font-display text-xl font-semibold text-[var(--ink)]">
-                        {project.clientName}
-                      </h2>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={project.status} />
+              {filteredProjects.map((project) => {
+                const isNew =
+                  project.status !== 'completed' &&
+                  now - new Date(project.createdAt).getTime() < 2 * 60 * 60 * 1000
+                const reminderFreshness = project.lastReminderSentAt
+                  ? now - new Date(project.lastReminderSentAt).getTime()
+                  : Infinity
+                const reminderSentRecently = reminderFreshness < 72 * 60 * 60 * 1000
+                const ageMs = now - new Date(project.createdAt).getTime()
+                const needsAction =
+                  project.status !== 'completed' &&
+                  ageMs > 48 * 60 * 60 * 1000 &&
+                  !reminderSentRecently
+                const totalSteps = Math.max(project.totalCount, 1)
+                const segments = Math.min(totalSteps, 8)
+                const completedSegments = Math.round(
+                  (project.completedCount / totalSteps) * segments,
+                )
+                const lastActivityIso =
+                  reminderSentRecently && project.lastReminderSentAt
+                    ? project.lastReminderSentAt
+                    : project.createdAt
+                const activityLabel = reminderSentRecently
+                  ? `Relance auto ${formatRelative(project.lastReminderSentAt, now)}`
+                  : `Créé ${formatRelative(project.createdAt, now)}`
+
+                return (
+                  <div key={project.id} className="relative">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => navigate(`/dashboard/project/${project.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          navigate(`/dashboard/project/${project.id}`)
+                        }
+                      }}
+                      className={`relative cursor-pointer rounded-[var(--radius-lg)] bg-[var(--white)] p-5 shadow-[0_2px_16px_rgba(13,15,20,0.06),0_0_0_1px_rgba(13,15,20,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(13,15,20,0.08),0_0_0_1px_rgba(13,15,20,0.06)] ${
+                        project.status === 'in_progress'
+                          ? 'ring-1 ring-[var(--accent)]/20'
+                          : ''
+                      }`}
+                    >
+                      {isNew && (
+                        <span className="absolute -top-2 left-4 inline-flex items-center gap-1 rounded-full bg-[var(--mint)] px-2 py-[2px] font-display text-[10px] font-extrabold uppercase tracking-wide text-[var(--ink)] shadow-sm">
+                          ✨ Nouveau
+                        </span>
+                      )}
+
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${avatarColor(project.id)} font-display text-sm font-extrabold text-[var(--white)]`}
+                        >
+                          {getInitials(project.clientName)}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <h2 className="truncate font-display text-[17px] font-bold text-[var(--ink)]">
+                                {project.clientName}
+                              </h2>
+                              {project.companyName && (
+                                <p className="mt-0.5 truncate text-[11px] font-body font-semibold text-[var(--accent)]">
+                                  {project.companyName}
+                                </p>
+                              )}
+                              <p className="group/tip relative mt-0.5 truncate text-xs font-body text-[var(--ink-muted)]">
+                                {project.clientEmail}
+                                {project.clientPhone && (
+                                  <span className="pointer-events-none absolute -top-8 left-0 z-10 whitespace-nowrap rounded-[var(--radius-sm)] bg-[var(--ink)] px-2 py-1 text-xs text-[var(--white)] opacity-0 transition group-hover/tip:opacity-100">
+                                    {project.clientPhone}
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+
+                            <div className="flex shrink-0 items-center gap-1">
+                              {project.status === 'in_progress' ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-soft)] px-2 py-[3px] font-display text-[10px] font-extrabold uppercase tracking-wide text-[var(--accent)]">
+                                  <span className="relative flex h-1.5 w-1.5">
+                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-75" />
+                                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+                                  </span>
+                                  En cours
+                                </span>
+                              ) : (
+                                <Badge variant={project.status} />
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setMenuOpenId(menuOpenId === project.id ? null : project.id)
+                                }}
+                                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
+                                aria-label="Plus d'options"
+                              >
+                                ⋯
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <div className="mb-2 flex items-center justify-between text-[11px] font-body text-[var(--ink-muted)]">
+                          <span className="font-display font-bold text-[var(--ink)]">
+                            {project.completedCount}/{project.totalCount} étapes
+                          </span>
+                          <span>{project.progress}%</span>
+                        </div>
+                        {project.totalCount > 0 ? (
+                          <div className="flex gap-1">
+                            {Array.from({ length: segments }).map((_, i) => (
+                              <div
+                                key={i}
+                                className={`h-1.5 flex-1 rounded-full transition-colors ${
+                                  i < completedSegments
+                                    ? 'bg-[var(--accent)]'
+                                    : 'bg-[var(--surface-warm)]'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="h-1.5 rounded-full bg-[var(--surface-warm)]" />
+                        )}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        {reminderSentRecently && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--mint-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--mint)]">
+                            🤖 Auto-relance envoyée
+                          </span>
+                        )}
+                        {needsAction && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--amber-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--amber)]">
+                            ⚠️ À relancer
+                          </span>
+                        )}
+                        <span className="ml-auto truncate text-[11px] font-body text-[var(--ink-muted)]">
+                          {activityLabel}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 flex gap-2 border-t border-[var(--border)] pt-3">
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
-                            setMenuOpenId(menuOpenId === project.id ? null : project.id)
+                            handleCopyLink(project.token)
                           }}
-                          className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[12px] font-body font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
                         >
-                          ⋯
+                          🔗 Copier le lien
+                        </button>
+                        <Link
+                          to={`/dashboard/project/${project.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--ink)] px-3 py-1.5 text-[12px] font-body font-semibold text-[var(--white)] transition hover:bg-[var(--ink-soft)]"
+                        >
+                          Ouvrir →
+                        </Link>
+                      </div>
+
+                      <span className="sr-only">Dernière activité : {formatDate(lastActivityIso)}</span>
+                    </div>
+
+                    {menuOpenId === project.id && (
+                      <div
+                        ref={menuRef}
+                        className="absolute right-4 top-14 z-20 w-52 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] py-1 shadow-lg"
+                      >
+                        <button
+                          type="button"
+                          className="w-full px-4 py-2 text-left text-sm font-body text-[var(--ink)] hover:bg-[var(--surface)]"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setMenuOpenId(null)
+                            navigate(`/dashboard/project/${project.id}`)
+                          }}
+                        >
+                          👁 Voir le projet
+                        </button>
+                        <button
+                          type="button"
+                          className="w-full px-4 py-2 text-left text-sm font-body text-[var(--ink)] hover:bg-[var(--surface)]"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleCopyLink(project.token)
+                          }}
+                        >
+                          🔗 Copier le lien client
+                        </button>
+                        <hr className="my-1 border-[var(--border)]" />
+                        <button
+                          type="button"
+                          className="w-full px-4 py-2 text-left text-sm font-body text-[#EF4444] hover:bg-[#FEF2F2]"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setMenuOpenId(null)
+                            setDeletingProject(project)
+                          }}
+                        >
+                          🗑 Supprimer le projet
                         </button>
                       </div>
-                    </div>
-                    {project.companyName && (
-                      <p className="mt-0.5 text-xs font-body text-[var(--accent)]">{project.companyName}</p>
                     )}
-                    <p className="group/tip relative mt-1 inline-block text-sm font-body text-[var(--ink-muted)]">
-                      {project.clientEmail}
-                      {project.clientPhone && (
-                        <span className="pointer-events-none absolute -top-8 left-0 z-10 whitespace-nowrap rounded-[var(--radius-sm)] bg-[var(--ink)] px-2 py-1 text-xs text-[var(--white)] opacity-0 transition group-hover/tip:opacity-100">
-                          {project.clientPhone}
-                        </span>
-                      )}
-                    </p>
-                    <div className="mt-4 h-2 rounded-full bg-[var(--surface-warm)]">
-                      <div
-                        className="h-full rounded-full bg-[var(--accent)]"
-                        style={{ width: `${project.progress}%` }}
-                      />
-                    </div>
-                    <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-                      {project.completedCount}/{project.totalCount} étapes
-                    </p>
-                    <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
-                      Créé le {formatDate(project.createdAt)}
-                    </p>
-                    {project.status !== 'completed' &&
-                    now - new Date(project.createdAt).getTime() > 48 * 60 * 60 * 1000 ? (
-                      <p className="mt-2 inline-flex rounded-full bg-[var(--amber-soft)] px-2.5 py-1 text-xs font-display font-bold uppercase tracking-wide text-[var(--amber)]">
-                        ⚠️ Relance suggérée
-                      </p>
-                    ) : null}
-                  </Card>
-
-                  {menuOpenId === project.id && (
-                    <div
-                      ref={menuRef}
-                      className="absolute right-4 top-14 z-20 w-52 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] py-1 shadow-lg"
-                    >
-                      <button
-                        type="button"
-                        className="w-full px-4 py-2 text-left text-sm font-body text-[var(--ink)] hover:bg-[var(--surface)]"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setMenuOpenId(null)
-                          navigate(`/dashboard/project/${project.id}`)
-                        }}
-                      >
-                        👁 Voir le projet
-                      </button>
-                      <button
-                        type="button"
-                        className="w-full px-4 py-2 text-left text-sm font-body text-[var(--ink)] hover:bg-[var(--surface)]"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleCopyLink(project.token)
-                        }}
-                      >
-                        🔗 Copier le lien client
-                      </button>
-                      <hr className="my-1 border-[var(--border)]" />
-                      <button
-                        type="button"
-                        className="w-full px-4 py-2 text-left text-sm font-body text-[#EF4444] hover:bg-[#FEF2F2]"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setMenuOpenId(null)
-                          setDeletingProject(project)
-                        }}
-                      >
-                        🗑 Supprimer le projet
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                )
+              })}
             </section>
           )}
         </main>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-40 flex h-16 items-center justify-around bg-[var(--ink)] md:hidden">
-        <NavLink
-          to="/dashboard"
-          end
-          className={({ isActive }) =>
-            `text-2xl ${isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.4)]'}`
-          }
-        >
-          🏠
-        </NavLink>
-        <NavLink
-          to="/dashboard/clients"
-          className={({ isActive }) =>
-            `text-2xl ${isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.4)]'}`
-          }
-        >
-          👥
-        </NavLink>
-        <NavLink
-          to="/dashboard/new"
-          className={({ isActive }) =>
-            `text-2xl ${isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.4)]'}`
-          }
-        >
-          ➕
-        </NavLink>
-        <NavLink
-          to="/dashboard/templates"
-          className={({ isActive }) =>
-            `text-2xl ${isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.4)]'}`
-          }
-        >
-          📄
-        </NavLink>
-        <NavLink
-          to="/dashboard/integrations"
-          className={({ isActive }) =>
-            `text-2xl ${isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.4)]'}`
-          }
-        >
-          🔗
-        </NavLink>
-        <NavLink
-          to="/dashboard/settings"
-          className={({ isActive }) =>
-            `text-2xl ${isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.4)]'}`
-          }
-        >
-          ⚙️
-        </NavLink>
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-[rgba(255,255,255,0.08)] bg-[var(--ink)] pb-[env(safe-area-inset-bottom)] md:hidden"
+        aria-label="Navigation principale"
+      >
+        <div className="mx-auto flex max-w-lg items-end justify-between gap-0 px-0.5 pt-1">
+          <NavLink
+            to="/dashboard"
+            end
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
+                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
+              }`
+            }
+          >
+            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.overview}</span>
+            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">Accueil</span>
+          </NavLink>
+          <NavLink
+            to="/dashboard/clients"
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
+                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
+              }`
+            }
+          >
+            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.users}</span>
+            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">Clients</span>
+          </NavLink>
+          <Link
+            to="/dashboard/new"
+            className="-mt-3 flex shrink-0 flex-col items-center px-1"
+            aria-label="Nouveau projet"
+          >
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--white)] shadow-[0_4px_16px_rgba(91,110,245,0.45)] [&>svg]:h-5 [&>svg]:w-5">
+              {icons.plus}
+            </span>
+            <span className="mt-0.5 max-w-[4rem] truncate text-center text-[9px] font-display font-bold uppercase leading-tight tracking-wide text-[var(--accent)]">
+              Nouveau
+            </span>
+          </Link>
+          <NavLink
+            to="/dashboard/templates"
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
+                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
+              }`
+            }
+          >
+            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.file}</span>
+            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">Contrats</span>
+          </NavLink>
+          <NavLink
+            to="/dashboard/integrations"
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
+                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
+              }`
+            }
+          >
+            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.link}</span>
+            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">Outils</span>
+          </NavLink>
+          <NavLink
+            to="/dashboard/settings"
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
+                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
+              }`
+            }
+          >
+            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.settings}</span>
+            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">Réglages</span>
+          </NavLink>
+        </div>
       </nav>
 
       {deletingProject && (

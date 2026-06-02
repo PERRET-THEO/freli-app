@@ -15,23 +15,20 @@ export function Navbar() {
         </Link>
 
         <div className="hidden items-center gap-8 md:flex">
-          <a href="#features" className="font-body text-sm text-[var(--surface-warm)]">
+          <a href="#features" className="font-body text-sm text-[var(--surface-warm)] hover:text-[var(--white)] transition-colors">
             Fonctionnalités
           </a>
-          <a href="#features" className="font-body text-sm text-[var(--surface-warm)]">
-            Fonctionnalités
+          <a href="#how-it-works" className="font-body text-sm text-[var(--surface-warm)] hover:text-[var(--white)] transition-colors">
+            Comment ça marche
           </a>
           <a
             href="https://calendly.com/freli/demo"
             target="_blank"
             rel="noreferrer"
-            className="font-body text-sm text-[var(--surface-warm)]"
+            className="font-body text-sm text-[var(--surface-warm)] hover:text-[var(--white)] transition-colors"
           >
             Réserver une démo
           </a>
-          <Link to="/signin" className="font-body text-sm text-[var(--surface-warm)]">
-            Connexion
-          </Link>
         </div>
 
         <Link to="/signin">
