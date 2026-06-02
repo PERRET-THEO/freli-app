@@ -109,7 +109,8 @@ export function SignUp() {
 
   const runEstablish = useCallback(async () => {
     const url = new URL(window.location.href)
-    const emailParam = url.searchParams.get('email')
+    const hashParams = parseHashParams()
+    const emailParam = url.searchParams.get('email') ?? hashParams.get('email')
     const emailDecoded = emailParam
       ? decodeURIComponent(emailParam.replace(/\+/g, ' ')).trim()
       : ''

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import { ClientPortal } from './pages/ClientPortal'
 import { ConfirmEmail } from './pages/ConfirmEmail'
@@ -73,10 +73,31 @@ function RedirectIfAuthenticated() {
   return isAuthenticated ? <Navigate to="/dashboard" replace /> : <Outlet />
 }
 
+function LandingEntry() {
+  const location = useLocation()
+  const hash = location.hash.replace(/^#/, '')
+  const hashParams = new URLSearchParams(hash)
+  const searchParams = new URLSearchParams(location.search)
+
+  const looksLikeInviteCallback =
+    searchParams.has('code') ||
+    searchParams.has('token_hash') ||
+    searchParams.get('type') === 'invite' ||
+    hashParams.has('access_token') ||
+    hashParams.get('type') === 'invite' ||
+    hashParams.get('error_code') === 'otp_expired'
+
+  if (looksLikeInviteCallback) {
+    return <Navigate to={`/signup${location.search}${location.hash}`} replace />
+  }
+
+  return <Landing />
+}
+
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<Landing />} />
+      <Route path="/" element={<LandingEntry />} />
       <Route path="/demo" element={<Demo />} />
       <Route element={<RedirectIfAuthenticated />}>
         <Route path="/signin" element={<SignIn />} />
