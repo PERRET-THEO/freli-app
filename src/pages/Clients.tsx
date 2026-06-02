@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { DashboardLayout } from '../components/DashboardLayout'
 import { Card, Input } from '../components/ui'
 import { supabase } from '../lib/supabase'
 
@@ -25,6 +26,7 @@ const INDUSTRIES = [
 
 export function Clients() {
   const [loading, setLoading] = useState(true)
+  const [agencyMissing, setAgencyMissing] = useState(false)
   const [clients, setClients] = useState<(ClientRow & { projectCount: number })[]>([])
   const [search, setSearch] = useState('')
   const [industryFilter, setIndustryFilter] = useState('')
@@ -34,7 +36,7 @@ export function Clients() {
     const load = async () => {
       const { data: userData } = await supabase.auth.getUser()
       if (!userData.user) {
-        navigate('/auth', { replace: true })
+        navigate('/signin', { replace: true })
         return
       }
 
@@ -45,9 +47,13 @@ export function Clients() {
         .maybeSingle()
 
       if (!agency?.id) {
+        setAgencyMissing(true)
+        setClients([])
         setLoading(false)
         return
       }
+
+      setAgencyMissing(false)
 
       const { data: clientRows } = await supabase
         .from('clients')
@@ -94,19 +100,16 @@ export function Clients() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
+      <DashboardLayout title="Clients" subtitle="Annuaire & fiches" maxWidth="5xl">
         <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
-      </div>
+      </DashboardLayout>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[var(--surface)] px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-5xl">
-        <Link to="/dashboard" className="inline-flex items-center text-sm font-body text-[var(--ink-muted)] hover:text-[var(--accent)]">← Dashboard</Link>
-
-        <header className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">Clients</h1>
+    <DashboardLayout title="Clients" subtitle="Annuaire & fiches" maxWidth="5xl">
+      {!agencyMissing ? (
+        <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
           <Link to="/dashboard/new">
             <button
               type="button"
@@ -115,76 +118,98 @@ export function Clients() {
               + Nouveau client
             </button>
           </Link>
-        </header>
-
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <Input
-            placeholder="Rechercher par nom, email ou entreprise..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select
-            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
-            value={industryFilter}
-            onChange={(e) => setIndustryFilter(e.target.value)}
-          >
-            <option value="">Tous les secteurs</option>
-            {INDUSTRIES.map((i) => <option key={i} value={i}>{i}</option>)}
-          </select>
         </div>
+      ) : null}
 
-        {filtered.length === 0 ? (
-          <Card className="mt-8 flex flex-col items-center justify-center py-14 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--accent-soft)] text-2xl">
-              👥
-            </div>
-            <h2 className="mt-4 font-display text-2xl font-semibold text-[var(--ink)]">
-              {clients.length === 0 ? 'Aucun client' : 'Aucun résultat'}
-            </h2>
-            <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-              {clients.length === 0
-                ? 'Créez un projet pour ajouter votre premier client.'
-                : 'Essayez un autre filtre ou recherche.'}
-            </p>
-          </Card>
-        ) : (
-          <div className="mt-6 overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)]">
-            <table className="w-full text-left text-sm font-body">
-              <thead>
-                <tr className="border-b border-[var(--border)] bg-[var(--surface)]">
-                  <th className="px-4 py-3 font-display font-semibold text-[var(--ink)]">Nom</th>
-                  <th className="hidden px-4 py-3 font-display font-semibold text-[var(--ink)] sm:table-cell">Entreprise</th>
-                  <th className="hidden px-4 py-3 font-display font-semibold text-[var(--ink)] md:table-cell">Email</th>
-                  <th className="px-4 py-3 text-center font-display font-semibold text-[var(--ink)]">Projets</th>
-                  <th className="hidden px-4 py-3 font-display font-semibold text-[var(--ink)] lg:table-cell">Créé le</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="cursor-pointer border-b border-[var(--border)] transition hover:bg-[var(--surface)]"
-                    onClick={() => navigate(`/dashboard/client/${c.id}`)}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-xs font-display font-bold text-[var(--white)]">
-                          {c.first_name[0]?.toUpperCase()}{c.last_name[0]?.toUpperCase()}
-                        </div>
-                        <span className="font-medium text-[var(--ink)]">{c.first_name} {c.last_name}</span>
-                      </div>
-                    </td>
-                    <td className="hidden px-4 py-3 text-[var(--ink-muted)] sm:table-cell">{c.company_name ?? '—'}</td>
-                    <td className="hidden px-4 py-3 text-[var(--ink-muted)] md:table-cell">{c.email}</td>
-                    <td className="px-4 py-3 text-center text-[var(--ink)]">{c.projectCount}</td>
-                    <td className="hidden px-4 py-3 text-[var(--ink-muted)] lg:table-cell">{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {agencyMissing ? (
+        <Card className="flex flex-col items-center justify-center py-14 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--accent-soft)] text-2xl">
+            🏢
           </div>
-        )}
-      </div>
-    </div>
+          <h2 className="mt-4 font-display text-2xl font-semibold text-[var(--ink)]">
+            Agence non configurée
+          </h2>
+          <p className="mt-2 max-w-md text-sm font-body text-[var(--ink-muted)]">
+            Votre espace agence n&apos;a pas pu être chargé. Configurez-le dans les paramètres pour gérer vos clients.
+          </p>
+          <Link
+            to="/dashboard/settings"
+            className="mt-6 rounded-[var(--radius-sm)] bg-[var(--accent)] px-5 py-2.5 text-sm font-body font-medium text-[var(--white)] transition hover:brightness-95"
+          >
+            Ouvrir les paramètres
+          </Link>
+        </Card>
+      ) : (
+        <>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Input
+              placeholder="Rechercher par nom, email ou entreprise..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <select
+              className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
+              value={industryFilter}
+              onChange={(e) => setIndustryFilter(e.target.value)}
+            >
+              <option value="">Tous les secteurs</option>
+              {INDUSTRIES.map((i) => <option key={i} value={i}>{i}</option>)}
+            </select>
+          </div>
+
+          {filtered.length === 0 ? (
+            <Card className="mt-8 flex flex-col items-center justify-center py-14 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--accent-soft)] text-2xl">
+                👥
+              </div>
+              <h2 className="mt-4 font-display text-2xl font-semibold text-[var(--ink)]">
+                {clients.length === 0 ? 'Aucun client' : 'Aucun résultat'}
+              </h2>
+              <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
+                {clients.length === 0
+                  ? 'Créez un projet pour ajouter votre premier client.'
+                  : 'Essayez un autre filtre ou recherche.'}
+              </p>
+            </Card>
+          ) : (
+            <div className="mt-6 overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)]">
+              <table className="w-full text-left text-sm font-body">
+                <thead>
+                  <tr className="border-b border-[var(--border)] bg-[var(--surface)]">
+                    <th className="px-4 py-3 font-display font-semibold text-[var(--ink)]">Nom</th>
+                    <th className="hidden px-4 py-3 font-display font-semibold text-[var(--ink)] sm:table-cell">Entreprise</th>
+                    <th className="hidden px-4 py-3 font-display font-semibold text-[var(--ink)] md:table-cell">Email</th>
+                    <th className="px-4 py-3 text-center font-display font-semibold text-[var(--ink)]">Projets</th>
+                    <th className="hidden px-4 py-3 font-display font-semibold text-[var(--ink)] lg:table-cell">Créé le</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((c) => (
+                    <tr
+                      key={c.id}
+                      className="cursor-pointer border-b border-[var(--border)] transition hover:bg-[var(--surface)]"
+                      onClick={() => navigate(`/dashboard/client/${c.id}`)}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-xs font-display font-bold text-[var(--white)]">
+                            {c.first_name[0]?.toUpperCase()}{c.last_name[0]?.toUpperCase()}
+                          </div>
+                          <span className="font-medium text-[var(--ink)]">{c.first_name} {c.last_name}</span>
+                        </div>
+                      </td>
+                      <td className="hidden px-4 py-3 text-[var(--ink-muted)] sm:table-cell">{c.company_name ?? '—'}</td>
+                      <td className="hidden px-4 py-3 text-[var(--ink-muted)] md:table-cell">{c.email}</td>
+                      <td className="px-4 py-3 text-center text-[var(--ink)]">{c.projectCount}</td>
+                      <td className="hidden px-4 py-3 text-[var(--ink-muted)] lg:table-cell">{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </DashboardLayout>
   )
 }

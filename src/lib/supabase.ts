@@ -16,7 +16,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     /** Parse #access_token=… ou ?code=… après redirection Supabase (invite, magic link, etc.) */
     detectSessionInUrl: true,
-    // Décommente si Authentication → URL utilise PKCE pour le client public :
-    // flowType: 'pkce',
+    flowType: 'pkce',
   },
 })

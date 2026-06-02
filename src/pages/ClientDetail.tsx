@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { DashboardLayout } from '../components/DashboardLayout'
 import { Badge, Button, Card, Input } from '../components/ui'
 import { supabase } from '../lib/supabase'
 
@@ -105,37 +106,39 @@ export function ClientDetail() {
     ? `${(client.first_name?.[0] ?? '').toUpperCase()}${(client.last_name?.[0] ?? '').toUpperCase()}`
     : '?'
 
+  const subtitle = client
+    ? `${client.email}${client.phone ? ` · ${client.phone}` : ''}`
+    : undefined
+
+  const title = client ? `${client.first_name} ${client.last_name}` : 'Client'
+
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
+      <DashboardLayout title="Client" subtitle="Chargement…" maxWidth="4xl">
         <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
-      </div>
+      </DashboardLayout>
     )
   }
 
   if (!client) {
     return (
-      <div className="min-h-screen bg-[var(--surface)] px-4 py-8 sm:px-6">
-        <div className="mx-auto max-w-4xl">
-          <Link to="/dashboard/clients" className="text-sm font-body text-[var(--ink-muted)] hover:text-[var(--accent)]">← Clients</Link>
-          <p className="mt-4 text-sm font-body text-[var(--amber)]">Client introuvable.</p>
-        </div>
-      </div>
+      <DashboardLayout title="Client" maxWidth="4xl">
+        <p className="text-sm font-body text-[var(--amber)]">Client introuvable.</p>
+        <Link
+          to="/dashboard/clients"
+          className="mt-4 inline-block text-sm font-body text-[var(--accent)] hover:underline"
+        >
+          Retour aux clients
+        </Link>
+      </DashboardLayout>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[var(--surface)] px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-4xl">
-        <Link to="/dashboard/clients" className="inline-flex items-center text-sm font-body text-[var(--ink-muted)] hover:text-[var(--accent)]">← Clients</Link>
-
-        <div className="mt-4 flex flex-wrap items-center gap-4">
+    <DashboardLayout title={title} subtitle={subtitle} maxWidth="4xl">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--accent)] font-display text-xl font-bold text-[var(--white)]">
             {initials}
-          </div>
-          <div>
-            <h1 className="font-display text-2xl font-bold text-[var(--ink)]">{client.first_name} {client.last_name}</h1>
-            <p className="text-sm font-body text-[var(--ink-muted)]">{client.email}{client.phone ? ` · ${client.phone}` : ''}</p>
           </div>
           <div className="flex gap-2">
             {client.company_type && (
@@ -241,8 +244,7 @@ export function ClientDetail() {
             )}
           </Card>
         </div>
-      </div>
-    </div>
+    </DashboardLayout>
   )
 }
 

@@ -44,6 +44,19 @@ serve(async (req) => {
     })
   }
 
+  const adminEmails = (Deno.env.get('INVITE_ADMIN_EMAILS') ?? '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+
+  const callerEmail = (user.email ?? '').trim().toLowerCase()
+  if (!adminEmails.length || !callerEmail || !adminEmails.includes(callerEmail)) {
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
   try {
     const body = (await req.json()) as { email?: string }
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''

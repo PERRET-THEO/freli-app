@@ -79,15 +79,17 @@ function LandingEntry() {
   const hashParams = new URLSearchParams(hash)
   const searchParams = new URLSearchParams(location.search)
 
-  const looksLikeInviteCallback =
+  const hasRecoverableInviteSignal =
     searchParams.has('code') ||
     searchParams.has('token_hash') ||
     searchParams.get('type') === 'invite' ||
     hashParams.has('access_token') ||
     hashParams.get('type') === 'invite' ||
-    hashParams.get('error_code') === 'otp_expired'
+    hashParams.get('error_code') === 'otp_expired' ||
+    (hashParams.has('error') && hashParams.has('access_token')) ||
+    (searchParams.has('error') && searchParams.has('code'))
 
-  if (looksLikeInviteCallback) {
+  if (hasRecoverableInviteSignal) {
     return <Navigate to={`/signup${location.search}${location.hash}`} replace />
   }
 

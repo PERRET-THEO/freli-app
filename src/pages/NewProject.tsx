@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { getOrCreateAgency } from '../lib/agency'
 import { sendProjectInviteEmail } from '../lib/resend'
 import { supabase } from '../lib/supabase'
+import { DashboardLayout } from '../components/DashboardLayout'
 import { Button, Card, Input } from '../components/ui'
 
 type ChecklistItemType = 'text' | 'file' | 'signature'
@@ -98,7 +100,10 @@ export function NewProject() {
   const [contractTemplates, setContractTemplates] = useState<{ id: string; name: string }[]>([])
   const [itemTemplates, setItemTemplates] = useState<Record<string, string>>({})
   const [projectPrice, setProjectPrice] = useState('')
+  const [prefillClientId, setPrefillClientId] = useState<string | null>(null)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const clientIdParam = searchParams.get('clientId')
 
   const onboardingLink = useMemo(
     () => (generatedToken ? `${window.location.origin}/p/${generatedToken}` : ''),
@@ -109,11 +114,7 @@ export function NewProject() {
     const load = async () => {
       const { data: userData } = await supabase.auth.getUser()
       if (!userData.user) return
-      const { data: agency } = await supabase
-        .from('agencies')
-        .select('id')
-        .eq('user_id', userData.user.id)
-        .maybeSingle()
+      const agency = await getOrCreateAgency(userData.user.id)
       if (!agency?.id) return
       const { data } = await supabase
         .from('contract_templates')
@@ -124,6 +125,52 @@ export function NewProject() {
     }
     load()
   }, [])
+
+  useEffect(() => {
+    if (!clientIdParam) return
+    const loadClient = async () => {
+      const { data: c } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', clientIdParam)
+        .maybeSingle()
+      if (!c) return
+
+      setFirstName(c.first_name ?? '')
+      setLastName(c.last_name ?? '')
+      setClientEmail(c.email ?? '')
+      setPhone(c.phone ?? '')
+
+      const hasCompany = Boolean(c.company_name || c.company_type || c.siret || c.vat_number)
+      setIsCompany(hasCompany)
+      setCompanyName(c.company_name ?? '')
+      setCompanyType(c.company_type ?? '')
+      setSiret(c.siret ?? '')
+      setVatNumber(c.vat_number ?? '')
+
+      const hasExtra = Boolean(
+        c.address_street ||
+          c.address_postal_code ||
+          c.address_city ||
+          c.website ||
+          c.industry ||
+          c.company_size ||
+          c.notes,
+      )
+      setShowExtra(hasExtra)
+      setAddressStreet(c.address_street ?? '')
+      setPostalCode(c.address_postal_code ?? '')
+      setCity(c.address_city ?? '')
+      setCountry(c.address_country ?? 'France')
+      setWebsite(c.website ?? '')
+      setIndustry(c.industry ?? '')
+      setCompanySize(c.company_size ?? '')
+      setNotes(c.notes ?? '')
+
+      setPrefillClientId(clientIdParam)
+    }
+    loadClient()
+  }, [clientIdParam])
 
   const addItem = () => {
     const label = newItemLabel.trim()
@@ -168,84 +215,92 @@ export function NewProject() {
         throw new Error('Utilisateur non connecté. Merci de vous reconnecter.')
       }
 
-      let agencyId: string | null = null
-      let agencyName = 'Mon Agence'
-      const { data: agencyData, error: agencyError } = await supabase
-        .from('agencies')
-        .select('id, name')
-        .eq('user_id', userData.user.id)
-        .maybeSingle()
-
-      if (agencyError) {
-        throw new Error(agencyError.message)
+      const agency = await getOrCreateAgency(userData.user.id)
+      if (!agency?.id) {
+        throw new Error('Impossible de créer automatiquement votre agence.')
       }
-
-      if (agencyData?.id) {
-        agencyId = agencyData.id
-        agencyName = agencyData.name ?? agencyName
-      } else {
-        const { data: createdAgency, error: createAgencyError } = await supabase
-          .from('agencies')
-          .insert({ user_id: userData.user.id, name: 'Mon Agence' })
-          .select('id, name')
-          .single()
-
-        if (createAgencyError || !createdAgency) {
-          throw new Error(createAgencyError?.message ?? 'Impossible de créer automatiquement votre agence.')
-        }
-
-        agencyId = createdAgency.id
-        agencyName = createdAgency.name ?? agencyName
-      }
+      const agencyId = agency.id
+      const agencyName = agency.name
 
       const fullName = `${firstName.trim()} ${lastName.trim()}`
       const email = clientEmail.trim()
 
       let clientId: string | null = null
-      const { data: existingClient } = await supabase
-        .from('clients')
-        .select('id')
-        .eq('agency_id', agencyId)
-        .eq('email', email)
-        .maybeSingle()
 
-      if (existingClient?.id) {
-        clientId = existingClient.id
-      } else {
-        const clientPayload: Record<string, unknown> = {
-          agency_id: agencyId,
+      if (prefillClientId) {
+        clientId = prefillClientId
+        const clientUpdate: Record<string, unknown> = {
           first_name: firstName.trim(),
           last_name: lastName.trim(),
           email,
           phone: phone.trim() || null,
+          company_name: isCompany ? companyName.trim() || null : null,
+          company_type: isCompany ? companyType || null : null,
+          siret: isCompany ? siret.trim() || null : null,
+          vat_number: isCompany ? vatNumber.trim() || null : null,
+          address_street: showExtra ? addressStreet.trim() || null : null,
+          address_postal_code: showExtra ? postalCode.trim() || null : null,
+          address_city: showExtra ? city.trim() || null : null,
+          address_country: showExtra ? country.trim() || 'France' : null,
+          website: showExtra ? website.trim() || null : null,
+          industry: showExtra ? industry || null : null,
+          company_size: showExtra ? companySize || null : null,
+          notes: showExtra ? notes.trim() || null : null,
+          updated_at: new Date().toISOString(),
         }
-        if (isCompany) {
-          clientPayload.company_name = companyName.trim() || null
-          clientPayload.company_type = companyType || null
-          clientPayload.siret = siret.trim() || null
-          clientPayload.vat_number = vatNumber.trim() || null
-        }
-        if (showExtra) {
-          clientPayload.address_street = addressStreet.trim() || null
-          clientPayload.address_postal_code = postalCode.trim() || null
-          clientPayload.address_city = city.trim() || null
-          clientPayload.address_country = country.trim() || 'France'
-          clientPayload.website = website.trim() || null
-          clientPayload.industry = industry || null
-          clientPayload.company_size = companySize || null
-          clientPayload.notes = notes.trim() || null
-        }
-
-        const { data: newClient, error: clientError } = await supabase
+        const { error: clientUpdateError } = await supabase
           .from('clients')
-          .insert(clientPayload)
+          .update(clientUpdate)
+          .eq('id', prefillClientId)
+        if (clientUpdateError) {
+          console.warn('Client update failed:', clientUpdateError.message)
+        }
+      } else {
+        const { data: existingClient } = await supabase
+          .from('clients')
           .select('id')
-          .single()
+          .eq('agency_id', agencyId)
+          .eq('email', email)
+          .maybeSingle()
 
-        if (clientError) {
-          console.warn('Client insert failed (table may not exist yet):', clientError.message)
+        if (existingClient?.id) {
+          clientId = existingClient.id
         } else {
-          clientId = newClient.id
+          const clientPayload: Record<string, unknown> = {
+            agency_id: agencyId,
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+            email,
+            phone: phone.trim() || null,
+          }
+          if (isCompany) {
+            clientPayload.company_name = companyName.trim() || null
+            clientPayload.company_type = companyType || null
+            clientPayload.siret = siret.trim() || null
+            clientPayload.vat_number = vatNumber.trim() || null
+          }
+          if (showExtra) {
+            clientPayload.address_street = addressStreet.trim() || null
+            clientPayload.address_postal_code = postalCode.trim() || null
+            clientPayload.address_city = city.trim() || null
+            clientPayload.address_country = country.trim() || 'France'
+            clientPayload.website = website.trim() || null
+            clientPayload.industry = industry || null
+            clientPayload.company_size = companySize || null
+            clientPayload.notes = notes.trim() || null
+          }
+
+          const { data: newClient, error: clientError } = await supabase
+            .from('clients')
+            .insert(clientPayload)
+            .select('id')
+            .single()
+
+          if (clientError) {
+            console.warn('Client insert failed (table may not exist yet):', clientError.message)
+          } else {
+            clientId = newClient.id
+          }
         }
       }
 
@@ -339,17 +394,13 @@ export function NewProject() {
   const selectCls =
     'w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]'
 
+  const stepSubtitle =
+    step === 1 ? 'Étape 1/2 — Client' : 'Étape 2/2 — Checklist'
+
   return (
-    <div className="min-h-screen bg-[var(--surface)] px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-2xl">
-        <Link to="/dashboard" className="inline-flex items-center text-sm font-body text-[var(--ink-muted)] hover:text-[var(--accent)]">
-          ← Dashboard
-        </Link>
-
+    <DashboardLayout title="Nouveau projet" subtitle={stepSubtitle} maxWidth="4xl">
         <Card>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">Nouveau projet</h1>
-
-          <div className="mt-6 flex items-center justify-center gap-3">
+          <div className="flex items-center justify-center gap-3">
             <div className="flex items-center gap-2">
               <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-display font-bold ${step === 1 ? 'bg-[var(--accent)] text-[var(--white)]' : 'bg-[var(--mint-soft)] text-[var(--mint)]'}`}>1</div>
               <span className="text-sm font-body text-[var(--ink-soft)]">Client</span>
@@ -546,7 +597,6 @@ export function NewProject() {
             </div>
           )}
         </Card>
-      </div>
 
       {generatedToken ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/45 px-4">
@@ -555,12 +605,16 @@ export function NewProject() {
             <p className="mt-4 break-all rounded-[var(--radius-sm)] bg-[var(--surface-warm)] p-3 text-sm font-body text-[var(--ink)]">{onboardingLink}</p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Button onClick={handleCopy}>{copySuccess ? 'Copie effectuée' : 'Copier le lien'}</Button>
-              <Link to="/dashboard" className="w-full sm:w-auto"><Button variant="secondary" className="w-full">Retour au dashboard</Button></Link>
+              {prefillClientId ? (
+                <Link to={`/dashboard/client/${prefillClientId}`} className="w-full sm:w-auto"><Button variant="secondary" className="w-full">Retour à la fiche client</Button></Link>
+              ) : (
+                <Link to="/dashboard" className="w-full sm:w-auto"><Button variant="secondary" className="w-full">Retour au dashboard</Button></Link>
+              )}
               <Button variant="secondary" onClick={() => navigate(`/p/${generatedToken}`)}>Ouvrir le portail</Button>
             </div>
           </Card>
         </div>
       ) : null}
-    </div>
+    </DashboardLayout>
   )
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { DashboardLayout } from '../components/DashboardLayout'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { supabase } from '../lib/supabase'
 import { Badge, Button, Card } from '../components/ui'
@@ -82,53 +83,6 @@ const filterLabels: Record<StatusFilter, string> = {
   in_progress: 'En cours',
   pending: 'En attente',
   completed: 'Complétés',
-}
-
-const icons = {
-  overview: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="3" y="3" width="7" height="9" rx="1" />
-      <rect x="14" y="3" width="7" height="5" rx="1" />
-      <rect x="14" y="12" width="7" height="9" rx="1" />
-      <rect x="3" y="16" width="7" height="5" rx="1" />
-    </svg>
-  ),
-  users: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
-    </svg>
-  ),
-  plus: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 8v8M8 12h8" />
-    </svg>
-  ),
-  file: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
-    </svg>
-  ),
-  link: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
-      <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
-    </svg>
-  ),
-  settings: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-    </svg>
-  ),
-  logout: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-    </svg>
-  ),
 }
 
 export function Dashboard() {
@@ -337,18 +291,6 @@ export function Dashboard() {
     return 'Tout est à jour. Belle journée ✨'
   })()
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    navigate('/signin', { replace: true })
-  }
-
-  const sidebarItemClass = (isActive: boolean) =>
-    `group flex w-full items-start gap-3 rounded-[var(--radius-sm)] px-3 py-2.5 text-left transition ${
-      isActive
-        ? 'bg-[rgba(255,255,255,0.1)] text-[var(--white)] shadow-[inset_3px_0_0_0_var(--accent)]'
-        : 'text-[var(--surface-warm)] hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--white)]'
-    }`
-
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
@@ -358,119 +300,7 @@ export function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--surface)]">
-      <aside className="hidden md:fixed md:inset-y-0 md:left-0 md:z-30 md:flex md:w-72 md:flex-col md:border-r md:border-[rgba(255,255,255,0.06)] md:bg-[var(--ink)] md:p-5">
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
-          <Link to="/dashboard" className="flex shrink-0 items-center gap-3 rounded-[var(--radius-sm)] outline-none ring-offset-2 ring-offset-[var(--ink)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)] font-display text-sm font-extrabold tracking-tight text-[var(--white)] shadow-[0_4px_12px_rgba(91,110,245,0.35)]">
-              Fr
-            </div>
-            <div>
-              <span className="font-display text-xl font-extrabold tracking-tighter text-[var(--white)]">Freli</span>
-              <p className="mt-0.5 font-body text-[11px] leading-snug text-[rgba(253,252,250,0.45)]">
-                Onboarding sans friction
-              </p>
-            </div>
-          </Link>
-
-          <p className="mt-5 font-body text-[12px] leading-relaxed text-[rgba(253,252,250,0.55)]">
-            Un lien client, des relances automatiques, du temps récupéré — comme sur la page d&apos;accueil.
-          </p>
-
-          <Link
-            to="/dashboard/new"
-            className="mt-5 flex items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-3 py-2.5 font-display text-sm font-bold text-[var(--white)] shadow-[0_6px_20px_rgba(91,110,245,0.35)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--white)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ink)]"
-          >
-            <span className="h-4 w-4 [&>svg]:h-full [&>svg]:w-full">{icons.plus}</span>
-            Nouveau projet
-          </Link>
-
-          <p className="mt-8 text-[10px] font-display font-bold uppercase tracking-[0.18em] text-[rgba(253,252,250,0.35)]">
-            Activité
-          </p>
-          <nav className="mt-2 flex flex-col gap-1">
-            <NavLink to="/dashboard" end className={({ isActive }) => sidebarItemClass(isActive)}>
-              <span className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent)] opacity-90 [&>svg]:h-full [&>svg]:w-full">
-                {icons.overview}
-              </span>
-              <span className="min-w-0">
-                <span className="block font-body text-sm font-semibold">Vue d&apos;ensemble</span>
-                <span className="mt-0.5 block font-body text-[11px] leading-snug text-[rgba(253,252,250,0.42)] group-hover:text-[rgba(253,252,250,0.55)]">
-                  Projets, progression, temps gagné
-                </span>
-              </span>
-            </NavLink>
-            <NavLink to="/dashboard/clients" className={({ isActive }) => sidebarItemClass(isActive)}>
-              <span className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent)] opacity-90 [&>svg]:h-full [&>svg]:w-full">
-                {icons.users}
-              </span>
-              <span className="min-w-0">
-                <span className="block font-body text-sm font-semibold">Clients</span>
-                <span className="mt-0.5 block font-body text-[11px] leading-snug text-[rgba(253,252,250,0.42)] group-hover:text-[rgba(253,252,250,0.55)]">
-                  Annuaire & fiches
-                </span>
-              </span>
-            </NavLink>
-          </nav>
-
-          <p className="mt-6 text-[10px] font-display font-bold uppercase tracking-[0.18em] text-[rgba(253,252,250,0.35)]">
-            Documents &amp; automatisation
-          </p>
-          <nav className="mt-2 flex flex-col gap-1">
-            <NavLink to="/dashboard/templates" className={({ isActive }) => sidebarItemClass(isActive)}>
-              <span className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent)] opacity-90 [&>svg]:h-full [&>svg]:w-full">
-                {icons.file}
-              </span>
-              <span className="min-w-0">
-                <span className="block font-body text-sm font-semibold">Contrats</span>
-                <span className="mt-0.5 block font-body text-[11px] leading-snug text-[rgba(253,252,250,0.42)] group-hover:text-[rgba(253,252,250,0.55)]">
-                  Modèles &amp; signature
-                </span>
-              </span>
-            </NavLink>
-            <NavLink to="/dashboard/integrations" className={({ isActive }) => sidebarItemClass(isActive)}>
-              <span className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent)] opacity-90 [&>svg]:h-full [&>svg]:w-full">
-                {icons.link}
-              </span>
-              <span className="min-w-0">
-                <span className="block font-body text-sm font-semibold">Intégrations</span>
-                <span className="mt-0.5 block font-body text-[11px] leading-snug text-[rgba(253,252,250,0.42)] group-hover:text-[rgba(253,252,250,0.55)]">
-                  Stripe, relances, outils
-                </span>
-              </span>
-            </NavLink>
-          </nav>
-        </div>
-
-        <div className="shrink-0 space-y-3 border-t border-[rgba(255,255,255,0.08)] pt-4">
-          <NavLink to="/dashboard/settings" className={({ isActive }) => sidebarItemClass(isActive)}>
-            <span className="mt-0.5 h-5 w-5 shrink-0 text-[rgba(253,252,250,0.55)] [&>svg]:h-full [&>svg]:w-full">
-              {icons.settings}
-            </span>
-            <span className="min-w-0">
-              <span className="block font-body text-sm font-semibold">Paramètres</span>
-              <span className="mt-0.5 block font-body text-[11px] text-[rgba(253,252,250,0.38)]">Agence &amp; compte</span>
-            </span>
-          </NavLink>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex w-full items-start gap-3 rounded-[var(--radius-sm)] px-3 py-2.5 text-left text-[var(--surface-warm)] transition hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--white)]"
-          >
-            <span className="mt-0.5 h-5 w-5 shrink-0 [&>svg]:h-full [&>svg]:w-full">{icons.logout}</span>
-            <span className="font-body text-sm font-medium">Déconnexion</span>
-          </button>
-          <div className="rounded-[var(--radius-sm)] border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.2)] px-3 py-2.5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-wide text-[rgba(253,252,250,0.4)]">
-              Votre compte
-            </p>
-            <p className="mt-1 break-all font-body text-xs leading-snug text-[var(--white)]">{email ?? '—'}</p>
-          </div>
-        </div>
-      </aside>
-
-      <div className="mx-auto max-w-7xl md:ml-72">
-        <main className="w-full px-4 py-8 pb-24 sm:px-8 md:pb-8">
+    <DashboardLayout>
           {canInstall ? (
             <div className="mb-4 flex items-center justify-between rounded-[var(--radius-sm)] border border-[rgba(91,110,245,0.2)] bg-[var(--accent-soft)] px-4 py-3">
               <p className="font-body text-sm text-[var(--accent)]">
@@ -860,84 +690,6 @@ export function Dashboard() {
               })}
             </section>
           )}
-        </main>
-      </div>
-
-      <nav
-        className="fixed bottom-0 left-0 right-0 z-40 border-t border-[rgba(255,255,255,0.08)] bg-[var(--ink)] pb-[env(safe-area-inset-bottom)] md:hidden"
-        aria-label="Navigation principale"
-      >
-        <div className="mx-auto flex max-w-lg items-end justify-between gap-0 px-0.5 pt-1">
-          <NavLink
-            to="/dashboard"
-            end
-            className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
-                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
-              }`
-            }
-          >
-            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.overview}</span>
-            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">Accueil</span>
-          </NavLink>
-          <NavLink
-            to="/dashboard/clients"
-            className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
-                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
-              }`
-            }
-          >
-            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.users}</span>
-            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">Clients</span>
-          </NavLink>
-          <Link
-            to="/dashboard/new"
-            className="-mt-3 flex shrink-0 flex-col items-center px-1"
-            aria-label="Nouveau projet"
-          >
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--white)] shadow-[0_4px_16px_rgba(91,110,245,0.45)] [&>svg]:h-5 [&>svg]:w-5">
-              {icons.plus}
-            </span>
-            <span className="mt-0.5 max-w-[4rem] truncate text-center text-[9px] font-display font-bold uppercase leading-tight tracking-wide text-[var(--accent)]">
-              Nouveau
-            </span>
-          </Link>
-          <NavLink
-            to="/dashboard/templates"
-            className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
-                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
-              }`
-            }
-          >
-            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.file}</span>
-            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">Contrats</span>
-          </NavLink>
-          <NavLink
-            to="/dashboard/integrations"
-            className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
-                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
-              }`
-            }
-          >
-            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.link}</span>
-            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">Outils</span>
-          </NavLink>
-          <NavLink
-            to="/dashboard/settings"
-            className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
-                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
-              }`
-            }
-          >
-            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.settings}</span>
-            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">Réglages</span>
-          </NavLink>
-        </div>
-      </nav>
 
       {deletingProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/50 px-4">
@@ -968,6 +720,6 @@ export function Dashboard() {
           {toast}
         </div>
       )}
-    </div>
+    </DashboardLayout>
   )
 }

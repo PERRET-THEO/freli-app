@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { DashboardLayout } from '../components/DashboardLayout'
 import { Badge, Button, Card, Input } from '../components/ui'
 import { supabase } from '../lib/supabase'
 import { pdfjs, setupPdfWorker } from '../lib/pdfWorker'
+
+let pdfOpenLockUntil = 0
+
+/** Ouvre le PDF une seule fois par geste (évite les onglets multiples). */
+function openPdfOnce(url: string) {
+  const now = Date.now()
+  if (now < pdfOpenLockUntil) return
+  pdfOpenLockUntil = now + 400
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
 
 type ContractTemplate = {
   id: string
@@ -267,7 +277,11 @@ export function Templates() {
       .select('*')
       .eq('agency_id', agency.id)
       .order('created_at', { ascending: false })
-    setTemplates((data ?? []) as ContractTemplate[])
+    setTemplates(
+      Array.from(
+        new Map(((data ?? []) as ContractTemplate[]).map((row) => [row.id, row])).values(),
+      ),
+    )
   }
 
   useEffect(() => {
@@ -361,15 +375,12 @@ export function Templates() {
     Math.abs((t.signature_x ?? 0.7) - 0.7) > 0.001 || Math.abs((t.signature_y ?? 0.85) - 0.85) > 0.001
 
   return (
-    <div className="min-h-screen bg-[var(--surface)] px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-5xl">
-        <Link to="/dashboard" className="inline-flex items-center text-sm font-body text-[var(--ink-muted)] hover:text-[var(--accent)]">← Dashboard</Link>
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="font-display text-3xl font-bold text-[var(--ink)]">Mes contrats</h1>
-            <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">Gérez vos PDF de contrats à faire signer par vos clients</p>
-          </div>
+    <DashboardLayout
+      title="Mes contrats"
+      subtitle="Gérez vos PDF de contrats à faire signer par vos clients"
+      maxWidth="5xl"
+    >
+        <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
           <Button onClick={() => setShowModal(true)}>Ajouter un contrat</Button>
         </div>
         {error ? <p className="mt-3 text-sm font-body text-[var(--amber)]">{error}</p> : null}
@@ -411,7 +422,16 @@ export function Templates() {
                       )}
                     </div>
                     {template.pdf_url && (
-                      <a href={template.pdf_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-body text-[var(--accent)] underline">
+                      <a
+                        href={template.pdf_url}
+                        rel="noreferrer"
+                        className="mt-1 inline-block text-xs font-body text-[var(--accent)] underline"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          openPdfOnce(template.pdf_url!)
+                        }}
+                      >
                         Voir le PDF ↗
                       </a>
                     )}
@@ -431,7 +451,6 @@ export function Templates() {
             ))}
           </div>
         )}
-      </div>
 
       {showModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/40 px-4 py-6">
@@ -479,6 +498,6 @@ export function Templates() {
           </Card>
         </div>
       ) : null}
-    </div>
+    </DashboardLayout>
   )
 }

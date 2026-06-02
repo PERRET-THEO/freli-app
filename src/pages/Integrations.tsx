@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { DashboardLayout } from '../components/DashboardLayout'
 import { Card, Input } from '../components/ui'
 import { isStripeReadyForCheckout, parseStripeConfig } from '../lib/integrations/stripe'
 import { supabase } from '../lib/supabase'
@@ -51,7 +52,7 @@ export function Integrations() {
     const load = async () => {
       const { data: userData } = await supabase.auth.getUser()
       if (!userData.user) {
-        navigate('/auth', { replace: true })
+        navigate('/signin', { replace: true })
         return
       }
       setUserId(userData.user.id)
@@ -239,30 +240,19 @@ export function Integrations() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
+      <DashboardLayout title="Intégrations" subtitle="Stripe, relances et outils" maxWidth="4xl">
         <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
-      </div>
+      </DashboardLayout>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[var(--surface)] px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-4xl">
-        <Link
-          to="/dashboard"
-          className="inline-flex items-center text-sm font-body text-[var(--ink-muted)] hover:text-[var(--accent)]"
-        >
-          ← Dashboard
-        </Link>
-
-        <h1 className="mt-4 font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
-          Intégrations
-        </h1>
-        <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">
-          Connectez vos outils pour automatiser la fin d&apos;onboarding.
-        </p>
-
-        <div className="mt-6 space-y-4">
+    <DashboardLayout
+      title="Intégrations"
+      subtitle="Connectez vos outils pour automatiser la fin d'onboarding."
+      maxWidth="4xl"
+    >
+        <div className="space-y-4">
           {PROVIDERS.map((provider) => {
             const connected = isConnected(provider.key)
             const isSaving = saving === provider.key
@@ -403,13 +393,12 @@ export function Integrations() {
             )
           })}
         </div>
-      </div>
 
       {toast && (
         <div className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-sm font-body text-[var(--white)] shadow-lg md:bottom-8">
           {toast}
         </div>
       )}
-    </div>
+    </DashboardLayout>
   )
 }

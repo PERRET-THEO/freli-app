@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
+import { DashboardLayout } from '../components/DashboardLayout'
 import { Badge, Button, Card } from '../components/ui'
 import { sendProjectReminderEmail } from '../lib/resend'
 import { supabase } from '../lib/supabase'
@@ -123,32 +124,32 @@ export function ProjectDetail() {
     navigate('/dashboard', { replace: true })
   }
 
-  return (
-    <div className="min-h-screen bg-[var(--surface)] px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-6xl">
-        <Link
-          to="/dashboard"
-          className="inline-flex items-center text-sm font-body text-[var(--ink-muted)] hover:text-[var(--accent)]"
-        >
-          ← Dashboard
-        </Link>
-      </div>
+  const layoutTitle = project?.client_name ?? 'Projet'
+  const layoutSubtitle = project?.client_email
 
-      <div className="mx-auto mt-4 grid max-w-6xl gap-4 md:grid-cols-2">
+  if (loading) {
+    return (
+      <DashboardLayout title="Projet" subtitle="Chargement…" maxWidth="7xl">
+        <p className="text-sm font-body text-[var(--ink-muted)]">Chargement du projet...</p>
+      </DashboardLayout>
+    )
+  }
+
+  if (error && !project) {
+    return (
+      <DashboardLayout title="Projet" maxWidth="7xl">
+        <p className="text-sm font-body text-[var(--amber)]">{error}</p>
+      </DashboardLayout>
+    )
+  }
+
+  return (
+    <DashboardLayout title={layoutTitle} subtitle={layoutSubtitle} maxWidth="7xl">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
-          {loading ? (
-            <p className="text-sm font-body text-[var(--ink-muted)]">Chargement du projet...</p>
-          ) : error ? (
-            <p className="text-sm font-body text-[var(--amber)]">{error}</p>
-          ) : project ? (
+          {project ? (
             <>
-              <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--ink)]">
-                {project.client_name}
-              </h1>
-              <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">
-                {project.client_email}
-              </p>
-              <div className="mt-4 flex items-center justify-between">
+              <div className="flex items-center justify-between">
                 <Badge variant={project.status} />
                 <p className="text-xs font-body text-[var(--ink-muted)]">Créé le {createdAtLabel}</p>
               </div>
@@ -167,6 +168,9 @@ export function ProjectDetail() {
                 <p className="mt-2 text-sm font-body text-[var(--mint)]">
                   Relance envoyée au client.
                 </p>
+              ) : null}
+              {error ? (
+                <p className="mt-2 text-sm font-body text-[var(--amber)]">{error}</p>
               ) : null}
             </>
           ) : null}
@@ -223,7 +227,7 @@ export function ProjectDetail() {
       </div>
 
       {project && (
-        <div className="mx-auto mt-8 max-w-6xl">
+        <div className="mt-8">
           <button
             type="button"
             onClick={() => setShowDeleteModal(true)}
@@ -257,6 +261,6 @@ export function ProjectDetail() {
           </Card>
         </div>
       )}
-    </div>
+    </DashboardLayout>
   )
 }

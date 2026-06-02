@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { AuthError, Session } from '@supabase/supabase-js'
+import { getOrCreateAgency } from '../lib/agency'
 import { supabase } from '../lib/supabase'
 import { Button, Card, Input } from '../components/ui'
 
@@ -19,6 +20,17 @@ function parseHashParams(): URLSearchParams {
 /** Nettoie l’URL après établissement de session (tokens, codes). */
 function replaceSignupUrlClean(): void {
   window.history.replaceState(null, '', `${window.location.pathname}`)
+}
+
+async function confirmSessionThenCleanUrl(): Promise<Session | null> {
+  await new Promise((r) => requestAnimationFrame(r))
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (session?.user) {
+    replaceSignupUrlClean()
+  }
+  return session
 }
 
 function classifyError(err: AuthError | Error): SignUpPhase {
@@ -54,6 +66,7 @@ async function establishInviteSession(): Promise<{ session: Session | null; phas
   const url = new URL(window.location.href)
   const hashParams = parseHashParams()
   const oauthErr = url.searchParams.get('error') ?? hashParams.get('error')
+  const errorCode = url.searchParams.get('error_code') ?? hashParams.get('error_code')
   const oauthDesc = (
     url.searchParams.get('error_description') ?? hashParams.get('error_description') ?? ''
   ).toLowerCase()
@@ -72,10 +85,11 @@ async function establishInviteSession(): Promise<{ session: Session | null; phas
   const early = await readSessionWithRetry(4)
   if (early?.user) return { session: early, phase: 'form' }
 
-  // Certains navigateurs conservent error/access_denied alors que la session peut
-  // encore être récupérable via code/token/hash.
   const hasRecoverableSignal = Boolean(code || tokenHash || hasImplicitHash)
-  if (oauthErr && !hasRecoverableSignal) {
+  const otpExpiredButHasTokens =
+    errorCode === 'otp_expired' && hasImplicitHash
+
+  if (oauthErr && !hasRecoverableSignal && !otpExpiredButHasTokens) {
     if (oauthDesc.includes('expired') || oauthErr === 'access_denied') {
       return { session: null, phase: 'expired' }
     }
@@ -83,13 +97,14 @@ async function establishInviteSession(): Promise<{ session: Session | null; phas
   }
 
   if (code) {
-    const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href)
-    if (error) return { session: null, phase: classifyError(error) }
-    if (data.session?.user) return { session: data.session, phase: 'form' }
+    let exchange = await supabase.auth.exchangeCodeForSession(code)
+    if (exchange.error) {
+      exchange = await supabase.auth.exchangeCodeForSession(window.location.href)
+    }
+    if (exchange.error) return { session: null, phase: classifyError(exchange.error) }
+    if (exchange.data.session?.user) return { session: exchange.data.session, phase: 'form' }
   }
 
-  // Fallback Firefox/private: si detectSessionInUrl ne persiste pas correctement,
-  // on force l'établissement de session à partir des tokens dans l'URL.
   if (accessToken && refreshToken) {
     const { data, error } = await supabase.auth.setSession({
       access_token: accessToken,
@@ -123,7 +138,8 @@ async function establishInviteSession(): Promise<{ session: Session | null; phas
     if (lastError) return { session: null, phase: classifyError(lastError) }
   }
 
-  const implicit = await readSessionWithRetry(hasImplicitHash || code ? 32 : 8)
+  const retryFrames = hasImplicitHash || code ? 40 : 12
+  const implicit = await readSessionWithRetry(retryFrames)
   if (implicit?.user) return { session: implicit, phase: 'form' }
 
   const {
@@ -144,6 +160,13 @@ export function SignUp() {
   const [error, setError] = useState<string | null>(null)
   const submitLock = useRef(false)
   const ranRef = useRef(false)
+  const authListenerRef = useRef<{ unsubscribe: () => void } | null>(null)
+
+  const finishWithSession = useCallback(async (session: Session, emailDecoded: string) => {
+    setEmailLocked(session.user.email ?? emailDecoded)
+    setPhase('form')
+    await confirmSessionThenCleanUrl()
+  }, [])
 
   const runEstablish = useCallback(async () => {
     const url = new URL(window.location.href)
@@ -160,16 +183,43 @@ export function SignUp() {
       return
     }
 
-    setEmailLocked(session.user.email ?? emailDecoded)
-    setPhase('form')
-    replaceSignupUrlClean()
-  }, [])
+    await finishWithSession(session, emailDecoded)
+  }, [finishWithSession])
 
   useEffect(() => {
     if (ranRef.current) return
     ranRef.current = true
     void runEstablish()
   }, [runEstablish])
+
+  useEffect(() => {
+    if (phase !== 'verifying') {
+      authListenerRef.current?.unsubscribe()
+      authListenerRef.current = null
+      return
+    }
+
+    const url = new URL(window.location.href)
+    const hashParams = parseHashParams()
+    const emailParam = url.searchParams.get('email') ?? hashParams.get('email')
+    const emailDecoded = emailParam
+      ? decodeURIComponent(emailParam.replace(/\+/g, ' ')).trim()
+      : ''
+
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (
+        (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
+        session?.user
+      ) {
+        void finishWithSession(session, emailDecoded)
+      }
+    })
+    authListenerRef.current = data.subscription
+
+    return () => {
+      data.subscription.unsubscribe()
+    }
+  }, [phase, finishWithSession])
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -207,6 +257,7 @@ export function SignUp() {
         return
       }
 
+      await getOrCreateAgency(session.user.id)
       navigate('/dashboard', { replace: true })
     } finally {
       setLoading(false)
