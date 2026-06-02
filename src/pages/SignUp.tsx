@@ -65,7 +65,9 @@ async function establishInviteSession(): Promise<{ session: Session | null; phas
     hashParams.get('token_hash') ??
     hashParams.get('token')
   const type = url.searchParams.get('type') ?? hashParams.get('type')
-  const hasImplicitHash = Boolean(hashParams.get('access_token'))
+  const accessToken = hashParams.get('access_token') ?? url.searchParams.get('access_token')
+  const refreshToken = hashParams.get('refresh_token') ?? url.searchParams.get('refresh_token')
+  const hasImplicitHash = Boolean(accessToken)
 
   const early = await readSessionWithRetry(4)
   if (early?.user) return { session: early, phase: 'form' }
@@ -86,13 +88,26 @@ async function establishInviteSession(): Promise<{ session: Session | null; phas
     if (data.session?.user) return { session: data.session, phase: 'form' }
   }
 
+  // Fallback Firefox/private: si detectSessionInUrl ne persiste pas correctement,
+  // on force l'établissement de session à partir des tokens dans l'URL.
+  if (accessToken && refreshToken) {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    })
+    if (error) return { session: null, phase: classifyError(error) }
+    if (data.session?.user) return { session: data.session, phase: 'form' }
+  }
+
   if (tokenHash) {
-    const candidateTypes: Array<'invite' | 'signup'> =
+    const candidateTypes: Array<'invite' | 'signup' | 'magiclink'> =
       type === 'invite'
         ? ['invite']
         : type === 'signup'
           ? ['signup']
-          : ['invite', 'signup']
+          : type === 'magiclink'
+            ? ['magiclink']
+            : ['invite', 'signup', 'magiclink']
 
     let lastError: AuthError | null = null
     for (const otpType of candidateTypes) {
