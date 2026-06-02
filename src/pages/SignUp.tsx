@@ -52,23 +52,33 @@ async function readSessionWithRetry(maxFrames: number): Promise<Session | null> 
  */
 async function establishInviteSession(): Promise<{ session: Session | null; phase: SignUpPhase }> {
   const url = new URL(window.location.href)
-  const oauthErr = url.searchParams.get('error')
-  const oauthDesc = (url.searchParams.get('error_description') ?? '').toLowerCase()
-  if (oauthErr) {
+  const hashParams = parseHashParams()
+  const oauthErr = url.searchParams.get('error') ?? hashParams.get('error')
+  const oauthDesc = (
+    url.searchParams.get('error_description') ?? hashParams.get('error_description') ?? ''
+  ).toLowerCase()
+
+  const code = url.searchParams.get('code') ?? hashParams.get('code')
+  const tokenHash =
+    url.searchParams.get('token_hash') ??
+    url.searchParams.get('token') ??
+    hashParams.get('token_hash') ??
+    hashParams.get('token')
+  const type = url.searchParams.get('type') ?? hashParams.get('type')
+  const hasImplicitHash = Boolean(hashParams.get('access_token'))
+
+  const early = await readSessionWithRetry(4)
+  if (early?.user) return { session: early, phase: 'form' }
+
+  // Certains navigateurs conservent error/access_denied alors que la session peut
+  // encore être récupérable via code/token/hash.
+  const hasRecoverableSignal = Boolean(code || tokenHash || hasImplicitHash)
+  if (oauthErr && !hasRecoverableSignal) {
     if (oauthDesc.includes('expired') || oauthErr === 'access_denied') {
       return { session: null, phase: 'expired' }
     }
     return { session: null, phase: 'invalid' }
   }
-
-  const code = url.searchParams.get('code')
-  const tokenHash = url.searchParams.get('token_hash') ?? url.searchParams.get('token')
-  const type = url.searchParams.get('type')
-  const hashParams = parseHashParams()
-  const hasImplicitHash = Boolean(hashParams.get('access_token'))
-
-  const early = await readSessionWithRetry(4)
-  if (early?.user) return { session: early, phase: 'form' }
 
   if (code) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href)
@@ -76,13 +86,26 @@ async function establishInviteSession(): Promise<{ session: Session | null; phas
     if (data.session?.user) return { session: data.session, phase: 'form' }
   }
 
-  if (tokenHash && type === 'invite') {
-    const { data, error } = await supabase.auth.verifyOtp({
-      token_hash: tokenHash,
-      type: 'invite',
-    })
-    if (error) return { session: null, phase: classifyError(error) }
-    if (data.session?.user) return { session: data.session, phase: 'form' }
+  if (tokenHash) {
+    const candidateTypes: Array<'invite' | 'signup'> =
+      type === 'invite'
+        ? ['invite']
+        : type === 'signup'
+          ? ['signup']
+          : ['invite', 'signup']
+
+    let lastError: AuthError | null = null
+    for (const otpType of candidateTypes) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: otpType,
+      })
+      if (!error && data.session?.user) {
+        return { session: data.session, phase: 'form' }
+      }
+      if (error) lastError = error
+    }
+    if (lastError) return { session: null, phase: classifyError(lastError) }
   }
 
   const implicit = await readSessionWithRetry(hasImplicitHash || code ? 32 : 8)
