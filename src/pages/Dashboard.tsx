@@ -4,6 +4,7 @@ import { DashboardLayout } from '../components/DashboardLayout'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { supabase } from '../lib/supabase'
 import { formatRelative } from '../lib/formatRelative'
+import { getPaymentState } from '../lib/payments'
 import { Badge, Button, Card } from '../components/ui'
 
 type ProjectStatus = 'pending' | 'in_progress' | 'completed'
@@ -17,6 +18,8 @@ type ProjectRecord = {
   token: string
   created_at: string
   last_reminder_sent_at: string | null
+  price: number | null
+  payment_status: string | null
   clients?: { company_name: string | null; phone: string | null }[] | { company_name: string | null; phone: string | null } | null
 }
 
@@ -36,6 +39,8 @@ type ProjectCardData = {
   createdAt: string
   lastReminderSentAt: string | null
   lastReminderSource: 'auto' | 'manual' | null
+  price: number | null
+  paymentStatus: string | null
   completedCount: number
   totalCount: number
   progress: number
@@ -113,7 +118,7 @@ export function Dashboard() {
 
       const { data: projectRows, error: projectsError } = await supabase
         .from('projects')
-        .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, clients(company_name, phone)')
+        .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, clients(company_name, phone)')
         .eq('agency_id', agencyData.id)
         .order('created_at', { ascending: false })
 
@@ -179,6 +184,8 @@ export function Dashboard() {
           createdAt: project.created_at,
           lastReminderSentAt: project.last_reminder_sent_at,
           lastReminderSource: latestReminderByProject.get(project.id) ?? null,
+          price: project.price ?? null,
+          paymentStatus: project.payment_status ?? null,
           completedCount: counts.completed,
           totalCount: counts.total,
           progress,
@@ -510,6 +517,7 @@ export function Dashboard() {
                   reminderSentRecently && project.lastReminderSentAt
                     ? project.lastReminderSentAt
                     : project.createdAt
+                const paymentState = getPaymentState(project.price, project.paymentStatus)
                 const reminderKindLabel =
                   project.lastReminderSource === 'manual' ? 'Relance manuelle' : 'Relance auto'
                 const activityLabel = reminderSentRecently
@@ -630,6 +638,16 @@ export function Dashboard() {
                         {needsAction && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-[var(--amber-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--amber)]">
                             ⚠️ À relancer
+                          </span>
+                        )}
+                        {paymentState === 'paid' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--mint-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--mint)]">
+                            💳 Payé
+                          </span>
+                        )}
+                        {paymentState === 'pending' && project.status === 'completed' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--amber-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--amber)]">
+                            💳 Paiement en attente
                           </span>
                         )}
                         <span className="ml-auto truncate text-[11px] font-body text-[var(--ink-muted)]">

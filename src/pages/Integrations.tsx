@@ -294,10 +294,23 @@ export function Integrations() {
                       Les paiements vont sur <strong>votre</strong> compte Stripe (Connect Express). Le
                       montant par projet est défini à la création (« Prix (€) »).
                     </p>
+                    <div className="rounded-[var(--radius-sm)] bg-[var(--surface-warm)] p-3">
+                      <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Comment ça marche</p>
+                      <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-xs font-body text-[var(--ink-muted)]">
+                        <li>Connectez votre compte Stripe (Connect Express).</li>
+                        <li>Définissez un prix lors de la création du projet.</li>
+                        <li>À la fin de l'onboarding, le client reçoit automatiquement un lien de paiement par email — vous pouvez aussi le renvoyer depuis la fiche projet.</li>
+                      </ol>
+                    </div>
                     {stripeRow && stripeCfg.stripe_connect_account_id && (
                       <p className="text-xs font-body text-[var(--ink-muted)]">
                         Compte connecté : …{stripeCfg.stripe_connect_account_id.slice(-6)}
                         {stripeCheckoutReady ? ' — prêt à encaisser.' : ' — finalisez l’inscription chez Stripe.'}
+                      </p>
+                    )}
+                    {stripeRow && !stripeCheckoutReady && (
+                      <p className="rounded-[var(--radius-sm)] bg-[var(--amber-soft)] px-3 py-2 text-xs font-body text-[var(--amber)]">
+                        ⚠️ Votre compte est lié mais pas encore prêt à encaisser (charges_enabled). Tant que l'inscription Stripe n'est pas finalisée, aucun lien de paiement ne sera envoyé aux clients.
                       </p>
                     )}
                     {stripeError ? (

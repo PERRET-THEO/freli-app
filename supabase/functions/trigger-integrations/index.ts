@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { ensureCheckoutSession, stripeConnectReady } from '../_shared/stripeCheckout.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,7 +10,6 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') ?? ''
 const appUrl = Deno.env.get('APP_URL') ?? 'http://localhost:5173'
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
@@ -30,14 +30,8 @@ type ProjectData = {
   token: string
   price: number | null
   payment_status: string | null
-}
-
-function stripeConnectReady(config: Record<string, unknown>): { accountId: string } | null {
-  const accountId =
-    typeof config.stripe_connect_account_id === 'string' ? config.stripe_connect_account_id : ''
-  const charges = config.charges_enabled === true
-  if (!accountId.startsWith('acct_') || !charges) return null
-  return { accountId }
+  stripe_checkout_url: string | null
+  stripe_checkout_session_id: string | null
 }
 
 type Results = {
@@ -50,69 +44,12 @@ async function handleStripe(
   integration: Integration,
   project: ProjectData,
 ): Promise<{ checkoutUrl: string } | null> {
-  if (!stripeSecretKey) {
-    console.warn('STRIPE_SECRET_KEY not set, skipping Stripe integration')
-    return null
-  }
-
-  const cfg = integration.config ?? {}
-  const connect = stripeConnectReady(cfg as Record<string, unknown>)
+  const connect = stripeConnectReady((integration.config ?? {}) as Record<string, unknown>)
   if (!connect) {
-    console.log(
-      'Stripe Connect account missing or not ready (charges_enabled), skipping checkout. config=',
-      JSON.stringify(cfg),
-    )
+    console.log('Stripe Connect not ready, skipping checkout.')
     return null
   }
-
-  const rawProjectPrice = project.price
-  const price =
-    typeof rawProjectPrice === 'string'
-      ? parseInt(String(rawProjectPrice), 10)
-      : Number(rawProjectPrice ?? 0)
-  const currency = String(integration.config?.currency ?? 'eur')
-
-  if (!price || price <= 0 || !Number.isFinite(price)) {
-    console.log('Invalid project price, skipping Stripe checkout. price=', rawProjectPrice)
-    return null
-  }
-
-  const params = new URLSearchParams()
-  params.append('mode', 'payment')
-  params.append('success_url', `${appUrl}/p/${project.token}?payment=success`)
-  params.append('cancel_url', `${appUrl}/p/${project.token}?payment=cancelled`)
-  params.append('line_items[0][price_data][currency]', currency)
-  params.append('line_items[0][price_data][unit_amount]', String(Math.round(price * 100)))
-  params.append('line_items[0][price_data][product_data][name]', `Onboarding — ${project.client_name}`)
-  params.append('line_items[0][quantity]', '1')
-  params.append('client_reference_id', project.id)
-  params.append('metadata[project_id]', project.id)
-  if (project.client_email) {
-    params.append('customer_email', project.client_email)
-  }
-
-  const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${stripeSecretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Stripe-Account': connect.accountId,
-    },
-    body: params.toString(),
-  })
-
-  const session = await response.json()
-  if (!response.ok) {
-    throw new Error(`Stripe error: ${session.error?.message ?? JSON.stringify(session)}`)
-  }
-
-  const checkoutUrl = session.url as string | null
-  if (!checkoutUrl) {
-    console.error('Stripe session missing url:', JSON.stringify(session))
-    throw new Error('Stripe Checkout session has no url')
-  }
-  console.log('Stripe checkout session created:', session.id, 'url:', checkoutUrl)
-  return { checkoutUrl }
+  return await ensureCheckoutSession(project, connect)
 }
 
 async function handleGoogleDrive(
@@ -213,7 +150,7 @@ serve(async (req) => {
 
     const { data: project, error: projectError } = await supabase
       .from('projects')
-      .select('id, client_name, client_email, agency_id, token, price, payment_status')
+      .select('id, client_name, client_email, agency_id, token, price, payment_status, stripe_checkout_url, stripe_checkout_session_id')
       .eq('id', body.projectId)
       .single()
 
@@ -259,7 +196,15 @@ serve(async (req) => {
         switch (integration.provider) {
           case 'stripe': {
             const stripeResult = await handleStripe(integration, project as ProjectData)
-            if (stripeResult) results.stripe = stripeResult
+            if (stripeResult) {
+              results.stripe = stripeResult
+              // Email automatique au client avec le lien de paiement (fin onboarding).
+              const { error: emailError } = await supabase.functions.invoke(
+                'send-payment-link-email',
+                { body: { projectId: project.id } },
+              )
+              if (emailError) console.error('payment email failed:', emailError.message)
+            }
             break
           }
           case 'google_drive': {

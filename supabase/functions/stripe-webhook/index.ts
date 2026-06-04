@@ -124,9 +124,29 @@ serve(async (req) => {
       if (projectId) {
         const { error: pErr } = await supabaseAdmin
           .from('projects')
-          .update({ payment_status: 'paid' })
+          .update({
+            payment_status: 'paid',
+            stripe_checkout_url: null,
+            stripe_checkout_session_id: null,
+          })
           .eq('id', projectId)
         if (pErr) console.error('checkout.session.completed project update:', pErr.message)
+      }
+    }
+
+    if (type === 'checkout.session.expired') {
+      const sessionWrapper = event.data as { object?: Record<string, unknown> } | undefined
+      const session = sessionWrapper?.object
+      const meta = session?.metadata as Record<string, unknown> | undefined
+      const projectId = meta && typeof meta.project_id === 'string' ? meta.project_id : ''
+      if (projectId) {
+        // Session expirée sans paiement : effacer le lien obsolète pour permettre régénération.
+        const { error: pErr } = await supabaseAdmin
+          .from('projects')
+          .update({ stripe_checkout_url: null, stripe_checkout_session_id: null })
+          .eq('id', projectId)
+          .neq('payment_status', 'paid')
+        if (pErr) console.error('checkout.session.expired project update:', pErr.message)
       }
     }
 

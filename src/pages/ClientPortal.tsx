@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { SignatureModal } from '../components/onboarding/SignatureModal'
 import { Button } from '../components/ui'
 import { triggerIntegrations } from '../lib/integrations/triggerIntegrations'
 import type { IntegrationResults } from '../lib/integrations/triggerIntegrations'
 import { sendProjectCompletedEmail } from '../lib/resend'
+import { getPaymentState, formatPriceEur } from '../lib/payments'
 import { supabase } from '../lib/supabase'
 
 type ProjectRecord = {
@@ -14,6 +15,9 @@ type ProjectRecord = {
   status: 'pending' | 'in_progress' | 'completed'
   token: string
   agency_id?: string | null
+  price?: number | null
+  payment_status?: string | null
+  stripe_checkout_url?: string | null
   agencies?: { logo_url: string | null; name?: string } | { logo_url: string | null; name?: string }[] | null
 }
 
@@ -115,6 +119,8 @@ function getTemplateIdFromValue(value: string | null): string | null {
 
 export function ClientPortal() {
   const { token } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [paymentNotice, setPaymentNotice] = useState<'success' | 'cancelled' | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [project, setProject] = useState<ProjectRecord | null>(null)
@@ -215,7 +221,7 @@ export function ClientPortal() {
 
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
-        .select('id, client_name, client_email, status, token, agency_id, agencies(logo_url, name)')
+        .select('id, client_name, client_email, status, token, agency_id, price, payment_status, stripe_checkout_url, agencies(logo_url, name)')
         .eq('token', token)
         .maybeSingle()
 
@@ -255,6 +261,15 @@ export function ClientPortal() {
   }, [token])
 
   useEffect(() => {
+    const payment = searchParams.get('payment')
+    if (payment !== 'success' && payment !== 'cancelled') return
+    setPaymentNotice(payment)
+    const next = new URLSearchParams(searchParams)
+    next.delete('payment')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  useEffect(() => {
     if (!project?.id) return
     const channel = supabase
       .channel(`project-${project.id}`)
@@ -275,6 +290,13 @@ export function ClientPortal() {
   const totalCount = items.length
   const progressPercent = totalCount ? Math.round((completedCount / totalCount) * 100) : 0
 
+  const paymentState = getPaymentState(
+    project?.price,
+    paymentNotice === 'success' ? 'paid' : project?.payment_status,
+  )
+  const checkoutUrl =
+    integrationResults.stripe?.checkoutUrl ?? project?.stripe_checkout_url ?? null
+
   useEffect(() => {
     const allDone = totalCount > 0 && completedCount === totalCount
     setIsCompleted(allDone)
@@ -285,7 +307,7 @@ export function ClientPortal() {
       if (!completionEmailSent) {
         sendProjectCompletedEmail({ projectId: project.id }).then(() => setCompletionEmailSent(true))
       }
-      if (!integrationsSent) {
+      if (!integrationsSent && project.payment_status !== 'paid' && !project.stripe_checkout_url) {
         setIntegrationsSent(true)
         void (async () => {
           const pid = project.id
@@ -459,14 +481,38 @@ export function ClientPortal() {
                 </div>
               ))}
             </div>
-            {integrationResults.stripe?.checkoutUrl && (
-              <a
-                href={integrationResults.stripe.checkoutUrl}
-                className="mt-6 inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-6 py-3 font-body text-sm font-medium text-[var(--white)] transition hover:brightness-95"
-              >
-                💳 Procéder au paiement
-              </a>
-            )}
+            {paymentNotice === 'success' || paymentState === 'paid' ? (
+              <div className="mx-auto mt-6 max-w-sm rounded-[var(--radius-sm)] bg-[var(--mint-soft)] px-4 py-3">
+                <p className="font-body text-sm font-medium text-[var(--ink)]">
+                  ✅ Paiement confirmé{project.price ? ` — ${formatPriceEur(project.price)}` : ''}. Merci !
+                </p>
+              </div>
+            ) : paymentState === 'pending' ? (
+              <div className="mx-auto mt-6 max-w-sm">
+                {paymentNotice === 'cancelled' && (
+                  <p className="mb-3 font-body text-sm text-[var(--ink-soft)]">
+                    Paiement annulé — vous pouvez réessayer ci-dessous.
+                  </p>
+                )}
+                {checkoutUrl ? (
+                  <>
+                    <a
+                      href={checkoutUrl}
+                      className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-6 py-3 font-body text-sm font-medium text-[var(--white)] transition hover:brightness-95"
+                    >
+                      💳 Procéder au paiement{project.price ? ` (${formatPriceEur(project.price)})` : ''}
+                    </a>
+                    <p className="mt-3 font-body text-xs text-[var(--ink-muted)]">
+                      Un email avec le lien de paiement vous a également été envoyé.
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-body text-sm text-[var(--ink-soft)]">
+                    {agencyName} vous enverra le lien de paiement très bientôt.
+                  </p>
+                )}
+              </div>
+            ) : null}
             <p className="mt-6 font-body text-xs text-[var(--ink-muted)]">Vous pouvez fermer cette page.</p>
           </div>
         )}

@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { Badge, Button, Card } from '../components/ui'
 import { sendProjectReminderEmail } from '../lib/resend'
+import { sendPaymentLink } from '../lib/stripePayment'
+import { getPaymentState, formatPriceEur, PAYMENT_STATE_LABELS } from '../lib/payments'
 import { formatRelative } from '../lib/formatRelative'
 import { supabase } from '../lib/supabase'
 
@@ -14,6 +16,10 @@ type ProjectRecord = {
   token: string
   created_at: string
   last_reminder_sent_at: string | null
+  price: number | null
+  payment_status: string | null
+  stripe_checkout_url: string | null
+  last_payment_email_sent_at: string | null
   agencies?: { name: string | null } | { name: string | null }[] | null
 }
 
@@ -42,6 +48,9 @@ export function ProjectDetail() {
   const [reminderLogs, setReminderLogs] = useState<ReminderLog[]>([])
   const [sendingReminder, setSendingReminder] = useState(false)
   const [reminderFeedback, setReminderFeedback] = useState<string | null>(null)
+  const [sendingPayment, setSendingPayment] = useState(false)
+  const [paymentFeedback, setPaymentFeedback] = useState<string | null>(null)
+  const [paymentError, setPaymentError] = useState<string | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
@@ -54,7 +63,7 @@ export function ProjectDetail() {
 
     const { data: projectData, error: projectError } = await supabase
       .from('projects')
-      .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, agencies(name)')
+      .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, agencies(name)')
       .eq('id', id)
       .maybeSingle()
 
@@ -131,6 +140,38 @@ export function ProjectDetail() {
     } finally {
       setSendingReminder(false)
     }
+  }
+
+  const paymentState = getPaymentState(project?.price, project?.payment_status)
+  const canRequestPayment =
+    paymentState === 'pending' && project?.status === 'completed'
+
+  const handleSendPaymentLink = async () => {
+    if (!project) return
+    setSendingPayment(true)
+    setPaymentFeedback(null)
+    setPaymentError(null)
+    try {
+      const result = await sendPaymentLink(project.id)
+      setPaymentFeedback(
+        result.emailSent
+          ? 'Lien de paiement envoyé au client par email.'
+          : 'Lien de paiement généré (email non envoyé).',
+      )
+      await loadProject()
+    } catch (reason: unknown) {
+      setPaymentError(
+        reason instanceof Error ? reason.message : 'Impossible de générer le lien de paiement.',
+      )
+    } finally {
+      setSendingPayment(false)
+    }
+  }
+
+  const handleCopyPaymentLink = async () => {
+    if (!project?.stripe_checkout_url) return
+    await navigator.clipboard.writeText(project.stripe_checkout_url)
+    setPaymentFeedback('Lien de paiement copié.')
   }
 
   const handleDelete = async () => {
@@ -216,6 +257,52 @@ export function ProjectDetail() {
                       </li>
                     ))}
                   </ul>
+                </div>
+              ) : null}
+
+              {paymentState !== 'none' ? (
+                <div className="mt-5 border-t border-[var(--border)] pt-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Paiement</p>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-body ${paymentState === 'paid' ? 'bg-[var(--mint-soft)] text-[var(--mint)]' : 'bg-[var(--surface-warm)] text-[var(--ink-soft)]'}`}>
+                      {PAYMENT_STATE_LABELS[paymentState]}
+                    </span>
+                  </div>
+                  <p className="mt-2 font-display text-2xl font-bold text-[var(--ink)]">
+                    {formatPriceEur(project.price)}
+                  </p>
+                  {project.last_payment_email_sent_at ? (
+                    <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
+                      Lien envoyé {formatRelative(project.last_payment_email_sent_at)}
+                    </p>
+                  ) : null}
+
+                  {canRequestPayment ? (
+                    <>
+                      <Button className="mt-3" onClick={handleSendPaymentLink} disabled={sendingPayment}>
+                        {sendingPayment ? 'Envoi…' : 'Renvoyer le lien de paiement'}
+                      </Button>
+                      {project.stripe_checkout_url ? (
+                        <button
+                          onClick={handleCopyPaymentLink}
+                          className="mt-2 block text-xs font-body text-[var(--ink-muted)] underline"
+                        >
+                          Copier le lien de paiement
+                        </button>
+                      ) : null}
+                    </>
+                  ) : paymentState === 'pending' ? (
+                    <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
+                      Le lien de paiement sera disponible une fois l'onboarding terminé.
+                    </p>
+                  ) : null}
+
+                  {paymentFeedback ? (
+                    <p className="mt-2 text-sm font-body text-[var(--mint)]">{paymentFeedback}</p>
+                  ) : null}
+                  {paymentError ? (
+                    <p className="mt-2 text-sm font-body text-[var(--amber)]">{paymentError}</p>
+                  ) : null}
                 </div>
               ) : null}
             </>

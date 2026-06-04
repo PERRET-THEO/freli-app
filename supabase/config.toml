@@ -25,3 +25,11 @@ verify_jwt = true
 # Stripe → plateforme (signature dans le corps)
 [functions.stripe-webhook]
 verify_jwt = false
+
+# Génération lien de paiement depuis le dashboard agence
+[functions.stripe-payment-link]
+verify_jwt = true
+
+# Envoi email lien de paiement au client (service role / interne)
+[functions.send-payment-link-email]
+verify_jwt = false

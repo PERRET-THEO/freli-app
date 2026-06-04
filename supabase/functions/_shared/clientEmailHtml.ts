@@ -157,6 +157,41 @@ ${CLIENT_FEATURES_BLOCK}`
   )
 }
 
+/** Email client : lien de paiement après onboarding. */
+export function buildClientPaymentEmail(params: {
+  clientName: string
+  agencyName: string
+  checkoutUrl: string
+  amountLabel: string
+}): string {
+  const name = escapeHtml(params.clientName)
+  const agency = escapeHtml(params.agencyName)
+  const url = escapeHtml(params.checkoutUrl)
+  const amount = escapeHtml(params.amountLabel)
+
+  const body = `
+<p style="font-family:'DM Sans',Arial,sans-serif;font-size:15px;color:#4A4D5C;line-height:1.85;margin:0 0 28px;">
+Bonjour <strong style="color:#1C1F2A;">${name}</strong>,<br><br>
+Votre onboarding avec <strong style="color:#1C1F2A;">${agency}</strong> est terminé. Il ne reste plus qu'à régler le montant de <strong style="color:#1C1F2A;">${amount}</strong> pour finaliser.
+</p>
+<table width="100%" style="background:#F5F4F0;border-radius:20px;border:1px solid #E8E6DF;">
+<tr><td style="padding:18px 20px;font-family:'DM Sans',Arial,sans-serif;text-align:center;">
+<p style="margin:0;font-size:11px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:#B0ACA3;">Montant à régler</p>
+<p style="margin:6px 0 0;font-family:'Syne',Arial,sans-serif;font-weight:800;font-size:28px;color:#1C1F2A;">${amount}</p>
+</td></tr>
+</table>`
+
+  return emailShell(
+    '✦ Paiement',
+    'Finalisez votre<br>paiement',
+    `${agency} vous remercie — dernière étape pour démarrer.`,
+    body,
+    url,
+    '✦ Procéder au paiement',
+    'Paiement sécurisé via Stripe',
+  )
+}
+
 /** Email agence : client a terminé son onboarding. */
 export function buildAgencyCompletedEmail(params: {
   clientName: string
