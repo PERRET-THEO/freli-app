@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { supabase } from '../lib/supabase'
+import { formatRelative } from '../lib/formatRelative'
 import { Badge, Button, Card } from '../components/ui'
 
 type ProjectStatus = 'pending' | 'in_progress' | 'completed'
@@ -34,9 +35,16 @@ type ProjectCardData = {
   token: string
   createdAt: string
   lastReminderSentAt: string | null
+  lastReminderSource: 'auto' | 'manual' | null
   completedCount: number
   totalCount: number
   progress: number
+}
+
+type ReminderLogRow = {
+  project_id: string
+  source: 'auto' | 'manual'
+  sent_at: string
 }
 
 const AVATAR_PALETTE = [
@@ -61,23 +69,6 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-function formatRelative(iso: string | null | undefined, now: number): string {
-  if (!iso) return ''
-  const diff = now - new Date(iso).getTime()
-  if (diff < 0) return "à l'instant"
-  const mins = Math.floor(diff / 60_000)
-  if (mins < 1) return "à l'instant"
-  if (mins < 60) return `il y a ${mins} min`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `il y a ${hours} h`
-  const days = Math.floor(hours / 24)
-  if (days === 1) return 'hier'
-  if (days < 7) return `il y a ${days} j`
-  const weeks = Math.floor(days / 7)
-  if (weeks < 5) return `il y a ${weeks} sem`
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
-}
-
 const filterLabels: Record<StatusFilter, string> = {
   all: 'Tous',
   in_progress: 'En cours',
@@ -89,6 +80,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState<string | null>(null)
   const [projects, setProjects] = useState<ProjectCardData[]>([])
+  const [autoRemindersThisMonth, setAutoRemindersThisMonth] = useState(0)
   const [filter, setFilter] = useState<StatusFilter>('all')
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [deletingProject, setDeletingProject] = useState<ProjectCardData | null>(null)
@@ -151,6 +143,26 @@ export function Dashboard() {
         countsByProject.set(row.project_id, current)
       }
 
+      const { data: reminderRows } = await supabase
+        .from('project_reminder_logs')
+        .select('project_id, source, sent_at')
+        .in('project_id', projectIds)
+        .order('sent_at', { ascending: false })
+
+      const latestReminderByProject = new Map<string, 'auto' | 'manual'>()
+      const monthStart = new Date()
+      monthStart.setDate(1)
+      monthStart.setHours(0, 0, 0, 0)
+      let autoCount = 0
+      for (const row of (reminderRows ?? []) as ReminderLogRow[]) {
+        if (!latestReminderByProject.has(row.project_id)) {
+          latestReminderByProject.set(row.project_id, row.source)
+        }
+        if (row.source === 'auto' && new Date(row.sent_at) >= monthStart) {
+          autoCount += 1
+        }
+      }
+
       const mapped = rawProjects.map((project) => {
         const counts = countsByProject.get(project.id) ?? { total: 0, completed: 0 }
         const progress = counts.total ? Math.round((counts.completed / counts.total) * 100) : 0
@@ -166,6 +178,7 @@ export function Dashboard() {
           token: project.token,
           createdAt: project.created_at,
           lastReminderSentAt: project.last_reminder_sent_at,
+          lastReminderSource: latestReminderByProject.get(project.id) ?? null,
           completedCount: counts.completed,
           totalCount: counts.total,
           progress,
@@ -173,6 +186,7 @@ export function Dashboard() {
       })
 
       setProjects(mapped)
+      setAutoRemindersThisMonth(autoCount)
       setLoading(false)
     }
 
@@ -250,14 +264,13 @@ export function Dashboard() {
   const clientsThisMonth = projects.filter((project) => isThisMonth(project.createdAt)).length
 
   // Chaque onboarding complété = ~3h économisées (promesse landing)
-  // + chaque auto-relance envoyée ce mois = ~10 min économisées
-  const remindersThisMonth = projects.filter(
-    (p) => p.lastReminderSentAt && isThisMonth(p.lastReminderSentAt),
-  ).length
+  // + chaque relance AUTO envoyée ce mois = ~10 min économisées (les relances
+  // manuelles ne comptent pas dans la promesse "Freli relance pour vous").
+  const remindersThisMonth = autoRemindersThisMonth
   const hoursSavedThisMonth = completedThisMonth * 3 + Math.round((remindersThisMonth * 10) / 60)
 
   const recentAutoReminders = [...projects]
-    .filter((p) => p.lastReminderSentAt)
+    .filter((p) => p.lastReminderSentAt && p.lastReminderSource === 'auto')
     .sort(
       (a, b) =>
         new Date(b.lastReminderSentAt as string).getTime() -
@@ -497,8 +510,10 @@ export function Dashboard() {
                   reminderSentRecently && project.lastReminderSentAt
                     ? project.lastReminderSentAt
                     : project.createdAt
+                const reminderKindLabel =
+                  project.lastReminderSource === 'manual' ? 'Relance manuelle' : 'Relance auto'
                 const activityLabel = reminderSentRecently
-                  ? `Relance auto ${formatRelative(project.lastReminderSentAt, now)}`
+                  ? `${reminderKindLabel} ${formatRelative(project.lastReminderSentAt, now)}`
                   : `Créé ${formatRelative(project.createdAt, now)}`
 
                 return (

@@ -4,6 +4,7 @@ import { DashboardLayout } from '../components/DashboardLayout'
 import { Badge, Button, Card, Input } from '../components/ui'
 import { supabase } from '../lib/supabase'
 import { pdfjs, setupPdfWorker } from '../lib/pdfWorker'
+import { ChecklistTemplatesManager } from '../components/checklist/ChecklistTemplatesManager'
 
 let pdfOpenLockUntil = 0
 
@@ -253,6 +254,7 @@ export function Templates() {
   const [loading, setLoading] = useState(false)
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<'contracts' | 'checklists'>('contracts')
 
   const closeModal = () => {
     setShowModal(false)
@@ -376,10 +378,31 @@ export function Templates() {
 
   return (
     <DashboardLayout
-      title="Mes contrats"
-      subtitle="Gérez vos PDF de contrats à faire signer par vos clients"
+      title="Modèles & signature"
+      subtitle="Gérez vos contrats à signer et vos modèles de checklist réutilisables"
       maxWidth="5xl"
     >
+        <div className="mb-6 flex flex-wrap items-center gap-2 border-b border-[var(--border)]">
+          <button
+            type="button"
+            onClick={() => setTab('contracts')}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-body font-medium transition ${tab === 'contracts' ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--ink-muted)] hover:text-[var(--ink)]'}`}
+          >
+            Contrats
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('checklists')}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-body font-medium transition ${tab === 'checklists' ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--ink-muted)] hover:text-[var(--ink)]'}`}
+          >
+            Modèles de checklist
+          </button>
+        </div>
+
+        {tab === 'checklists' ? <ChecklistTemplatesManager /> : null}
+
+        {tab === 'contracts' ? (
+        <>
         <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
           <Button onClick={() => setShowModal(true)}>Ajouter un contrat</Button>
         </div>
@@ -451,6 +474,8 @@ export function Templates() {
             ))}
           </div>
         )}
+        </>
+        ) : null}
 
       {showModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/40 px-4 py-6">

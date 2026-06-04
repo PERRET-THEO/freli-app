@@ -3,18 +3,25 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 serve(async (req) => {
   try {
-    let body: Record<string, unknown> = {}
-    try {
-      body = await req.json()
-    } catch {
-      body = {}
+    // Le batch n'est appelé que par le cron : on exige un secret partagé.
+    if (!cronSecret) {
+      return new Response(JSON.stringify({ error: 'CRON_SECRET non configuré' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      })
     }
-    console.log('Function called with:', JSON.stringify(body))
+    if (req.headers.get('x-cron-secret') !== cronSecret) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
 
     const thresholdDate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
 
@@ -29,16 +36,44 @@ serve(async (req) => {
       throw new Error(error.message)
     }
 
-    const results: unknown[] = []
-    for (const project of projects ?? []) {
-      const invokeResult = await supabase.functions.invoke('send-project-invite', {
-        body: { projectId: project.id, reminder: true },
-      })
-      results.push({ projectId: project.id, ...invokeResult })
-    }
-    console.log('Resend response:', JSON.stringify(results))
+    let sent = 0
+    let skipped = 0
+    let failed = 0
 
-    return new Response(JSON.stringify({ success: true, count: projects?.length ?? 0 }), {
+    for (const project of projects ?? []) {
+      // Ne pas relancer si la checklist est déjà entièrement complétée.
+      const { count: pendingCount } = await supabase
+        .from('checklist_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', project.id)
+        .eq('completed', false)
+
+      if ((pendingCount ?? 0) === 0) {
+        skipped += 1
+        continue
+      }
+
+      try {
+        const invokeResult = await supabase.functions.invoke('send-project-invite', {
+          body: { projectId: project.id, reminder: true, source: 'auto' },
+        })
+        const payload = invokeResult.data as { error?: string; success?: boolean } | null
+        if (invokeResult.error || payload?.error || !payload?.success) {
+          console.error('Reminder failed for', project.id, invokeResult.error?.message ?? payload?.error)
+          failed += 1
+        } else {
+          sent += 1
+        }
+      } catch (invokeError) {
+        console.error('Reminder failed for', project.id, (invokeError as Error).message)
+        failed += 1
+      }
+    }
+
+    const summary = { success: true, candidates: projects?.length ?? 0, sent, skipped, failed }
+    console.log('Batch summary:', JSON.stringify(summary))
+
+    return new Response(JSON.stringify(summary), {
       headers: { 'Content-Type': 'application/json' },
     })
   } catch (error) {

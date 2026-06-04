@@ -1,0 +1,33 @@
+name: Relances automatiques
+
+# Relance automatiquement les clients dont l'onboarding est en attente (> 48h).
+# Aucune action de l'agence requise : ce cron déclenche send-reminders-batch chaque jour.
+
+on:
+  schedule:
+    # 08:00 UTC ≈ 09h Paris (hiver) / 10h Paris (été)
+    - cron: '0 8 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déclencher le batch de relances
+        run: |
+          HTTP_CODE=$(curl -s -o /tmp/body.txt -w "%{http_code}" \
+            -X POST "${SUPABASE_PROJECT_URL}/functions/v1/send-reminders-batch" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "x-cron-secret: ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "Réponse ($HTTP_CODE):"
+          cat /tmp/body.txt
+          if [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Echec du batch de relances (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

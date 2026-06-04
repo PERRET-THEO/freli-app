@@ -6,53 +6,12 @@ import { sendProjectInviteEmail } from '../lib/resend'
 import { supabase } from '../lib/supabase'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { Button, Card, Input } from '../components/ui'
-
-type ChecklistItemType = 'text' | 'file' | 'signature'
-
-type DraftChecklistItem = {
-  id: string
-  label: string
-  type: ChecklistItemType
-}
-
-type ChecklistTemplateKey = 'website' | 'mobile' | 'branding'
-
-const baseChecklist: DraftChecklistItem[] = [
-  { id: crypto.randomUUID(), label: 'Formulaire de brief rempli', type: 'text' },
-  { id: crypto.randomUUID(), label: 'Logo & charte graphique', type: 'file' },
-  { id: crypto.randomUUID(), label: 'Contrat signé', type: 'signature' },
-  { id: crypto.randomUUID(), label: 'Accès hébergeur', type: 'text' },
-  { id: crypto.randomUUID(), label: 'Brief détaillé', type: 'text' },
-]
-
-const templateMap: Record<ChecklistTemplateKey, Omit<DraftChecklistItem, 'id'>[]> = {
-  website: [
-    { label: 'Brief', type: 'text' },
-    { label: 'Logo', type: 'file' },
-    { label: 'Accès hébergeur', type: 'text' },
-    { label: 'Contrat', type: 'signature' },
-    { label: 'Contenu pages', type: 'text' },
-  ],
-  mobile: [
-    { label: 'Brief technique', type: 'text' },
-    { label: 'Charte UI', type: 'file' },
-    { label: 'Comptes stores', type: 'text' },
-    { label: 'Contrat', type: 'signature' },
-    { label: 'Spécifications', type: 'text' },
-  ],
-  branding: [
-    { label: 'Brief créatif', type: 'text' },
-    { label: 'Références visuelles', type: 'file' },
-    { label: 'Contrat', type: 'signature' },
-    { label: 'Formats souhaités', type: 'text' },
-  ],
-}
-
-const typeLabel: Record<ChecklistItemType, string> = {
-  text: 'Texte',
-  file: 'Fichier',
-  signature: 'Signature',
-}
+import { ChecklistBuilder } from '../components/checklist/ChecklistBuilder'
+import { validateChecklist, type DraftChecklistItem } from '../lib/checklist'
+import {
+  listAgencyChecklistTemplates,
+  type AgencyChecklistTemplate,
+} from '../lib/checklistTemplates'
 
 const INDUSTRIES = [
   'Web & Digital', 'E-commerce', 'Immobilier', 'Industrie', 'Santé',
@@ -90,15 +49,14 @@ export function NewProject() {
   const [companySize, setCompanySize] = useState('')
   const [notes, setNotes] = useState('')
 
-  const [items, setItems] = useState<DraftChecklistItem[]>(baseChecklist)
-  const [selectedTemplate, setSelectedTemplate] = useState<ChecklistTemplateKey | ''>('')
-  const [newItemLabel, setNewItemLabel] = useState('')
+  const [items, setItems] = useState<DraftChecklistItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [generatedToken, setGeneratedToken] = useState<string | null>(null)
   const [copySuccess, setCopySuccess] = useState(false)
   const [contractTemplates, setContractTemplates] = useState<{ id: string; name: string }[]>([])
-  const [itemTemplates, setItemTemplates] = useState<Record<string, string>>({})
+  const [agencyId, setAgencyId] = useState<string | null>(null)
+  const [agencyTemplates, setAgencyTemplates] = useState<AgencyChecklistTemplate[]>([])
   const [projectPrice, setProjectPrice] = useState('')
   const [prefillClientId, setPrefillClientId] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -110,18 +68,24 @@ export function NewProject() {
     [generatedToken],
   )
 
+  const refreshAgencyTemplates = async (id: string) => {
+    setAgencyTemplates(await listAgencyChecklistTemplates(id))
+  }
+
   useEffect(() => {
     const load = async () => {
       const { data: userData } = await supabase.auth.getUser()
       if (!userData.user) return
       const agency = await getOrCreateAgency(userData.user.id)
       if (!agency?.id) return
+      setAgencyId(agency.id)
       const { data } = await supabase
         .from('contract_templates')
         .select('id, name')
         .eq('agency_id', agency.id)
         .order('created_at', { ascending: false })
       setContractTemplates((data ?? []) as { id: string; name: string }[])
+      await refreshAgencyTemplates(agency.id)
     }
     load()
   }, [])
@@ -172,22 +136,6 @@ export function NewProject() {
     loadClient()
   }, [clientIdParam])
 
-  const addItem = () => {
-    const label = newItemLabel.trim()
-    if (!label) return
-    setItems((current) => [...current, { id: crypto.randomUUID(), label, type: 'text' }])
-    setNewItemLabel('')
-  }
-
-  const removeItem = (id: string) => {
-    setItems((current) => current.filter((item) => item.id !== id))
-    setItemTemplates((prev) => {
-      const next = { ...prev }
-      delete next[id]
-      return next
-    })
-  }
-
   const handleStepOneSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError(null)
@@ -199,8 +147,9 @@ export function NewProject() {
   }
 
   const handleCreateProject = async () => {
-    if (!items.length) {
-      setError('Ajoute au moins un item de checklist.')
+    const validationError = validateChecklist(items)
+    if (validationError) {
+      setError(validationError)
       return
     }
 
@@ -220,7 +169,6 @@ export function NewProject() {
         throw new Error('Impossible de créer automatiquement votre agence.')
       }
       const agencyId = agency.id
-      const agencyName = agency.name
 
       const fullName = `${firstName.trim()} ${lastName.trim()}`
       const email = clientEmail.trim()
@@ -329,14 +277,14 @@ export function NewProject() {
 
       const checklistPayload = items.map((item, index) => ({
         project_id: project.id,
-        label: item.label,
+        label: item.label.trim(),
         type: item.type,
         required: true,
         order_index: index,
         completed: false,
         value:
-          item.type === 'signature' && itemTemplates[item.id]
-            ? JSON.stringify({ template_id: itemTemplates[item.id], status: 'pending' })
+          item.type === 'signature' && item.contractTemplateId
+            ? JSON.stringify({ template_id: item.contractTemplateId, status: 'pending' })
             : null,
       }))
 
@@ -348,13 +296,7 @@ export function NewProject() {
         throw new Error(checklistError.message)
       }
 
-      await sendProjectInviteEmail({
-        projectId: project.id,
-        token: project.token,
-        clientName: fullName,
-        clientEmail: email,
-        agencyName,
-      })
+      await sendProjectInviteEmail({ projectId: project.id })
 
       setGeneratedToken(project.token)
     } catch (submissionError) {
@@ -373,22 +315,6 @@ export function NewProject() {
     await navigator.clipboard.writeText(onboardingLink)
     setCopySuccess(true)
     window.setTimeout(() => setCopySuccess(false), 1800)
-  }
-
-  const applyTemplate = (templateKey: ChecklistTemplateKey) => {
-    const templateItems = templateMap[templateKey].map((item) => ({
-      ...item,
-      id: crypto.randomUUID(),
-    }))
-    setSelectedTemplate(templateKey)
-    setItems(templateItems)
-    setItemTemplates({})
-  }
-
-  const useEmptyTemplate = () => {
-    setSelectedTemplate('')
-    setItems([])
-    setItemTemplates({})
   }
 
   const selectCls =
@@ -529,61 +455,17 @@ export function NewProject() {
                 />
               </div>
 
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <select
-                  className={selectCls}
-                  value={selectedTemplate}
-                  onChange={(event) => {
-                    const value = event.target.value as ChecklistTemplateKey
-                    if (!value) return
-                    applyTemplate(value)
+              <div className="mt-4">
+                <ChecklistBuilder
+                  items={items}
+                  onChange={setItems}
+                  contractTemplates={contractTemplates}
+                  agencyTemplates={agencyTemplates}
+                  agencyId={agencyId}
+                  onTemplatesChanged={() => {
+                    if (agencyId) refreshAgencyTemplates(agencyId)
                   }}
-                >
-                  <option value="">Partir d&apos;un template</option>
-                  <option value="website">Site web</option>
-                  <option value="mobile">Application mobile</option>
-                  <option value="branding">Identité visuelle</option>
-                </select>
-                <Button variant="secondary" onClick={useEmptyTemplate}>Template vide</Button>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {items.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3">
-                    <div className="flex-1">
-                      <p className="text-sm font-body text-[var(--ink)]">{item.label}</p>
-                      <p className="text-xs font-body text-[var(--ink-muted)]">Type: {typeLabel[item.type]}</p>
-                      {item.type === 'signature' && (
-                        <div className="mt-2">
-                          <p className="text-xs font-body text-[var(--ink-muted)]">Contrat à faire signer :</p>
-                          <select
-                            className="mt-1 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-xs font-body text-[var(--ink)]"
-                            value={itemTemplates[item.id] ?? ''}
-                            onChange={(e) => setItemTemplates((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                          >
-                            <option value="">Aucun contrat (signature simple)</option>
-                            {contractTemplates.map((t) => (
-                              <option key={t.id} value={t.id}>{t.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeItem(item.id)}
-                      className="ml-3 h-8 w-8 shrink-0 rounded-full border border-[var(--border)] text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                      aria-label="Supprimer cet item"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <Input placeholder="Nouvel item (type texte)" value={newItemLabel} onChange={(event) => setNewItemLabel(event.target.value)} />
-                <Button variant="secondary" onClick={addItem}>Ajouter un item</Button>
+                />
               </div>
 
               {error ? <p className="mt-3 text-sm font-body text-[var(--amber)]">{error}</p> : null}

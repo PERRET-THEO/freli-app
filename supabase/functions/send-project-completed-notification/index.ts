@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'npm:resend'
+import { getResendFrom, assertResendOk } from '../_shared/email.ts'
+import { buildAgencyCompletedEmail } from '../_shared/clientEmailHtml.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,7 +13,7 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const resendApiKey = Deno.env.get('RESEND_API_KEY') ?? ''
-const appUrl = Deno.env.get('APP_URL') ?? 'http://localhost:5173'
+const appUrl = (Deno.env.get('APP_URL') ?? 'http://localhost:5173').replace(/\/$/, '')
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 const resend = new Resend(resendApiKey)
@@ -22,9 +24,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log('=== send-project-completed-notification START ===')
     const rawBody = await req.text()
-    console.log('Raw body length:', rawBody.length)
 
     if (!rawBody || rawBody.trim() === '') {
       return new Response(JSON.stringify({ error: 'Body vide' }), {
@@ -34,7 +34,6 @@ serve(async (req) => {
     }
 
     const body = JSON.parse(rawBody) as { projectId?: string }
-    console.log('projectId:', body.projectId)
 
     if (!body.projectId) {
       return new Response(JSON.stringify({ error: 'Missing projectId' }), {
@@ -43,8 +42,7 @@ serve(async (req) => {
       })
     }
 
-    const isDev = appUrl.includes('localhost')
-    if (isDev) {
+    if (appUrl.includes('localhost')) {
       console.log('MODE DEV — Email de notification simulé')
       return new Response(
         JSON.stringify({ success: true, message: 'Email simulé en développement' }),
@@ -58,7 +56,6 @@ serve(async (req) => {
       .eq('id', body.projectId)
       .single()
     if (projectError || !projectData) throw new Error('Project not found')
-    console.log('Project found:', projectData.client_name)
 
     const { data: agencyData, error: agencyError } = await supabase
       .from('agencies')
@@ -71,7 +68,6 @@ serve(async (req) => {
       agencyData.user_id,
     )
     if (userError || !userData.user?.email) throw new Error('Agency user email not found')
-    console.log('Sending notification to:', userData.user.email)
 
     const { data: itemsData } = await supabase
       .from('checklist_items')
@@ -79,28 +75,32 @@ serve(async (req) => {
       .eq('project_id', projectData.id)
       .order('order_index', { ascending: true })
 
-    const listHtml = (itemsData ?? [])
-      .map((item) => `<li>${item.completed ? '✅' : '⬜'} ${item.label}</li>`)
+    const checklistHtml = (itemsData ?? [])
+      .map((item) => {
+        const icon = item.completed ? '✅' : '⬜'
+        const label = String(item.label)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+        return `<li>${icon} ${label}</li>`
+      })
       .join('')
 
+    const projectUrl = `${appUrl}/dashboard/project/${projectData.id}`
+    const html = buildAgencyCompletedEmail({
+      clientName: projectData.client_name,
+      checklistHtml,
+      projectUrl,
+    })
+
     const result = await resend.emails.send({
-      from: 'Freli <onboarding@resend.dev>',
+      from: getResendFrom(),
       to: userData.user.email,
       subject: `✅ ${projectData.client_name} a complété son onboarding`,
-      html: `
-        <div style="font-family: DM Sans, Arial, sans-serif; background:#F5F4F0; padding:32px;">
-          <div style="max-width:620px; margin:0 auto; background:#FDFCFA; border-radius:16px; padding:28px;">
-            <h2 style="font-family: Syne, Arial, sans-serif; margin:0 0 12px;">Onboarding complété</h2>
-            <p>${projectData.client_name} a terminé son onboarding.</p>
-            <ul>${listHtml}</ul>
-            <a href="${appUrl}/dashboard/project/${projectData.id}" style="display:inline-block; margin-top:12px; padding:12px 20px; background:#5B6EF5; color:#fff; border-radius:8px; text-decoration:none;">
-              Voir le projet
-            </a>
-          </div>
-        </div>
-      `,
+      html,
     })
     console.log('Resend response:', JSON.stringify(result))
+    assertResendOk(result)
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { Badge, Button, Card } from '../components/ui'
 import { sendProjectReminderEmail } from '../lib/resend'
+import { formatRelative } from '../lib/formatRelative'
 import { supabase } from '../lib/supabase'
 
 type ProjectRecord = {
@@ -12,6 +13,7 @@ type ProjectRecord = {
   status: 'pending' | 'in_progress' | 'completed'
   token: string
   created_at: string
+  last_reminder_sent_at: string | null
   agencies?: { name: string | null } | { name: string | null }[] | null
 }
 
@@ -24,6 +26,12 @@ type ChecklistItemRecord = {
   order_index: number
 }
 
+type ReminderLog = {
+  id: string
+  source: 'auto' | 'manual'
+  sent_at: string
+}
+
 export function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -31,49 +39,59 @@ export function ProjectDetail() {
   const [error, setError] = useState<string | null>(null)
   const [project, setProject] = useState<ProjectRecord | null>(null)
   const [items, setItems] = useState<ChecklistItemRecord[]>([])
-  const [reminderSent, setReminderSent] = useState(false)
+  const [reminderLogs, setReminderLogs] = useState<ReminderLog[]>([])
+  const [sendingReminder, setSendingReminder] = useState(false)
+  const [reminderFeedback, setReminderFeedback] = useState<string | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
-  useEffect(() => {
-    const loadProject = async () => {
-      if (!id) {
-        setError('Projet introuvable.')
-        setLoading(false)
-        return
-      }
-
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('id, client_name, client_email, status, token, created_at, agencies(name)')
-        .eq('id', id)
-        .maybeSingle()
-
-      if (projectError || !projectData) {
-        setError('Projet introuvable.')
-        setLoading(false)
-        return
-      }
-
-      const { data: checklistData, error: checklistError } = await supabase
-        .from('checklist_items')
-        .select('id, label, type, completed, value, order_index')
-        .eq('project_id', projectData.id)
-        .order('order_index', { ascending: true })
-
-      if (checklistError) {
-        setError('Impossible de charger la checklist.')
-        setLoading(false)
-        return
-      }
-
-      setProject(projectData as ProjectRecord)
-      setItems((checklistData ?? []) as ChecklistItemRecord[])
+  const loadProject = useCallback(async () => {
+    if (!id) {
+      setError('Projet introuvable.')
       setLoading(false)
+      return
     }
 
-    loadProject()
+    const { data: projectData, error: projectError } = await supabase
+      .from('projects')
+      .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, agencies(name)')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (projectError || !projectData) {
+      setError('Projet introuvable.')
+      setLoading(false)
+      return
+    }
+
+    const { data: checklistData, error: checklistError } = await supabase
+      .from('checklist_items')
+      .select('id, label, type, completed, value, order_index')
+      .eq('project_id', projectData.id)
+      .order('order_index', { ascending: true })
+
+    if (checklistError) {
+      setError('Impossible de charger la checklist.')
+      setLoading(false)
+      return
+    }
+
+    const { data: logsData } = await supabase
+      .from('project_reminder_logs')
+      .select('id, source, sent_at')
+      .eq('project_id', projectData.id)
+      .order('sent_at', { ascending: false })
+      .limit(10)
+
+    setProject(projectData as ProjectRecord)
+    setItems((checklistData ?? []) as ChecklistItemRecord[])
+    setReminderLogs((logsData ?? []) as ReminderLog[])
+    setLoading(false)
   }, [id])
+
+  useEffect(() => {
+    loadProject()
+  }, [loadProject])
 
   const completedCount = items.filter((item) => item.completed).length
   const totalCount = items.length
@@ -94,26 +112,25 @@ export function ProjectDetail() {
     return data.publicUrl
   }
 
-  const handleSendReminder = () => {
-    if (!project) return
-    const agencyRelation = project.agencies
-    const agencyName = Array.isArray(agencyRelation)
-      ? (agencyRelation[0]?.name ?? 'Mon Agence')
-      : (agencyRelation?.name ?? 'Mon Agence')
+  const allCompleted = totalCount > 0 && completedCount === totalCount
+  const reminderDisabled = sendingReminder || project?.status === 'completed' || allCompleted
 
-    sendProjectReminderEmail({
-      projectId: project.id,
-      token: project.token,
-      clientEmail: project.client_email,
-      clientName: project.client_name,
-      agencyName,
-    })
-      .then(() => setReminderSent(true))
-      .catch((reason: unknown) => {
-        const exactError =
-          reason instanceof Error ? reason.message : "Impossible d'envoyer la relance."
-        setError(exactError)
-      })
+  const handleSendReminder = async () => {
+    if (!project) return
+    setSendingReminder(true)
+    setReminderFeedback(null)
+    setError(null)
+    try {
+      await sendProjectReminderEmail({ projectId: project.id })
+      setReminderFeedback('Relance envoyée au client.')
+      await loadProject()
+    } catch (reason: unknown) {
+      const exactError =
+        reason instanceof Error ? reason.message : "Impossible d'envoyer la relance."
+      setError(exactError)
+    } finally {
+      setSendingReminder(false)
+    }
   }
 
   const handleDelete = async () => {
@@ -161,16 +178,45 @@ export function ProjectDetail() {
                 Progression globale : {completedCount}/{totalCount} étapes
               </p>
 
-              <Button className="mt-6" onClick={handleSendReminder}>
-                Envoyer une relance
-              </Button>
-              {reminderSent ? (
-                <p className="mt-2 text-sm font-body text-[var(--mint)]">
-                  Relance envoyée au client.
+              {project.last_reminder_sent_at ? (
+                <p className="mt-6 text-sm font-body text-[var(--ink-soft)]">
+                  Dernière relance {formatRelative(project.last_reminder_sent_at)}
                 </p>
+              ) : (
+                <p className="mt-6 text-sm font-body text-[var(--ink-muted)]">
+                  Aucune relance envoyée pour l'instant.
+                </p>
+              )}
+
+              <Button className="mt-3" onClick={handleSendReminder} disabled={reminderDisabled}>
+                {sendingReminder ? 'Envoi…' : 'Envoyer une relance'}
+              </Button>
+              {allCompleted ? (
+                <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
+                  Checklist complétée — plus besoin de relancer.
+                </p>
+              ) : null}
+              {reminderFeedback ? (
+                <p className="mt-2 text-sm font-body text-[var(--mint)]">{reminderFeedback}</p>
               ) : null}
               {error ? (
                 <p className="mt-2 text-sm font-body text-[var(--amber)]">{error}</p>
+              ) : null}
+
+              {reminderLogs.length > 0 ? (
+                <div className="mt-5 border-t border-[var(--border)] pt-4">
+                  <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Historique des relances</p>
+                  <ul className="mt-2 space-y-1.5">
+                    {reminderLogs.map((log) => (
+                      <li key={log.id} className="flex items-center justify-between gap-2 text-xs font-body text-[var(--ink-muted)]">
+                        <span>{formatRelative(log.sent_at)}</span>
+                        <span className={`rounded-full px-2 py-0.5 ${log.source === 'auto' ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'bg-[var(--surface-warm)] text-[var(--ink-soft)]'}`}>
+                          {log.source === 'auto' ? 'Auto' : 'Manuelle'}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
             </>
           ) : null}
