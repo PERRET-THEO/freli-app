@@ -4,6 +4,7 @@ import { DashboardLayout } from '../components/DashboardLayout'
 import { Badge, Button, Card } from '../components/ui'
 import { sendProjectReminderEmail } from '../lib/resend'
 import { sendPaymentLink } from '../lib/stripePayment'
+import { openStripeExpressDashboard } from '../lib/stripeConnectDashboard'
 import { getPaymentState, formatPriceEur, PAYMENT_STATE_LABELS } from '../lib/payments'
 import { formatRelative } from '../lib/formatRelative'
 import { supabase } from '../lib/supabase'
@@ -51,6 +52,7 @@ export function ProjectDetail() {
   const [sendingPayment, setSendingPayment] = useState(false)
   const [paymentFeedback, setPaymentFeedback] = useState<string | null>(null)
   const [paymentError, setPaymentError] = useState<string | null>(null)
+  const [openingStripe, setOpeningStripe] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
@@ -174,6 +176,20 @@ export function ProjectDetail() {
     setPaymentFeedback('Lien de paiement copié.')
   }
 
+  const handleOpenStripeDashboard = async () => {
+    setOpeningStripe(true)
+    setPaymentError(null)
+    try {
+      await openStripeExpressDashboard()
+    } catch (reason: unknown) {
+      setPaymentError(
+        reason instanceof Error ? reason.message : 'Impossible d\'ouvrir l\'espace Stripe',
+      )
+    } finally {
+      setOpeningStripe(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!id) return
     setDeleteLoading(true)
@@ -265,7 +281,7 @@ export function ProjectDetail() {
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Paiement</p>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-body ${paymentState === 'paid' ? 'bg-[var(--mint-soft)] text-[var(--mint)]' : 'bg-[var(--surface-warm)] text-[var(--ink-soft)]'}`}>
-                      {PAYMENT_STATE_LABELS[paymentState]}
+                      {paymentState === 'paid' ? 'Payé par le client' : PAYMENT_STATE_LABELS[paymentState]}
                     </span>
                   </div>
                   <p className="mt-2 font-display text-2xl font-bold text-[var(--ink)]">
@@ -295,6 +311,21 @@ export function ProjectDetail() {
                     <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
                       Le lien de paiement sera disponible une fois l'onboarding terminé.
                     </p>
+                  ) : paymentState === 'paid' ? (
+                    <>
+                      <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
+                        Le virement vers votre compte bancaire est géré automatiquement par Stripe.
+                        Consultez votre espace Stripe pour le détail.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleOpenStripeDashboard}
+                        disabled={openingStripe}
+                        className="mt-2 block text-xs font-body text-[var(--accent)] underline disabled:opacity-50"
+                      >
+                        {openingStripe ? 'Ouverture…' : 'Voir dans Stripe →'}
+                      </button>
+                    </>
                   ) : null}
 
                   {paymentFeedback ? (

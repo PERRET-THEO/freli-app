@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { Card, Input } from '../components/ui'
 import { isStripeReadyForCheckout, parseStripeConfig } from '../lib/integrations/stripe'
+import { openStripeExpressDashboard } from '../lib/stripeConnectDashboard'
 import { supabase } from '../lib/supabase'
 
 type IntegrationRow = {
@@ -175,6 +176,18 @@ export function Integrations() {
     setSaving(null)
   }
 
+  const openStripeDashboard = async () => {
+    setStripeError(null)
+    setSaving('stripe')
+    try {
+      await openStripeExpressDashboard()
+    } catch (e) {
+      setStripeError(e instanceof Error ? e.message : 'Impossible d\'ouvrir l\'espace Stripe')
+    } finally {
+      setSaving(null)
+    }
+  }
+
   const handleToggleGoogleDrive = async () => {
     if (!userId) return
     setSaving('google_drive')
@@ -302,6 +315,14 @@ export function Integrations() {
                         <li>À la fin de l'onboarding, le client reçoit automatiquement un lien de paiement par email — vous pouvez aussi le renvoyer depuis la fiche projet.</li>
                       </ol>
                     </div>
+                    <div className="rounded-[var(--radius-sm)] bg-[var(--surface-warm)] p-3">
+                      <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Où va l&apos;argent ?</p>
+                      <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs font-body text-[var(--ink-muted)]">
+                        <li>Quand le client paie, l&apos;argent arrive sur <strong>votre compte Stripe Connect</strong>.</li>
+                        <li>Stripe verse <strong>automatiquement</strong> sur votre IBAN selon son calendrier — rien à faire dans Freli.</li>
+                        <li>Le badge « Payé » dans Freli confirme le paiement client ; le virement bancaire se consulte dans Stripe.</li>
+                      </ul>
+                    </div>
                     {stripeRow && stripeCfg.stripe_connect_account_id && (
                       <p className="text-xs font-body text-[var(--ink-muted)]">
                         Compte connecté : …{stripeCfg.stripe_connect_account_id.slice(-6)}
@@ -332,14 +353,24 @@ export function Integrations() {
                         </button>
                       )}
                       {connected && (
-                        <button
-                          type="button"
-                          disabled={isSaving}
-                          onClick={disconnectStripe}
-                          className="rounded-[var(--radius-sm)] border border-[#EF4444] bg-transparent px-5 py-2.5 text-sm font-body font-medium text-[#EF4444] transition hover:bg-[#FEF2F2] disabled:opacity-50"
-                        >
-                          Déconnecter Stripe
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            disabled={isSaving}
+                            onClick={openStripeDashboard}
+                            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-5 py-2.5 text-sm font-body font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50"
+                          >
+                            {isSaving ? '...' : 'Ouvrir mon espace Stripe'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSaving}
+                            onClick={disconnectStripe}
+                            className="rounded-[var(--radius-sm)] border border-[#EF4444] bg-transparent px-5 py-2.5 text-sm font-body font-medium text-[#EF4444] transition hover:bg-[#FEF2F2] disabled:opacity-50"
+                          >
+                            Déconnecter Stripe
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>

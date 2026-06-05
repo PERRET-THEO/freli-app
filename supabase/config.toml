@@ -18,6 +18,9 @@ verify_jwt = true
 [functions.stripe-connect-status]
 verify_jwt = true
 
+[functions.stripe-connect-dashboard]
+verify_jwt = true
+
 # Invitations agence (service role) — appelé depuis le dashboard avec JWT
 [functions.invite-user]
 verify_jwt = true
