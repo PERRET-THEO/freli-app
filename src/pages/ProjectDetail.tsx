@@ -4,6 +4,7 @@ import { DashboardLayout } from '../components/DashboardLayout'
 import { Badge, Button, Card } from '../components/ui'
 import { sendProjectReminderEmail } from '../lib/resend'
 import { sendPaymentLink } from '../lib/stripePayment'
+import { syncProjectDriveFolder } from '../lib/googleDriveConnect'
 import { openStripeExpressDashboard } from '../lib/stripeConnectDashboard'
 import { getPaymentState, formatPriceEur, PAYMENT_STATE_LABELS } from '../lib/payments'
 import { formatRelative } from '../lib/formatRelative'
@@ -21,6 +22,7 @@ type ProjectRecord = {
   payment_status: string | null
   stripe_checkout_url: string | null
   last_payment_email_sent_at: string | null
+  google_drive_folder_url: string | null
   agencies?: { name: string | null } | { name: string | null }[] | null
 }
 
@@ -53,6 +55,9 @@ export function ProjectDetail() {
   const [paymentFeedback, setPaymentFeedback] = useState<string | null>(null)
   const [paymentError, setPaymentError] = useState<string | null>(null)
   const [openingStripe, setOpeningStripe] = useState(false)
+  const [syncingDrive, setSyncingDrive] = useState(false)
+  const [driveFeedback, setDriveFeedback] = useState<string | null>(null)
+  const [driveError, setDriveError] = useState<string | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
@@ -65,7 +70,7 @@ export function ProjectDetail() {
 
     const { data: projectData, error: projectError } = await supabase
       .from('projects')
-      .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, agencies(name)')
+      .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, google_drive_folder_url, agencies(name)')
       .eq('id', id)
       .maybeSingle()
 
@@ -187,6 +192,24 @@ export function ProjectDetail() {
       )
     } finally {
       setOpeningStripe(false)
+    }
+  }
+
+  const handleCreateDriveFolder = async () => {
+    if (!project) return
+    setSyncingDrive(true)
+    setDriveFeedback(null)
+    setDriveError(null)
+    try {
+      await syncProjectDriveFolder(project.id)
+      setDriveFeedback('Dossier Google Drive créé.')
+      await loadProject()
+    } catch (reason: unknown) {
+      setDriveError(
+        reason instanceof Error ? reason.message : 'Impossible de créer le dossier Drive',
+      )
+    } finally {
+      setSyncingDrive(false)
     }
   }
 
@@ -336,6 +359,44 @@ export function ProjectDetail() {
                   ) : null}
                 </div>
               ) : null}
+
+              <div className="mt-5 border-t border-[var(--border)] pt-4">
+                <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Google Drive</p>
+                {project.google_drive_folder_url ? (
+                  <>
+                    <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
+                      Créé automatiquement à la fin de l&apos;onboarding.
+                    </p>
+                    <a
+                      href={project.google_drive_folder_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-block text-sm font-body text-[var(--accent)] underline"
+                    >
+                      Ouvrir le dossier client →
+                    </a>
+                  </>
+                ) : project.status === 'completed' ? (
+                  <>
+                    <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
+                      Aucun dossier Drive pour ce projet.
+                    </p>
+                    <Button className="mt-3" onClick={handleCreateDriveFolder} disabled={syncingDrive}>
+                      {syncingDrive ? 'Création…' : 'Créer le dossier Drive'}
+                    </Button>
+                  </>
+                ) : (
+                  <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
+                    Le dossier sera créé automatiquement à la fin de l&apos;onboarding (si Google Drive est connecté).
+                  </p>
+                )}
+                {driveFeedback ? (
+                  <p className="mt-2 text-sm font-body text-[var(--mint)]">{driveFeedback}</p>
+                ) : null}
+                {driveError ? (
+                  <p className="mt-2 text-sm font-body text-[var(--amber)]">{driveError}</p>
+                ) : null}
+              </div>
             </>
           ) : null}
         </Card>

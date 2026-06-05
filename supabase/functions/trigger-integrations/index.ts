@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { ensureCheckoutSession, stripeConnectReady } from '../_shared/stripeCheckout.ts'
+import { ensureProjectDriveFolder } from '../_shared/googleDrive.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,6 +33,8 @@ type ProjectData = {
   payment_status: string | null
   stripe_checkout_url: string | null
   stripe_checkout_session_id: string | null
+  google_drive_folder_id: string | null
+  google_drive_folder_url: string | null
 }
 
 type Results = {
@@ -56,34 +59,13 @@ async function handleGoogleDrive(
   integration: Integration,
   project: ProjectData,
 ): Promise<{ folderUrl: string } | null> {
-  const accessToken = integration.access_token
-  if (!accessToken) {
-    console.warn('Google Drive access_token not set, skipping')
+  if (integration.config?.connected !== true) {
+    console.log('Google Drive not connected, skipping')
     return null
   }
-
-  const folderPrefix = String(integration.config?.folderPrefix ?? 'Clients')
-  const folderName = `${folderPrefix}/${project.client_name}`
-
-  const response = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      name: folderName,
-      mimeType: 'application/vnd.google-apps.folder',
-    }),
-  })
-
-  const folder = await response.json()
-  if (!response.ok) {
-    throw new Error(`Google Drive error: ${folder.error?.message ?? JSON.stringify(folder)}`)
-  }
-
-  console.log('Google Drive folder created:', folder.id)
-  return { folderUrl: `https://drive.google.com/drive/folders/${folder.id}` }
+  const result = await ensureProjectDriveFolder(integration, project)
+  if (!result) return null
+  return { folderUrl: result.folderUrl }
 }
 
 async function handleHubspot(
@@ -150,7 +132,7 @@ serve(async (req) => {
 
     const { data: project, error: projectError } = await supabase
       .from('projects')
-      .select('id, client_name, client_email, agency_id, token, price, payment_status, stripe_checkout_url, stripe_checkout_session_id')
+      .select('id, client_name, client_email, agency_id, token, price, payment_status, stripe_checkout_url, stripe_checkout_session_id, google_drive_folder_id, google_drive_folder_url')
       .eq('id', body.projectId)
       .single()
 
