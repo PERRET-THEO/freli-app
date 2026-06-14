@@ -23,9 +23,29 @@ export function SignIn() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate('/dashboard', { replace: true })
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        navigate('/reset-password', { replace: true })
+        return
+      }
+      if (event === 'SIGNED_IN') {
+        navigate('/dashboard', { replace: true })
+      }
     })
+
+    const searchParams = new URLSearchParams(window.location.search)
+    const hasAuthCallback =
+      searchParams.has('code') ||
+      window.location.hash.includes('access_token') ||
+      searchParams.get('type') === 'recovery'
+
+    if (!hasAuthCallback) {
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session) navigate('/dashboard', { replace: true })
+      })
+    }
+
+    return () => listener.subscription.unsubscribe()
   }, [navigate])
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
