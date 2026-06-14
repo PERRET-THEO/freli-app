@@ -73,6 +73,30 @@ function RedirectIfAuthenticated() {
   return isAuthenticated ? <Navigate to="/dashboard" replace /> : <Outlet />
 }
 
+function AppRoot() {
+  const location = useLocation()
+  const host = typeof window !== 'undefined' ? window.location.hostname : ''
+  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ''))
+  const searchParams = new URLSearchParams(location.search)
+
+  if (host === 'app.freli.fr') {
+    const isRecoveryCallback =
+      searchParams.has('code') ||
+      searchParams.has('token_hash') ||
+      searchParams.get('type') === 'recovery' ||
+      hashParams.get('type') === 'recovery' ||
+      hashParams.has('access_token')
+
+    if (isRecoveryCallback) {
+      return <Navigate to={`/reset-password${location.search}${location.hash}`} replace />
+    }
+
+    return <Navigate to={`/signin${location.search}${location.hash}`} replace />
+  }
+
+  return <LandingEntry />
+}
+
 function LandingEntry() {
   const location = useLocation()
   const hash = location.hash.replace(/^#/, '')
@@ -99,7 +123,7 @@ function LandingEntry() {
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<LandingEntry />} />
+      <Route path="/" element={<AppRoot />} />
       <Route path="/demo" element={<Demo />} />
       <Route element={<RedirectIfAuthenticated />}>
         <Route path="/signin" element={<SignIn />} />

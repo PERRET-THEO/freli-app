@@ -1,21 +1,6 @@
 {
   "redirects": [
     {
-      "source": "/",
-      "has": [
-        { "type": "host", "value": "app.freli.fr" },
-        { "type": "query", "key": "code" }
-      ],
-      "destination": "/reset-password",
-      "permanent": false
-    },
-    {
-      "source": "/",
-      "has": [{ "type": "host", "value": "app.freli.fr" }],
-      "destination": "/signin",
-      "permanent": false
-    },
-    {
       "source": "/signin",
       "has": [{ "type": "host", "value": "freli.fr" }],
       "destination": "https://app.freli.fr/signin",

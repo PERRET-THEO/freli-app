@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { establishRecoverySession } from '../lib/authRecovery'
 import { supabase } from '../lib/supabase'
 import { Button, Card, Input } from '../components/ui'
+
+type ResetPhase = 'verifying' | 'form' | 'invalid'
 
 export function ResetPassword() {
   const [password, setPassword] = useState('')
@@ -10,18 +13,29 @@ export function ResetPassword() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-  const [ready, setReady] = useState(false)
+  const [phase, setPhase] = useState<ResetPhase>('verifying')
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const ranRef = useRef(false)
 
   useEffect(() => {
+    if (ranRef.current) return
+    ranRef.current = true
+
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
-        setReady(true)
+        setPhase('form')
       }
     })
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setReady(true)
-    })
+    void (async () => {
+      const result = await establishRecoverySession()
+      if (result.ok) {
+        setPhase('form')
+        return
+      }
+      setLinkError(result.error)
+      setPhase('invalid')
+    })()
 
     return () => listener.subscription.unsubscribe()
   }, [])
@@ -71,18 +85,30 @@ export function ResetPassword() {
     )
   }
 
-  if (!ready) {
+  if (phase === 'verifying') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
         <Card className="w-full max-w-md text-center">
           <p className="text-sm font-body text-[var(--ink-muted)]">
             Vérification du lien…
           </p>
-          <Link
-            to="/forgot-password"
-            className="mt-4 block text-sm font-body text-[var(--accent)] hover:underline"
-          >
-            Renvoyer un lien de réinitialisation
+        </Card>
+      </div>
+    )
+  }
+
+  if (phase === 'invalid') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+        <Card className="w-full max-w-md text-center">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--ink)]">
+            Lien invalide
+          </h1>
+          <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
+            {linkError ?? 'Ce lien de réinitialisation ne peut pas être utilisé.'}
+          </p>
+          <Link to="/forgot-password">
+            <Button className="mt-6 w-full">Renvoyer un lien</Button>
           </Link>
         </Card>
       </div>
