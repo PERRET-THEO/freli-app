@@ -1,6 +1,6 @@
-import { Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { Button, Card } from '../components/ui'
+import { appSignInUrl } from '../lib/appUrl'
 
 type TimelineStep = {
   step: string
@@ -139,9 +139,9 @@ export function Landing() {
             <a href="https://calendly.com/freli/demo" target="_blank" rel="noreferrer">
               <Button>Demander un accès</Button>
             </a>
-            <Link to="/signin">
+            <a href={appSignInUrl()}>
               <Button variant="secondary">Se connecter →</Button>
-            </Link>
+            </a>
           </div>
           <p className="mx-auto mt-4 max-w-3xl text-[13px] font-body text-[rgba(253,252,250,0.5)]">
             ✓ Accès sur invitation &nbsp;&nbsp; ✓ Mise en route en 5 min &nbsp;&nbsp; ✓ Aucune formation
@@ -695,7 +695,7 @@ export function Landing() {
             <a href="https://calendly.com/freli/demo" target="_blank" rel="noreferrer">
               Réserver une démo
             </a>
-            <Link to="/signin">Se connecter</Link>
+            <a href={appSignInUrl()}>Se connecter</a>
           </div>
           <p className="text-sm font-body text-[var(--ink-muted)]">© 2025 Freli</p>
         </div>

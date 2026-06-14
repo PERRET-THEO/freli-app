@@ -1,12 +1,9 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { getAppOrigin } from '../lib/appUrl'
 import { supabase } from '../lib/supabase'
 import { Button, Card, Input } from '../components/ui'
-
-const APP_URL = import.meta.env.VITE_SUPABASE_URL
-  ? window.location.origin
-  : 'http://localhost:5173'
 
 export function ForgotPassword() {
   const [email, setEmail] = useState('')
@@ -20,7 +17,7 @@ export function ForgotPassword() {
     setLoading(true)
     try {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${APP_URL}/reset-password`,
+        redirectTo: `${getAppOrigin()}/reset-password`,
       })
       if (resetError) {
         setError(resetError.message)

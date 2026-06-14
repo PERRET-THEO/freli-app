@@ -1,3 +1,83 @@
 {
+  "redirects": [
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "app.freli.fr" }],
+      "destination": "/signin",
+      "permanent": false
+    },
+    {
+      "source": "/signin",
+      "has": [{ "type": "host", "value": "freli.fr" }],
+      "destination": "https://app.freli.fr/signin",
+      "permanent": false
+    },
+    {
+      "source": "/signin",
+      "has": [{ "type": "host", "value": "www.freli.fr" }],
+      "destination": "https://app.freli.fr/signin",
+      "permanent": false
+    },
+    {
+      "source": "/signup",
+      "has": [{ "type": "host", "value": "freli.fr" }],
+      "destination": "https://app.freli.fr/signup",
+      "permanent": false
+    },
+    {
+      "source": "/signup",
+      "has": [{ "type": "host", "value": "www.freli.fr" }],
+      "destination": "https://app.freli.fr/signup",
+      "permanent": false
+    },
+    {
+      "source": "/forgot-password",
+      "has": [{ "type": "host", "value": "freli.fr" }],
+      "destination": "https://app.freli.fr/forgot-password",
+      "permanent": false
+    },
+    {
+      "source": "/forgot-password",
+      "has": [{ "type": "host", "value": "www.freli.fr" }],
+      "destination": "https://app.freli.fr/forgot-password",
+      "permanent": false
+    },
+    {
+      "source": "/reset-password",
+      "has": [{ "type": "host", "value": "freli.fr" }],
+      "destination": "https://app.freli.fr/reset-password",
+      "permanent": false
+    },
+    {
+      "source": "/reset-password",
+      "has": [{ "type": "host", "value": "www.freli.fr" }],
+      "destination": "https://app.freli.fr/reset-password",
+      "permanent": false
+    },
+    {
+      "source": "/confirm",
+      "has": [{ "type": "host", "value": "freli.fr" }],
+      "destination": "https://app.freli.fr/confirm",
+      "permanent": false
+    },
+    {
+      "source": "/confirm",
+      "has": [{ "type": "host", "value": "www.freli.fr" }],
+      "destination": "https://app.freli.fr/confirm",
+      "permanent": false
+    },
+    {
+      "source": "/dashboard/:path*",
+      "has": [{ "type": "host", "value": "freli.fr" }],
+      "destination": "https://app.freli.fr/dashboard/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/dashboard/:path*",
+      "has": [{ "type": "host", "value": "www.freli.fr" }],
+      "destination": "https://app.freli.fr/dashboard/:path*",
+      "permanent": false
+    }
+  ],
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }

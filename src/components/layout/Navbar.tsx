@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { appSignInUrl } from '../../lib/appUrl'
 import { Button } from '../ui'
 
 export function Navbar() {
@@ -31,11 +32,11 @@ export function Navbar() {
           </a>
         </div>
 
-        <Link to="/signin">
+        <a href={appSignInUrl()}>
           <Button variant="secondary" className="!text-sm">
             Connexion
           </Button>
-        </Link>
+        </a>
       </nav>
     </header>
   )
