@@ -45,3 +45,7 @@ verify_jwt = true
 # Envoi email lien de paiement au client (service role / interne)
 [functions.send-payment-link-email]
 verify_jwt = false
+
+# Mot de passe oublié — formulaire public (Resend + generateLink)
+[functions.send-password-reset-email]
+verify_jwt = false

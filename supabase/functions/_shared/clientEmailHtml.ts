@@ -219,3 +219,25 @@ ${params.checklistHtml}
     'Notification automatique Freli',
   )
 }
+
+export function buildPasswordResetEmail(params: { resetUrl: string }): string {
+  const url = escapeHtml(params.resetUrl)
+
+  const body = `
+<p style="font-family:'DM Sans',Arial,sans-serif;font-size:15px;color:#4A4D5C;line-height:1.85;margin:0 0 24px;">
+Vous avez demandé à réinitialiser votre mot de passe Freli. Cliquez sur le bouton ci-dessous pour en choisir un nouveau.
+</p>
+<p style="font-family:'DM Sans',Arial,sans-serif;font-size:13px;color:#8A8D9C;line-height:1.7;margin:0;">
+Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.
+</p>`
+
+  return emailShell(
+    '✦ Sécurité',
+    'Réinitialiser<br>votre mot de passe',
+    'Lien valide pendant une durée limitée.',
+    body,
+    url,
+    '✦ Choisir un nouveau mot de passe',
+    'Email automatique Freli — ne pas répondre',
+  )
+}

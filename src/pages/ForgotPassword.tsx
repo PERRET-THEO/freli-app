@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { getAppOrigin } from '../lib/appUrl'
 import { supabase } from '../lib/supabase'
 import { Button, Card, Input } from '../components/ui'
 
@@ -16,11 +15,15 @@ export function ForgotPassword() {
     setError(null)
     setLoading(true)
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${getAppOrigin()}/reset-password`,
+      const { data, error: invokeError } = await supabase.functions.invoke('send-password-reset-email', {
+        body: { email: email.trim().toLowerCase() },
       })
-      if (resetError) {
-        setError(resetError.message)
+      if (invokeError) {
+        setError('Impossible d’envoyer l’email de réinitialisation.')
+        return
+      }
+      if (data && typeof data === 'object' && 'error' in data && data.error) {
+        setError(String(data.error))
         return
       }
       setSent(true)
