@@ -8,6 +8,8 @@ import { Dashboard } from './pages/Dashboard'
 import { Demo } from './pages/Demo'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { Landing } from './pages/Landing'
+import { PrivacyPolicy } from './pages/PrivacyPolicy'
+import { TermsOfUse } from './pages/TermsOfUse'
 import { NewProject } from './pages/NewProject'
 import { NotFound } from './pages/NotFound'
 import { ProjectDetail } from './pages/ProjectDetail'
@@ -118,6 +120,8 @@ function App() {
     <Routes>
       <Route path="/" element={<AppRoot />} />
       <Route path="/demo" element={<Demo />} />
+      <Route path="/confidentialite" element={<PrivacyPolicy />} />
+      <Route path="/conditions-utilisation" element={<TermsOfUse />} />
       <Route element={<RedirectIfAuthenticated />}>
         <Route path="/signin" element={<SignIn />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />

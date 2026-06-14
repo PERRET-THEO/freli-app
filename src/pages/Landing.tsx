@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { Button, Card } from '../components/ui'
 import { appSignInUrl } from '../lib/appUrl'
@@ -680,24 +681,34 @@ export function Landing() {
       </main>
 
       <footer className="border-t border-[var(--ink-soft)]">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-[var(--accent)] rounded-xl flex items-center justify-center font-display font-extrabold text-[var(--white)] text-sm tracking-tight">
-              Fr
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-[var(--accent)] rounded-xl flex items-center justify-center font-display font-extrabold text-[var(--white)] text-sm tracking-tight">
+                Fr
+              </div>
+              <span className="font-display font-extrabold text-2xl tracking-tighter text-[var(--white)]">
+                Freli
+              </span>
             </div>
-            <span className="font-display font-extrabold text-2xl tracking-tighter text-[var(--white)]">
-              Freli
-            </span>
+            <div className="flex flex-wrap gap-5 text-sm font-body text-[var(--surface-warm)]">
+              <a href="#features">Fonctionnalités</a>
+              <a href="#how-it-works">Comment ça marche</a>
+              <a href="https://calendly.com/freli/demo" target="_blank" rel="noreferrer">
+                Réserver une démo
+              </a>
+              <a href={appSignInUrl()}>Se connecter</a>
+            </div>
+            <p className="text-sm font-body text-[var(--ink-muted)] sm:text-right">© 2026 Freli</p>
           </div>
-          <div className="flex gap-5 text-sm font-body text-[var(--surface-warm)]">
-            <a href="#features">Fonctionnalités</a>
-            <a href="#how-it-works">Comment ça marche</a>
-            <a href="https://calendly.com/freli/demo" target="_blank" rel="noreferrer">
-              Réserver une démo
-            </a>
-            <a href={appSignInUrl()}>Se connecter</a>
+          <div className="flex flex-wrap gap-5 border-t border-[var(--ink-soft)] pt-6 text-sm font-body text-[var(--ink-muted)]">
+            <Link to="/confidentialite" className="hover:text-[var(--white)]">
+              Politique de confidentialité
+            </Link>
+            <Link to="/conditions-utilisation" className="hover:text-[var(--white)]">
+              Conditions d&apos;utilisation
+            </Link>
           </div>
-          <p className="text-sm font-body text-[var(--ink-muted)]">© 2025 Freli</p>
         </div>
       </footer>
     </div>
