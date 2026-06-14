@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { resolveAuthCallbackPath } from './lib/authCallbackRoute'
 import { supabase } from './lib/supabase'
 import { ClientPortal } from './pages/ClientPortal'
 import { ConfirmEmail } from './pages/ConfirmEmail'
@@ -76,19 +77,11 @@ function RedirectIfAuthenticated() {
 function AppRoot() {
   const location = useLocation()
   const host = typeof window !== 'undefined' ? window.location.hostname : ''
-  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ''))
-  const searchParams = new URLSearchParams(location.search)
 
   if (host === 'app.freli.fr') {
-    const isRecoveryCallback =
-      searchParams.has('code') ||
-      searchParams.has('token_hash') ||
-      searchParams.get('type') === 'recovery' ||
-      hashParams.get('type') === 'recovery' ||
-      hashParams.has('access_token')
-
-    if (isRecoveryCallback) {
-      return <Navigate to={`/reset-password${location.search}${location.hash}`} replace />
+    const authPath = resolveAuthCallbackPath(location.search, location.hash)
+    if (authPath) {
+      return <Navigate to={`${authPath}${location.search}${location.hash}`} replace />
     }
 
     return <Navigate to={`/signin${location.search}${location.hash}`} replace />

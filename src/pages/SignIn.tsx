@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { resolveAuthCallbackPath } from '../lib/authCallbackRoute'
 import { supabase } from '../lib/supabase'
 import { Button, Card, Input } from '../components/ui'
 
@@ -23,6 +24,12 @@ export function SignIn() {
   const navigate = useNavigate()
 
   useEffect(() => {
+    const authPath = resolveAuthCallbackPath(window.location.search, window.location.hash)
+    if (authPath === '/signup') {
+      navigate(`${authPath}${window.location.search}${window.location.hash}`, { replace: true })
+      return
+    }
+
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         navigate('/reset-password', { replace: true })
@@ -33,11 +40,7 @@ export function SignIn() {
       }
     })
 
-    const searchParams = new URLSearchParams(window.location.search)
-    const hasAuthCallback =
-      searchParams.has('code') ||
-      window.location.hash.includes('access_token') ||
-      searchParams.get('type') === 'recovery'
+    const hasAuthCallback = authPath === '/reset-password'
 
     if (!hasAuthCallback) {
       supabase.auth.getSession().then(({ data }) => {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { resolveAuthCallbackPath } from '../lib/authCallbackRoute'
 import { establishRecoverySession } from '../lib/authRecovery'
 import { supabase } from '../lib/supabase'
 import { Button, Card, Input } from '../components/ui'
@@ -8,6 +9,7 @@ import { Button, Card, Input } from '../components/ui'
 type ResetPhase = 'verifying' | 'form' | 'invalid'
 
 export function ResetPassword() {
+  const navigate = useNavigate()
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [loading, setLoading] = useState(false)
@@ -20,6 +22,12 @@ export function ResetPassword() {
   useEffect(() => {
     if (ranRef.current) return
     ranRef.current = true
+
+    const authPath = resolveAuthCallbackPath(window.location.search, window.location.hash)
+    if (authPath === '/signup') {
+      navigate(`${authPath}${window.location.search}${window.location.hash}`, { replace: true })
+      return
+    }
 
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
@@ -38,7 +46,7 @@ export function ResetPassword() {
     })()
 
     return () => listener.subscription.unsubscribe()
-  }, [])
+  }, [navigate])
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
