@@ -5,6 +5,15 @@ export function getResendFrom(): string {
   return Deno.env.get('RESEND_FROM') ?? 'Freli <onboarding@resend.dev>'
 }
 
+/** Expéditeur pour emails d'authentification (reset password). */
+export function getAuthResendFrom(): string {
+  return (
+    Deno.env.get('AUTH_RESEND_FROM') ??
+    Deno.env.get('RESEND_FROM') ??
+    'Freli <onboarding@resend.dev>'
+  )
+}
+
 /** Vrai en développement local (APP_URL pointe vers localhost) : emails simulés. */
 export function isDevMode(): boolean {
   return (Deno.env.get('APP_URL') ?? '').includes('localhost')

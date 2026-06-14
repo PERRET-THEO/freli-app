@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'npm:resend'
-import { getResendFrom, assertResendOk, isDevMode } from '../_shared/email.ts'
+import { getAuthResendFrom, assertResendOk, isDevMode } from '../_shared/email.ts'
 import { buildPasswordResetEmail } from '../_shared/clientEmailHtml.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
@@ -50,8 +50,21 @@ serve(async (req) => {
       options: { redirectTo },
     })
 
-    if (linkError || !data?.properties?.action_link) {
-      console.log('password reset skipped:', linkError?.message ?? 'no action link')
+    if (linkError) {
+      console.log('password reset skipped:', linkError.message)
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const actionLink =
+      data?.properties?.action_link ??
+      (data as { action_link?: string } | null)?.action_link ??
+      null
+
+    if (!actionLink) {
+      console.log('password reset skipped: no action link')
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -59,7 +72,7 @@ serve(async (req) => {
     }
 
     if (isDevMode()) {
-      console.log('MODE DEV — Email reset simulé pour:', email, data.properties.action_link)
+      console.log('MODE DEV — Email reset simulé pour:', email, actionLink)
       return new Response(JSON.stringify({ ok: true, message: 'Email simulé' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -70,9 +83,9 @@ serve(async (req) => {
       throw new Error('RESEND_API_KEY is not configured')
     }
 
-    const html = buildPasswordResetEmail({ resetUrl: data.properties.action_link })
+    const html = buildPasswordResetEmail({ resetUrl: actionLink })
     const result = await resend.emails.send({
-      from: getResendFrom(),
+      from: getAuthResendFrom(),
       to: email,
       subject: 'Freli — réinitialisez votre mot de passe',
       html,
@@ -84,8 +97,13 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (error) {
-    console.error('send-password-reset-email error:', (error as Error).message)
-    return new Response(JSON.stringify({ error: 'Impossible d’envoyer l’email de réinitialisation.' }), {
+    const message = (error as Error).message
+    console.error('send-password-reset-email error:', message)
+    const friendly =
+      message.includes('only send testing emails') || message.includes('validation')
+        ? 'Envoi email impossible : vérifiez la configuration Resend (domaine ou destinataire autorisé).'
+        : 'Impossible d’envoyer l’email de réinitialisation.'
+    return new Response(JSON.stringify({ error: friendly }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
