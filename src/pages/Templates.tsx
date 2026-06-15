@@ -399,7 +399,12 @@ export function Templates() {
           </button>
         </div>
 
-        {tab === 'checklists' ? <ChecklistTemplatesManager /> : null}
+        {tab === 'checklists' ? (
+          <ChecklistTemplatesManager
+            agencyId={agencyId}
+            contractTemplates={templates.map((t) => ({ id: t.id, name: t.name }))}
+          />
+        ) : null}
 
         {tab === 'contracts' ? (
         <>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Card, Input } from '../ui'
+import { Button, Card } from '../ui'
 import { getOrCreateAgency } from '../../lib/agency'
 import { supabase } from '../../lib/supabase'
 import { CHECKLIST_TYPE_LABELS, type DraftChecklistItem } from '../../lib/checklist'
@@ -7,11 +7,22 @@ import {
   deleteChecklistTemplate,
   listAgencyChecklistTemplates,
   loadChecklistTemplateItems,
-  renameChecklistTemplate,
   type AgencyChecklistTemplate,
 } from '../../lib/checklistTemplates'
+import { ChecklistTemplateForm } from './ChecklistTemplateForm'
 
-export function ChecklistTemplatesManager() {
+type ContractTemplateOption = { id: string; name: string }
+
+type ChecklistTemplatesManagerProps = {
+  agencyId: string | null
+  contractTemplates: ContractTemplateOption[]
+}
+
+export function ChecklistTemplatesManager({
+  agencyId: agencyIdProp,
+  contractTemplates,
+}: ChecklistTemplatesManagerProps) {
+  const [agencyId, setAgencyId] = useState<string | null>(agencyIdProp)
   const [templates, setTemplates] = useState<AgencyChecklistTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -20,30 +31,41 @@ export function ChecklistTemplatesManager() {
   const [previewItems, setPreviewItems] = useState<DraftChecklistItem[]>([])
   const [previewLoading, setPreviewLoading] = useState(false)
 
-  const [editing, setEditing] = useState<AgencyChecklistTemplate | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [savingEdit, setSavingEdit] = useState(false)
+  const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null)
+  const [editingTemplate, setEditingTemplate] = useState<AgencyChecklistTemplate | null>(null)
 
-  const load = async () => {
+  const load = async (resolvedAgencyId?: string) => {
+    const id = resolvedAgencyId ?? agencyId
+    if (!id) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    const { data: userData } = await supabase.auth.getUser()
-    if (!userData.user) {
-      setLoading(false)
-      return
-    }
-    const agency = await getOrCreateAgency(userData.user.id)
-    if (!agency?.id) {
-      setLoading(false)
-      return
-    }
-    setTemplates(await listAgencyChecklistTemplates(agency.id))
+    setTemplates(await listAgencyChecklistTemplates(id))
     setLoading(false)
   }
 
   useEffect(() => {
-    load()
-  }, [])
+    if (agencyIdProp) {
+      setAgencyId(agencyIdProp)
+      void load(agencyIdProp)
+      return
+    }
+    void (async () => {
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData.user) {
+        setLoading(false)
+        return
+      }
+      const agency = await getOrCreateAgency(userData.user.id)
+      if (!agency?.id) {
+        setLoading(false)
+        return
+      }
+      setAgencyId(agency.id)
+      await load(agency.id)
+    })()
+  }, [agencyIdProp])
 
   const togglePreview = async (templateId: string) => {
     if (expandedId === templateId) {
@@ -56,24 +78,23 @@ export function ChecklistTemplatesManager() {
     setPreviewLoading(false)
   }
 
-  const openEdit = (template: AgencyChecklistTemplate) => {
-    setEditing(template)
-    setEditName(template.name)
-    setEditDescription(template.description ?? '')
+  const openCreate = () => {
+    setEditingTemplate(null)
+    setFormMode('create')
   }
 
-  const handleRename = async () => {
-    if (!editing || !editName.trim()) return
-    setSavingEdit(true)
-    try {
-      await renameChecklistTemplate(editing.id, editName, editDescription)
-      setEditing(null)
-      await load()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Erreur lors du renommage.')
-    } finally {
-      setSavingEdit(false)
-    }
+  const openEdit = (template: AgencyChecklistTemplate) => {
+    setEditingTemplate(template)
+    setFormMode('edit')
+  }
+
+  const closeForm = () => {
+    setFormMode(null)
+    setEditingTemplate(null)
+  }
+
+  const handleSaved = async () => {
+    await load()
   }
 
   const handleDelete = async (template: AgencyChecklistTemplate) => {
@@ -92,15 +113,32 @@ export function ChecklistTemplatesManager() {
     return <p className="mt-6 text-sm font-body text-[var(--ink-muted)]">Chargement…</p>
   }
 
+  if (!agencyId) {
+    return (
+      <Card className="text-center">
+        <p className="text-sm font-body text-[var(--ink-muted)]">
+          Aucune agence trouvée. Complétez vos paramètres avant de créer des modèles.
+        </p>
+      </Card>
+    )
+  }
+
   return (
     <div>
+      <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
+        <Button onClick={openCreate}>Nouveau modèle</Button>
+      </div>
+
       {error ? <p className="mb-4 text-sm font-body text-[var(--amber)]">{error}</p> : null}
 
       {templates.length === 0 ? (
         <Card className="text-center">
           <p className="text-sm font-body text-[var(--ink-muted)]">
-            Aucun modèle de checklist. Enregistrez-en un depuis la création d&apos;un projet.
+            Aucun modèle de checklist. Créez votre premier modèle pour le réutiliser lors de la création de projets.
           </p>
+          <Button className="mt-4" onClick={openCreate}>
+            Nouveau modèle
+          </Button>
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
@@ -143,7 +181,7 @@ export function ChecklistTemplatesManager() {
                   {expandedId === template.id ? 'Masquer' : 'Aperçu'}
                 </Button>
                 <Button variant="secondary" onClick={() => openEdit(template)}>
-                  Renommer
+                  Modifier
                 </Button>
                 <Button variant="secondary" onClick={() => handleDelete(template)}>
                   Supprimer
@@ -154,34 +192,16 @@ export function ChecklistTemplatesManager() {
         </div>
       )}
 
-      {editing ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/45 px-4">
-          <Card className="w-full max-w-md">
-            <h2 className="font-display text-2xl font-bold text-[var(--ink)]">Renommer le modèle</h2>
-            <div className="mt-4 space-y-3">
-              <Input
-                placeholder="Nom du modèle"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-              />
-              <textarea
-                placeholder="Description (optionnel)"
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                rows={2}
-                className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none"
-              />
-            </div>
-            <div className="mt-5 flex gap-3">
-              <Button onClick={handleRename} disabled={savingEdit}>
-                {savingEdit ? 'Enregistrement…' : 'Enregistrer'}
-              </Button>
-              <Button variant="secondary" onClick={() => setEditing(null)} disabled={savingEdit}>
-                Annuler
-              </Button>
-            </div>
-          </Card>
-        </div>
+      {formMode ? (
+        <ChecklistTemplateForm
+          mode={formMode}
+          agencyId={agencyId}
+          contractTemplates={contractTemplates}
+          agencyTemplates={templates}
+          initialTemplate={editingTemplate ?? undefined}
+          onClose={closeForm}
+          onSaved={handleSaved}
+        />
       ) : null}
     </div>
   )
