@@ -1,3 +1,5 @@
+import { getFreliEmailLogoUrl } from './email.ts'
+
 /** Valide un token portail projet (UUID v4). */
 export function isValidProjectToken(token: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(token)
@@ -28,6 +30,7 @@ const EMAIL_STYLES = `
 `
 
 function emailShell(heroTag: string, heroTitle: string, heroSubtitle: string, bodyContent: string, ctaUrl: string, ctaLabel: string, footerNote: string): string {
+  const logoUrl = escapeHtml(getFreliEmailLogoUrl())
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -45,12 +48,10 @@ function emailShell(heroTag: string, heroTitle: string, heroSubtitle: string, bo
 <table width="100%">
 <tr><td style="padding-bottom:40px;">
 <table><tr>
-<td style="padding-right:10px;">
-<table><tr><td style="width:36px;height:36px;background:linear-gradient(135deg,#5B6EF5 0%,#7B8FFF 100%);border-radius:10px;text-align:center;">
-<span style="font-family:'Syne',Arial,sans-serif;font-weight:800;font-size:18px;color:#fff;line-height:36px;">F</span>
-</td></tr></table>
+<td style="padding-right:10px;vertical-align:middle;">
+<img src="${logoUrl}" alt="Freli" width="40" height="40" style="border-radius:10px;display:block;" />
 </td>
-<td><span style="font-family:'Syne',Arial,sans-serif;font-weight:700;font-size:20px;color:#FDFCF9;">Freli</span></td>
+<td style="vertical-align:middle;"><span style="font-family:'Syne',Arial,sans-serif;font-weight:700;font-size:20px;color:#FDFCF9;">Freli</span></td>
 </tr></table>
 </td></tr>
 <tr><td style="padding-bottom:14px;">

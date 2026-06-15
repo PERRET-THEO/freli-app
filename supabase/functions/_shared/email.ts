@@ -1,4 +1,13 @@
-// Configuration email partagée entre les Edge Functions.
+/** URL du logo Freli affiché dans les emails HTML (bucket Supabase Storage). */
+export function getFreliEmailLogoUrl(): string {
+  const fromEnv = Deno.env.get('FRELI_EMAIL_LOGO_URL')?.trim()
+  if (fromEnv) return fromEnv
+  const supabaseUrl = (Deno.env.get('SUPABASE_URL') ?? 'https://xxghfeshnihagvahmmpr.supabase.co').replace(
+    /\/$/,
+    '',
+  )
+  return `${supabaseUrl}/storage/v1/object/public/Freli%20logo/Logo%20Freli.png`
+}
 
 /** Expédiateur Resend. En prod, définir RESEND_FROM (ex. "Freli <noreply@freli.app>"). */
 export function getResendFrom(): string {
