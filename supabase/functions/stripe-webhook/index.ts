@@ -1,5 +1,10 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import {
+  buildProjectPayload,
+  fireOutgoingWebhooks,
+  getAgencyUserId,
+} from '../_shared/outgoingWebhooks.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -131,6 +136,40 @@ serve(async (req) => {
           })
           .eq('id', projectId)
         if (pErr) console.error('checkout.session.completed project update:', pErr.message)
+
+        const { data: project } = await supabaseAdmin
+          .from('projects')
+          .select('id, client_name, client_email, agency_id, token, status, price, payment_status, agencies(id, name)')
+          .eq('id', projectId)
+          .single()
+
+        if (project) {
+          const agenciesRel = project.agencies as { id?: string; name?: string } | { id?: string; name?: string }[] | null
+          const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
+          const userId = await getAgencyUserId(supabaseAdmin, project.agency_id as string)
+          if (userId && agencyRow) {
+            const amountTotal = session && typeof session.amount_total === 'number' ? session.amount_total : null
+            fireOutgoingWebhooks(
+              supabaseAdmin,
+              userId,
+              'payment.received',
+              buildProjectPayload(
+                project,
+                {
+                  id: String(agencyRow.id ?? project.agency_id),
+                  name: String(agencyRow.name ?? 'Agence'),
+                },
+                {
+                  meta: {
+                    source: 'stripe',
+                    amount_cents: amountTotal,
+                    currency: session && typeof session.currency === 'string' ? session.currency : 'eur',
+                  },
+                },
+              ),
+            )
+          }
+        }
       }
     }
 

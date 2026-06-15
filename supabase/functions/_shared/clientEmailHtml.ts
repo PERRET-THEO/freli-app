@@ -242,3 +242,25 @@ Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.
     'Email automatique Freli — ne pas répondre',
   )
 }
+
+export function buildUserInviteEmail(params: { inviteUrl: string }): string {
+  const url = escapeHtml(params.inviteUrl)
+
+  const body = `
+<p style="font-family:'DM Sans',Arial,sans-serif;font-size:15px;color:#4A4D5C;line-height:1.85;margin:0 0 24px;">
+Vous avez été invité à rejoindre Freli. Cliquez sur le bouton ci-dessous pour créer votre mot de passe et accéder à votre espace.
+</p>
+<p style="font-family:'DM Sans',Arial,sans-serif;font-size:13px;color:#8A8D9C;line-height:1.7;margin:0;">
+Si vous n'attendiez pas cette invitation, ignorez cet email.
+</p>`
+
+  return emailShell(
+    '✦ Invitation',
+    'Créez votre<br>compte Freli',
+    'Accès sur invitation — quelques secondes suffisent.',
+    body,
+    url,
+    '✦ Accepter l\u2019invitation',
+    'Email automatique Freli — ne pas répondre',
+  )
+}

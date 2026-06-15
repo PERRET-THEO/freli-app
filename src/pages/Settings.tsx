@@ -42,6 +42,18 @@ export function Settings() {
   const [agencySaving, setAgencySaving] = useState(false)
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [pageLoading, setPageLoading] = useState(true)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteFeedback, setInviteFeedback] = useState<SectionFeedback>(null)
+  const [inviteSending, setInviteSending] = useState(false)
+
+  const inviteAdminEmails = (import.meta.env.VITE_INVITE_ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((e: string) => e.trim().toLowerCase())
+    .filter(Boolean)
+  const canInviteUsers =
+    inviteAdminEmails.length > 0 &&
+    accountEmail.trim().toLowerCase() !== '' &&
+    inviteAdminEmails.includes(accountEmail.trim().toLowerCase())
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -192,6 +204,45 @@ export function Settings() {
     setPasswordFeedback({ type: 'success', text: 'Mot de passe mis à jour.' })
   }
 
+  const handleInviteUser = async () => {
+    setInviteFeedback(null)
+    const email = inviteEmail.trim().toLowerCase()
+    if (!email || !email.includes('@')) {
+      setInviteFeedback({ type: 'error', text: 'Adresse email invalide.' })
+      return
+    }
+
+    setInviteSending(true)
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('invite-user', {
+        body: { email },
+      })
+      if (invokeError) {
+        setInviteFeedback({ type: 'error', text: 'Impossible d\u2019envoyer l\u2019invitation.' })
+        return
+      }
+      if (data && typeof data === 'object' && 'error' in data && data.error) {
+        const message = String(data.error)
+        if (message === 'Forbidden') {
+          setInviteFeedback({
+            type: 'error',
+            text: 'Vous n\u2019avez pas les droits pour inviter des utilisateurs.',
+          })
+          return
+        }
+        setInviteFeedback({ type: 'error', text: message })
+        return
+      }
+      setInviteEmail('')
+      setInviteFeedback({
+        type: 'success',
+        text: `Invitation envoyée à ${email}.`,
+      })
+    } finally {
+      setInviteSending(false)
+    }
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     navigate('/signin', { replace: true })
@@ -268,6 +319,30 @@ export function Settings() {
             <SectionMessage feedback={passwordFeedback} />
           </div>
         </Card>
+
+        {canInviteUsers ? (
+          <Card>
+            <h2 className="font-display text-xl font-semibold text-[var(--ink)]">
+              Inviter un utilisateur
+            </h2>
+            <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
+              Envoyez une invitation pour créer un compte Freli. L&apos;email part via Resend
+              (comme le mot de passe oublié).
+            </p>
+            <div className="mt-4 space-y-3">
+              <Input
+                type="email"
+                placeholder="email@exemple.com"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+              />
+              <Button onClick={handleInviteUser} disabled={inviteSending}>
+                {inviteSending ? 'Envoi…' : 'Envoyer l\u2019invitation'}
+              </Button>
+              <SectionMessage feedback={inviteFeedback} />
+            </div>
+          </Card>
+        ) : null}
 
         <Card>
           <h2 className="font-display text-xl font-semibold text-[var(--ink)]">Votre accès Freli</h2>

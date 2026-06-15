@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { ensureProjectDriveFolder } from '../_shared/googleDrive.ts'
+import { ensureProjectDriveFolder, syncProjectArtifactsToDrive } from '../_shared/googleDrive.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -60,7 +60,8 @@ serve(async (req) => {
 
     const agenciesRel = project.agencies as { user_id?: string } | { user_id?: string }[] | null
     const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
-    if (agencyRow?.user_id !== user.id) {
+    const ownerUserId = agencyRow?.user_id
+    if (!ownerUserId || ownerUserId !== user.id) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -77,7 +78,7 @@ serve(async (req) => {
     const { data: integration } = await supabaseAdmin
       .from('integrations')
       .select('id, access_token, refresh_token, config')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerUserId)
       .eq('provider', 'google_drive')
       .maybeSingle()
 
@@ -90,15 +91,17 @@ serve(async (req) => {
     }
 
     const result = await ensureProjectDriveFolder(integration, project)
-    if (!result) {
-      return new Response(JSON.stringify({ error: 'Impossible de créer le dossier Drive' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+
+    const sync = await syncProjectArtifactsToDrive(integration, project.id, result.folderId)
 
     return new Response(
-      JSON.stringify({ success: true, folderUrl: result.folderUrl }),
+      JSON.stringify({
+        success: true,
+        folderUrl: result.folderUrl,
+        filesUploaded: sync.uploaded,
+        filesSkipped: sync.skipped,
+        status: sync.status,
+      }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } catch (e) {

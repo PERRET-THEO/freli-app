@@ -2,8 +2,7 @@ import { supabase } from '../supabase'
 
 export type IntegrationResults = {
   stripe?: { checkoutUrl: string }
-  google_drive?: { folderUrl: string }
-  hubspot?: { contactId: string }
+  google_drive?: { folderUrl: string; filesUploaded?: number; filesSkipped?: number }
 }
 
 export async function triggerIntegrations(

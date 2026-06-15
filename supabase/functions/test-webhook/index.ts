@@ -1,7 +1,10 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { Resend } from 'npm:resend'
-import { createAuthAdminClient, sendUserInviteEmail } from '../_shared/authInviteEmail.ts'
+import {
+  buildProjectPayload,
+  dispatchToSingleWebhook,
+  type WebhookEndpoint,
+} from '../_shared/outgoingWebhooks.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,10 +15,6 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-const appUrl = (Deno.env.get('APP_URL') ?? 'http://localhost:5173').replace(/\/$/, '')
-
-const supabaseAdmin = createAuthAdminClient(supabaseUrl, serviceRoleKey)
-const resend = new Resend(Deno.env.get('RESEND_API_KEY') ?? '')
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -33,11 +32,13 @@ serve(async (req) => {
   const supabaseUser = createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: authHeader } },
   })
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
 
   const {
     data: { user },
     error: userError,
   } = await supabaseUser.auth.getUser()
+
   if (userError || !user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -45,38 +46,60 @@ serve(async (req) => {
     })
   }
 
-  const adminEmails = (Deno.env.get('INVITE_ADMIN_EMAILS') ?? '')
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean)
-
-  const callerEmail = (user.email ?? '').trim().toLowerCase()
-  if (!adminEmails.length || !callerEmail || !adminEmails.includes(callerEmail)) {
-    return new Response(JSON.stringify({ error: 'Forbidden' }), {
-      status: 403,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
-  }
-
   try {
-    const body = (await req.json()) as { email?: string }
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
-    if (!email || !email.includes('@')) {
-      return new Response(JSON.stringify({ error: 'Invalid email' }), {
+    const body = (await req.json()) as { webhookId?: string }
+    const webhookId = typeof body.webhookId === 'string' ? body.webhookId.trim() : ''
+    if (!webhookId) {
+      return new Response(JSON.stringify({ error: 'Missing webhookId' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const result = await sendUserInviteEmail(supabaseAdmin, resend, email, appUrl)
-    if (!result.ok) {
-      return new Response(JSON.stringify({ error: result.error }), {
-        status: result.status,
+    const { data: row, error: fetchError } = await supabaseAdmin
+      .from('integrations')
+      .select('id, access_token, config')
+      .eq('id', webhookId)
+      .eq('user_id', user.id)
+      .eq('provider', 'webhook')
+      .single()
+
+    if (fetchError || !row) {
+      return new Response(JSON.stringify({ error: 'Webhook not found' }), {
+        status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    return new Response(JSON.stringify({ ok: true, email }), {
+    const testData = buildProjectPayload(
+      {
+        id: '00000000-0000-0000-0000-000000000000',
+        client_name: 'Client Test',
+        client_email: 'client@example.com',
+        agency_id: '00000000-0000-0000-0000-000000000001',
+        token: 'test-token',
+        status: 'completed',
+        price: 1500,
+        payment_status: 'pending',
+      },
+      { id: '00000000-0000-0000-0000-000000000001', name: 'Agence Test' },
+      { meta: { source: 'test', message: 'Ceci est un envoi de test depuis Freli.' } },
+    )
+
+    const result = await dispatchToSingleWebhook(
+      row as WebhookEndpoint,
+      'webhook.test',
+      testData,
+    )
+
+    if (!result.ok) {
+      return new Response(JSON.stringify({ ok: false, error: result.error ?? 'Delivery failed' }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    return new Response(JSON.stringify({ ok: true, status: result.status }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

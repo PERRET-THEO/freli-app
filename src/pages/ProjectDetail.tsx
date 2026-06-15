@@ -23,6 +23,8 @@ type ProjectRecord = {
   stripe_checkout_url: string | null
   last_payment_email_sent_at: string | null
   google_drive_folder_url: string | null
+  google_drive_files_synced_at: string | null
+  google_drive_sync_status: 'synced' | 'partial' | 'failed' | null
   agencies?: { name: string | null } | { name: string | null }[] | null
 }
 
@@ -70,7 +72,7 @@ export function ProjectDetail() {
 
     const { data: projectData, error: projectError } = await supabase
       .from('projects')
-      .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, google_drive_folder_url, agencies(name)')
+      .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, agencies(name)')
       .eq('id', id)
       .maybeSingle()
 
@@ -201,12 +203,17 @@ export function ProjectDetail() {
     setDriveFeedback(null)
     setDriveError(null)
     try {
-      await syncProjectDriveFolder(project.id)
-      setDriveFeedback('Dossier Google Drive créé.')
+      const result = await syncProjectDriveFolder(project.id)
+      const synced = result.filesUploaded + result.filesSkipped
+      setDriveFeedback(
+        result.status === 'partial'
+          ? `Synchronisation partielle : ${result.filesUploaded} fichier(s) envoyé(s).`
+          : `Dossier Google Drive à jour : ${synced} fichier(s) synchronisé(s).`,
+      )
       await loadProject()
     } catch (reason: unknown) {
       setDriveError(
-        reason instanceof Error ? reason.message : 'Impossible de créer le dossier Drive',
+        reason instanceof Error ? reason.message : 'Impossible de synchroniser vers Drive',
       )
     } finally {
       setSyncingDrive(false)
@@ -365,7 +372,11 @@ export function ProjectDetail() {
                 {project.google_drive_folder_url ? (
                   <>
                     <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
-                      Créé automatiquement à la fin de l&apos;onboarding.
+                      {project.google_drive_sync_status === 'partial'
+                        ? 'Documents partiellement synchronisés vers Drive.'
+                        : project.google_drive_files_synced_at
+                          ? 'Documents, contrats signés et récap copiés dans le dossier.'
+                          : 'Créé automatiquement à la fin de l\u2019onboarding.'}
                     </p>
                     <a
                       href={project.google_drive_folder_url}
@@ -375,6 +386,16 @@ export function ProjectDetail() {
                     >
                       Ouvrir le dossier client →
                     </a>
+                    {project.google_drive_sync_status === 'partial' ? (
+                      <Button
+                        variant="secondary"
+                        className="mt-3 block"
+                        onClick={handleCreateDriveFolder}
+                        disabled={syncingDrive}
+                      >
+                        {syncingDrive ? 'Synchronisation…' : 'Relancer la synchronisation'}
+                      </Button>
+                    ) : null}
                   </>
                 ) : project.status === 'completed' ? (
                   <>
@@ -382,7 +403,7 @@ export function ProjectDetail() {
                       Aucun dossier Drive pour ce projet.
                     </p>
                     <Button className="mt-3" onClick={handleCreateDriveFolder} disabled={syncingDrive}>
-                      {syncingDrive ? 'Création…' : 'Créer le dossier Drive'}
+                      {syncingDrive ? 'Synchronisation…' : 'Synchroniser vers Drive'}
                     </Button>
                   </>
                 ) : (

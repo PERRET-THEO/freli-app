@@ -3,6 +3,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'npm:resend'
 import { getResendFrom, assertResendOk } from '../_shared/email.ts'
 import { buildClientOnboardingEmail, isValidProjectToken } from '../_shared/clientEmailHtml.ts'
+import {
+  buildProjectPayload,
+  fireOutgoingWebhooks,
+  getAgencyUserId,
+} from '../_shared/outgoingWebhooks.ts'
 
 type InviteBody = {
   projectId?: string
@@ -64,20 +69,31 @@ serve(async (req) => {
     let clientEmail = body.clientEmail
     let agencyName = body.agencyName ?? 'Mon Agence'
     let agencyId: string | null = null
+    let projectRow: {
+      id: string
+      token: string
+      client_name: string
+      client_email: string
+      agency_id: string
+      status: string | null
+      price: number | null
+      payment_status: string | null
+    } | null = null
 
     if (projectId) {
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
-        .select('id, token, client_name, client_email, agency_id, agencies(name)')
+        .select('id, token, client_name, client_email, agency_id, status, price, payment_status, agencies(id, name)')
         .eq('id', projectId)
         .single()
       if (projectError || !projectData) throw new Error('Project not found')
 
+      projectRow = projectData
       token = projectData.token
       clientName = projectData.client_name
       clientEmail = projectData.client_email
       agencyId = projectData.agency_id
-      const agenciesRel = projectData.agencies as { name?: string } | { name?: string }[] | null
+      const agenciesRel = projectData.agencies as { id?: string; name?: string } | { id?: string; name?: string }[] | null
       const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
       if (agencyRow?.name) agencyName = agencyRow.name
     }
@@ -137,6 +153,28 @@ serve(async (req) => {
         source: reminderSource,
         recipient_email: clientEmail,
       })
+    }
+
+    if (projectId && agencyId && projectRow) {
+      const userId = await getAgencyUserId(supabase, agencyId)
+      if (userId) {
+        const webhookEvent = isReminderMode ? 'project.reminder_sent' : 'project.created'
+        fireOutgoingWebhooks(
+          supabase,
+          userId,
+          webhookEvent,
+          buildProjectPayload(
+            projectRow,
+            { id: agencyId, name: agencyName },
+            {
+              meta: {
+                source: isReminderMode ? reminderSource : 'invite',
+                portal_url: portalUrl,
+              },
+            },
+          ),
+        )
+      }
     }
 
     return new Response(JSON.stringify({ success: true, portalUrl }), {

@@ -84,3 +84,4 @@ export default defineConfig([
 4. **Supabase** → Authentication → URL Configuration : **Site URL** = `https://app.freli.fr`. **Redirect URLs** : `https://app.freli.fr/**` et `https://freli.fr/**` (plus les URLs locales si besoin).
 5. **Smoke test** : `https://freli.fr` (landing), `https://app.freli.fr/signin`, recharger `/dashboard` et un lien `/p/<token>` ; tester login / signup.
 6. **Edge / Stripe** : secret Supabase `APP_URL=https://app.freli.fr` et webhooks Stripe comme indiqué dans [`.env.example`](.env.example).
+7. **Webhooks sortants** : Dashboard → Intégrations → ajouter une URL Zapier/Make, bouton Tester, puis valider un événement réel (création projet ou fin onboarding).

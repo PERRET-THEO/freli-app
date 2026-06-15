@@ -49,3 +49,7 @@ verify_jwt = false
 # Mot de passe oublié — formulaire public (Resend + generateLink)
 [functions.send-password-reset-email]
 verify_jwt = false
+
+# Test webhook sortant (dashboard agence)
+[functions.test-webhook]
+verify_jwt = true

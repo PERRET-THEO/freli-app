@@ -23,7 +23,7 @@ export function PrivacyPolicy() {
             'Données clients : nom, email, documents et réponses transmis via le portail d’onboarding.',
             'Données techniques : logs, adresse IP, identifiants de session, informations de navigation.',
             'Données de paiement : traitées par Stripe ; Freli ne stocke pas vos coordonnées bancaires.',
-            'Intégrations : identifiants OAuth (Google Drive, Stripe Connect) nécessaires au service.',
+            'Intégrations : identifiants OAuth (Google Drive, Stripe Connect) et URLs de webhooks sortants que vous configurez (Zapier, Make, etc.).',
           ]}
         />
       </LegalSection>
@@ -48,8 +48,14 @@ export function PrivacyPolicy() {
             'Resend (envoi d’emails transactionnels)',
             'Stripe (paiements et Stripe Connect)',
             'Google (connexion Google Drive, sur action de l’agence)',
+            'Services tiers que vous connectez via webhooks (Zapier, Make, etc.), selon votre configuration',
           ]}
         />
+        <LegalParagraph>
+          Lorsque vous configurez un webhook sortant, des données clients (nom, email, statut de
+          projet, etc.) peuvent être transmises aux services que vous choisissez. Vous restez
+          responsable de ces flux et de la conformité de vos outils connectés.
+        </LegalParagraph>
       </LegalSection>
 
       <LegalSection title="5. Durée de conservation">

@@ -1,7 +1,12 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { ensureCheckoutSession, stripeConnectReady } from '../_shared/stripeCheckout.ts'
-import { ensureProjectDriveFolder } from '../_shared/googleDrive.ts'
+import { ensureProjectDriveFolder, syncProjectArtifactsToDrive } from '../_shared/googleDrive.ts'
+import {
+  buildProjectPayload,
+  fetchChecklistItems,
+  fireOutgoingWebhooks,
+} from '../_shared/outgoingWebhooks.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,7 +16,6 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-const appUrl = Deno.env.get('APP_URL') ?? 'http://localhost:5173'
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 
@@ -29,6 +33,7 @@ type ProjectData = {
   client_email: string | null
   agency_id: string
   token: string
+  status: string | null
   price: number | null
   payment_status: string | null
   stripe_checkout_url: string | null
@@ -39,8 +44,7 @@ type ProjectData = {
 
 type Results = {
   stripe?: { checkoutUrl: string }
-  google_drive?: { folderUrl: string }
-  hubspot?: { contactId: string }
+  google_drive?: { folderUrl: string; filesUploaded?: number; filesSkipped?: number }
 }
 
 async function handleStripe(
@@ -58,52 +62,14 @@ async function handleStripe(
 async function handleGoogleDrive(
   integration: Integration,
   project: ProjectData,
-): Promise<{ folderUrl: string } | null> {
+): Promise<{ folderUrl: string; filesUploaded?: number; filesSkipped?: number } | null> {
   if (integration.config?.connected !== true) {
     console.log('Google Drive not connected, skipping')
     return null
   }
   const result = await ensureProjectDriveFolder(integration, project)
-  if (!result) return null
-  return { folderUrl: result.folderUrl }
-}
-
-async function handleHubspot(
-  integration: Integration,
-  project: ProjectData,
-): Promise<{ contactId: string } | null> {
-  const apiKey = integration.access_token || String(integration.config?.apiKey ?? '')
-  if (!apiKey) {
-    console.warn('HubSpot API key not set, skipping')
-    return null
-  }
-
-  const nameParts = project.client_name.split(' ')
-  const firstName = nameParts[0] ?? ''
-  const lastName = nameParts.slice(1).join(' ') || ''
-
-  const response = await fetch('https://api.hubapi.com/crm/v3/objects/contacts', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      properties: {
-        firstname: firstName,
-        lastname: lastName,
-        email: project.client_email ?? '',
-      },
-    }),
-  })
-
-  const contact = await response.json()
-  if (!response.ok) {
-    throw new Error(`HubSpot error: ${contact.message ?? JSON.stringify(contact)}`)
-  }
-
-  console.log('HubSpot contact created:', contact.id)
-  return { contactId: contact.id }
+  const sync = await syncProjectArtifactsToDrive(integration, project.id, result.folderId)
+  return { folderUrl: result.folderUrl, filesUploaded: sync.uploaded, filesSkipped: sync.skipped }
 }
 
 serve(async (req) => {
@@ -132,7 +98,7 @@ serve(async (req) => {
 
     const { data: project, error: projectError } = await supabase
       .from('projects')
-      .select('id, client_name, client_email, agency_id, token, price, payment_status, stripe_checkout_url, stripe_checkout_session_id, google_drive_folder_id, google_drive_folder_url')
+      .select('id, client_name, client_email, agency_id, token, status, price, payment_status, stripe_checkout_url, stripe_checkout_session_id, google_drive_folder_id, google_drive_folder_url')
       .eq('id', body.projectId)
       .single()
 
@@ -145,7 +111,7 @@ serve(async (req) => {
 
     const { data: agency, error: agencyError } = await supabase
       .from('agencies')
-      .select('user_id')
+      .select('user_id, id, name')
       .eq('id', project.agency_id)
       .single()
 
@@ -162,51 +128,68 @@ serve(async (req) => {
       throw new Error(`Failed to fetch integrations: ${integrationsError.message}`)
     }
 
-    if (!integrations || integrations.length === 0) {
-      console.log('No integrations configured for user, nothing to trigger')
-      return new Response(JSON.stringify({ results: {} }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    console.log(`Found ${integrations.length} integration(s) to trigger`)
     const results: Results = {}
 
-    for (const integration of integrations as Integration[]) {
-      try {
-        switch (integration.provider) {
-          case 'stripe': {
-            const stripeResult = await handleStripe(integration, project as ProjectData)
-            if (stripeResult) {
-              results.stripe = stripeResult
-              // Email automatique au client avec le lien de paiement (fin onboarding).
-              const { error: emailError } = await supabase.functions.invoke(
-                'send-payment-link-email',
-                { body: { projectId: project.id } },
-              )
-              if (emailError) console.error('payment email failed:', emailError.message)
+    if (integrations && integrations.length > 0) {
+      console.log(`Found ${integrations.length} integration(s) to trigger`)
+
+      for (const integration of integrations as Integration[]) {
+        if (integration.provider === 'webhook') continue
+        try {
+          switch (integration.provider) {
+            case 'stripe': {
+              const stripeResult = await handleStripe(integration, project as ProjectData)
+              if (stripeResult) {
+                results.stripe = stripeResult
+                const { error: emailError } = await supabase.functions.invoke(
+                  'send-payment-link-email',
+                  { body: { projectId: project.id } },
+                )
+                if (emailError) console.error('payment email failed:', emailError.message)
+              }
+              break
             }
-            break
+            case 'google_drive': {
+              const driveResult = await handleGoogleDrive(integration, project as ProjectData)
+              if (driveResult) results.google_drive = driveResult
+              break
+            }
+            default:
+              console.warn(`Unknown integration provider: ${integration.provider}`)
           }
-          case 'google_drive': {
-            const driveResult = await handleGoogleDrive(integration, project as ProjectData)
-            if (driveResult) results.google_drive = driveResult
-            break
-          }
-          case 'hubspot': {
-            const hubspotResult = await handleHubspot(integration, project as ProjectData)
-            if (hubspotResult) results.hubspot = hubspotResult
-            break
-          }
-          default:
-            console.warn(`Unknown integration provider: ${integration.provider}`)
+        } catch (integrationError) {
+          const msg = integrationError instanceof Error ? integrationError.message : String(integrationError)
+          console.error(`Integration ${integration.provider} failed:`, msg)
         }
-      } catch (integrationError) {
-        const msg = integrationError instanceof Error ? integrationError.message : String(integrationError)
-        console.error(`Integration ${integration.provider} failed:`, msg)
       }
     }
+
+    const { data: refreshedProject } = await supabase
+      .from('projects')
+      .select('id, client_name, client_email, agency_id, token, status, price, payment_status, stripe_checkout_url, google_drive_folder_url')
+      .eq('id', project.id)
+      .single()
+
+    const projectForWebhook = (refreshedProject ?? project) as ProjectData
+    const checklist = await fetchChecklistItems(supabase, project.id)
+
+    fireOutgoingWebhooks(
+      supabase,
+      agency.user_id as string,
+      'project.completed',
+      buildProjectPayload(
+        projectForWebhook,
+        { id: agency.id as string, name: (agency.name as string) ?? 'Agence' },
+        {
+          checklist,
+          integrations: {
+            stripe_checkout_url: results.stripe?.checkoutUrl ?? projectForWebhook.stripe_checkout_url,
+            google_drive_folder_url: results.google_drive?.folderUrl ?? projectForWebhook.google_drive_folder_url,
+          },
+          meta: { source: 'onboarding_complete' },
+        },
+      ),
+    )
 
     console.log('=== trigger-integrations DONE ===', JSON.stringify(results))
     return new Response(JSON.stringify({ results }), {
