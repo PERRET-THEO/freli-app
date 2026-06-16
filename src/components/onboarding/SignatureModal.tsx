@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import SignaturePad from 'signature_pad'
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import { supabase } from '../../lib/supabase'
+import { uploadPortalSignedContract } from '../../lib/contractStorage'
 import { pdfjs, setupPdfWorker } from '../../lib/pdfWorker'
 import { Button } from '../ui'
 
@@ -337,14 +337,8 @@ export function SignatureModal({
 
       const pdfBytes = await pdfDoc.save()
 
-      const filePath = `documents/${projectToken}/signed_contract_${Date.now()}.pdf`
-      const { error: upErr } = await supabase.storage
-        .from('contracts')
-        .upload(filePath, pdfBytes, { contentType: 'application/pdf', upsert: true })
-      if (upErr) throw new Error(`Upload échoué : ${upErr.message}`)
-
-      const { data: urlData } = supabase.storage.from('contracts').getPublicUrl(filePath)
-      onComplete(urlData.publicUrl)
+      const signedUrl = await uploadPortalSignedContract(projectToken, pdfBytes)
+      onComplete(signedUrl)
     } catch (err) {
       console.error('Erreur signature:', err)
       setError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde.')

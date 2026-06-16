@@ -26,6 +26,8 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const [authLoading, setAuthLoading] = useState(true)
   const [email, setEmail] = useState<string | null>(null)
+  const [agencyName, setAgencyName] = useState<string | null>(null)
+  const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -36,6 +38,18 @@ export function DashboardLayout({
         return
       }
       setEmail(data.user.email ?? null)
+
+      const { data: agency } = await supabase
+        .from('agencies')
+        .select('name, logo_url')
+        .eq('user_id', data.user.id)
+        .maybeSingle()
+
+      if (agency) {
+        setAgencyName(agency.name ?? null)
+        setAgencyLogoUrl(agency.logo_url ?? null)
+      }
+
       setAuthLoading(false)
     }
     loadUser()
@@ -144,9 +158,24 @@ export function DashboardLayout({
           </NavLink>
           <div className="rounded-[var(--radius-sm)] border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.2)] px-3 py-2.5">
             <p className="text-[10px] font-display font-bold uppercase tracking-wide text-[rgba(253,252,250,0.4)]">
-              Votre compte
+              {agencyName ?? 'Votre compte'}
             </p>
-            <p className="mt-1 break-all font-body text-xs leading-snug text-[var(--white)]">{email ?? '—'}</p>
+            <div className="mt-2 flex items-center gap-2">
+              {agencyLogoUrl ? (
+                <img
+                  src={agencyLogoUrl}
+                  alt=""
+                  className="h-7 w-7 shrink-0 rounded object-cover"
+                />
+              ) : (
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-[var(--accent)] font-display text-[10px] font-bold text-white">
+                  {(agencyName ?? email ?? 'FR').slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <p className="min-w-0 break-all font-body text-xs leading-snug text-[var(--white)]">
+                {email ?? '—'}
+              </p>
+            </div>
           </div>
         </div>
       </aside>
@@ -165,32 +194,32 @@ export function DashboardLayout({
         </main>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-[rgba(255,255,255,0.08)] bg-[var(--ink)] px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 md:hidden">
-        <div className="mx-auto flex max-w-lg items-end justify-between gap-0.5">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-[rgba(255,255,255,0.08)] bg-[var(--ink)] px-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 md:hidden">
+        <div className="mx-auto flex max-w-lg items-end justify-between">
           <NavLink
             to="/dashboard"
             end
             className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
+              `flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[var(--radius-sm)] px-1 py-1.5 transition ${
                 isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
               }`
             }
           >
-            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.overview}</span>
-            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">
+            <span className="flex h-6 w-6 items-center justify-center [&>svg]:h-full [&>svg]:w-full">{icons.overview}</span>
+            <span className="max-w-full truncate text-[10px] font-display font-bold uppercase tracking-wide">
               Accueil
             </span>
           </NavLink>
           <NavLink
             to="/dashboard/clients"
             className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
+              `flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[var(--radius-sm)] px-1 py-1.5 transition ${
                 isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
               }`
             }
           >
-            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.users}</span>
-            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">
+            <span className="flex h-6 w-6 items-center justify-center [&>svg]:h-full [&>svg]:w-full">{icons.users}</span>
+            <span className="max-w-full truncate text-[10px] font-display font-bold uppercase tracking-wide">
               Clients
             </span>
           </NavLink>
@@ -202,46 +231,33 @@ export function DashboardLayout({
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--white)] shadow-[0_4px_16px_rgba(91,110,245,0.45)] [&>svg]:h-5 [&>svg]:w-5">
               {icons.plus}
             </span>
-            <span className="mt-0.5 max-w-[4rem] truncate text-center text-[9px] font-display font-bold uppercase leading-tight tracking-wide text-[var(--accent)]">
+            <span className="mt-0.5 max-w-[4rem] truncate text-center text-[10px] font-display font-bold uppercase leading-tight tracking-wide text-[var(--accent)]">
               Nouveau
             </span>
           </Link>
           <NavLink
             to="/dashboard/templates"
             className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
+              `flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[var(--radius-sm)] px-1 py-1.5 transition ${
                 isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
               }`
             }
           >
-            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.file}</span>
-            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">
+            <span className="flex h-6 w-6 items-center justify-center [&>svg]:h-full [&>svg]:w-full">{icons.file}</span>
+            <span className="max-w-full truncate text-[10px] font-display font-bold uppercase tracking-wide">
               Contrats
-            </span>
-          </NavLink>
-          <NavLink
-            to="/dashboard/integrations"
-            className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
-                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
-              }`
-            }
-          >
-            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.link}</span>
-            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">
-              Outils
             </span>
           </NavLink>
           <NavLink
             to="/dashboard/settings"
             className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 transition ${
+              `flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[var(--radius-sm)] px-1 py-1.5 transition ${
                 isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
               }`
             }
           >
-            <span className="h-6 w-6 [&>svg]:h-full [&>svg]:w-full">{icons.settings}</span>
-            <span className="max-w-full truncate px-0.5 text-[9px] font-display font-bold uppercase tracking-wide">
+            <span className="flex h-6 w-6 items-center justify-center [&>svg]:h-full [&>svg]:w-full">{icons.settings}</span>
+            <span className="max-w-full truncate text-[10px] font-display font-bold uppercase tracking-wide">
               Réglages
             </span>
           </NavLink>

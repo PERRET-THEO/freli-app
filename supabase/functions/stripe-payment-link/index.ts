@@ -114,8 +114,10 @@ serve(async (req) => {
 
     let emailSent = false
     if (sendEmail) {
+      const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
       const { error: emailError } = await supabaseAdmin.functions.invoke('send-payment-link-email', {
         body: { projectId: project.id },
+        headers: cronSecret ? { 'x-internal-secret': cronSecret } : undefined,
       })
       emailSent = !emailError
       if (emailError) console.error('send-payment-link-email failed:', emailError.message)

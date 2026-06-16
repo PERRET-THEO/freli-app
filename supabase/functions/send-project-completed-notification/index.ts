@@ -3,12 +3,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'npm:resend'
 import { getResendFrom, assertResendOk } from '../_shared/email.ts'
 import { buildAgencyCompletedEmail } from '../_shared/clientEmailHtml.ts'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+import {
+  assertProjectToken,
+  corsHeaders,
+  jsonResponse,
+} from '../_shared/functionAuth.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -27,27 +26,21 @@ serve(async (req) => {
     const rawBody = await req.text()
 
     if (!rawBody || rawBody.trim() === '') {
-      return new Response(JSON.stringify({ error: 'Body vide' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Body vide' }, 400)
     }
 
-    const body = JSON.parse(rawBody) as { projectId?: string }
+    const body = JSON.parse(rawBody) as { projectId?: string; projectToken?: string }
 
-    if (!body.projectId) {
-      return new Response(JSON.stringify({ error: 'Missing projectId' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    if (!body.projectId || !body.projectToken) {
+      return jsonResponse({ error: 'Missing projectId or projectToken' }, 400)
     }
+
+    const denied = await assertProjectToken(supabase, body.projectId, body.projectToken)
+    if (denied) return jsonResponse({ error: denied.error }, denied.status)
 
     if (appUrl.includes('localhost')) {
       console.log('MODE DEV — Email de notification simulé')
-      return new Response(
-        JSON.stringify({ success: true, message: 'Email simulé en développement' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+      return jsonResponse({ success: true, message: 'Email simulé en développement' })
     }
 
     const { data: projectData, error: projectError } = await supabase
@@ -102,16 +95,10 @@ serve(async (req) => {
     console.log('Resend response:', JSON.stringify(result))
     assertResendOk(result)
 
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ success: true })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('send-project-completed-notification error:', message)
-    return new Response(JSON.stringify({ error: message }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ error: message }, 400)
   }
 })

@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 
 type CompletedEmailPayload = {
   projectId: string
+  projectToken: string
 }
 
 export async function sendProjectInviteEmail(payload: { projectId: string }) {

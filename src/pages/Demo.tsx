@@ -20,8 +20,7 @@ export function Demo() {
             30 minutes pour voir Freli en action et poser vos questions.
           </p>
           <div
-            className="mt-6 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-4 text-sm font-body text-[var(--ink-soft)]"
-            style={{ minWidth: 320, height: 630 }}
+            className="mt-6 h-[min(630px,70vh)] w-full max-w-full overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-4 text-sm font-body text-[var(--ink-soft)]"
             data-url="https://calendly.com/freli/demo"
           >
             Chargement du calendrier...

@@ -46,6 +46,10 @@ verify_jwt = true
 [functions.send-payment-link-email]
 verify_jwt = false
 
+# Portail client — PDF signés et URLs signées (auth par projectToken)
+[functions.portal-contract]
+verify_jwt = false
+
 # Mot de passe oublié — formulaire public (Resend + generateLink)
 [functions.send-password-reset-email]
 verify_jwt = false

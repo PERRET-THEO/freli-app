@@ -7,6 +7,52 @@ const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 
+const DEFAULT_DELAY_HOURS = 48
+
+type AgencyReminderSettings = {
+  auto_reminders_enabled: boolean | null
+  auto_reminders_delay_hours: number | null
+}
+
+type ProjectRow = {
+  id: string
+  created_at: string
+  status: string
+  last_reminder_sent_at: string | null
+  agency_id: string
+  agencies: AgencyReminderSettings | AgencyReminderSettings[] | null
+}
+
+function agencySettings(project: ProjectRow): AgencyReminderSettings | null {
+  const rel = project.agencies
+  if (!rel) return null
+  return Array.isArray(rel) ? rel[0] ?? null : rel
+}
+
+function delayHoursFor(project: ProjectRow): number {
+  const settings = agencySettings(project)
+  const raw = settings?.auto_reminders_delay_hours
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 12) return Math.round(raw)
+  return DEFAULT_DELAY_HOURS
+}
+
+function isEligibleForReminder(project: ProjectRow, nowMs: number): boolean {
+  const settings = agencySettings(project)
+  if (settings?.auto_reminders_enabled === false) return false
+
+  const delayMs = delayHoursFor(project) * 60 * 60 * 1000
+  const thresholdMs = nowMs - delayMs
+  const createdAtMs = new Date(project.created_at).getTime()
+  if (createdAtMs >= thresholdMs) return false
+
+  if (project.last_reminder_sent_at) {
+    const lastReminderMs = new Date(project.last_reminder_sent_at).getTime()
+    if (lastReminderMs >= thresholdMs) return false
+  }
+
+  return true
+}
+
 serve(async (req) => {
   try {
     // Le batch n'est appelé que par le cron : on exige un secret partagé.
@@ -23,14 +69,14 @@ serve(async (req) => {
       })
     }
 
-    const thresholdDate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+    const nowMs = Date.now()
 
     const { data: projects, error } = await supabase
       .from('projects')
-      .select('id, created_at, status, last_reminder_sent_at')
+      .select(
+        'id, created_at, status, last_reminder_sent_at, agency_id, agencies(auto_reminders_enabled, auto_reminders_delay_hours)',
+      )
       .neq('status', 'completed')
-      .lt('created_at', thresholdDate)
-      .or(`last_reminder_sent_at.is.null,last_reminder_sent_at.lt.${thresholdDate}`)
 
     if (error) {
       throw new Error(error.message)
@@ -39,8 +85,14 @@ serve(async (req) => {
     let sent = 0
     let skipped = 0
     let failed = 0
+    const candidates = (projects ?? []) as ProjectRow[]
 
-    for (const project of projects ?? []) {
+    for (const project of candidates) {
+      if (!isEligibleForReminder(project, nowMs)) {
+        skipped += 1
+        continue
+      }
+
       // Ne pas relancer si la checklist est déjà entièrement complétée.
       const { count: pendingCount } = await supabase
         .from('checklist_items')
@@ -56,6 +108,7 @@ serve(async (req) => {
       try {
         const invokeResult = await supabase.functions.invoke('send-project-invite', {
           body: { projectId: project.id, reminder: true, source: 'auto' },
+          headers: { 'x-cron-secret': cronSecret },
         })
         const payload = invokeResult.data as { error?: string; success?: boolean } | null
         if (invokeResult.error || payload?.error || !payload?.success) {
@@ -70,7 +123,7 @@ serve(async (req) => {
       }
     }
 
-    const summary = { success: true, candidates: projects?.length ?? 0, sent, skipped, failed }
+    const summary = { success: true, candidates: candidates.length, sent, skipped, failed }
     console.log('Batch summary:', JSON.stringify(summary))
 
     return new Response(JSON.stringify(summary), {

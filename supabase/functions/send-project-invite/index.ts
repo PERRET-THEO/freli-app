@@ -8,9 +8,18 @@ import {
   fireOutgoingWebhooks,
   getAgencyUserId,
 } from '../_shared/outgoingWebhooks.ts'
+import {
+  assertProjectToken,
+  assertUserOwnsProject,
+  corsHeaders,
+  getAuthenticatedUser,
+  isInternalRequest,
+  jsonResponse,
+} from '../_shared/functionAuth.ts'
 
 type InviteBody = {
   projectId?: string
+  projectToken?: string
   token?: string
   clientName?: string
   clientEmail?: string
@@ -27,11 +36,6 @@ const appUrl = (Deno.env.get('APP_URL') ?? 'http://localhost:5173').replace(/\/$
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 const resend = new Resend(resendApiKey)
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -43,28 +47,21 @@ serve(async (req) => {
     try {
       const rawBody = await req.text()
       if (!rawBody || rawBody.trim() === '') {
-        return new Response(JSON.stringify({ error: 'Body vide reçu' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
+        return jsonResponse({ error: 'Body vide reçu' }, 400)
       }
       body = JSON.parse(rawBody) as InviteBody
     } catch (e) {
       const parseMessage = e instanceof Error ? e.message : String(e)
-      return new Response(JSON.stringify({ error: `JSON invalide: ${parseMessage}` }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: `JSON invalide: ${parseMessage}` }, 400)
     }
 
     const isDev = appUrl.includes('localhost')
-
     const isReminderMode = body.mode === 'reminder' || body.reminder === true
     const emailMode: 'invite' | 'reminder' = isReminderMode ? 'reminder' : 'invite'
     const reminderSource = body.source === 'manual' ? 'manual' : 'auto'
 
     let projectId = body.projectId
-    let token = body.token
+    let token = body.token ?? body.projectToken
     let clientName = body.clientName
     let clientEmail = body.clientEmail
     let agencyName = body.agencyName ?? 'Mon Agence'
@@ -80,23 +77,40 @@ serve(async (req) => {
       payment_status: string | null
     } | null = null
 
-    if (projectId) {
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('id, token, client_name, client_email, agency_id, status, price, payment_status, agencies(id, name)')
-        .eq('id', projectId)
-        .single()
-      if (projectError || !projectData) throw new Error('Project not found')
-
-      projectRow = projectData
-      token = projectData.token
-      clientName = projectData.client_name
-      clientEmail = projectData.client_email
-      agencyId = projectData.agency_id
-      const agenciesRel = projectData.agencies as { id?: string; name?: string } | { id?: string; name?: string }[] | null
-      const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
-      if (agencyRow?.name) agencyName = agencyRow.name
+    if (!projectId) {
+      return jsonResponse({ error: 'Missing projectId' }, 400)
     }
+
+    const internal = isInternalRequest(req)
+    if (!internal) {
+      const user = await getAuthenticatedUser(req)
+      if (user) {
+        const denied = await assertUserOwnsProject(supabase, user.id, projectId)
+        if (denied) return jsonResponse({ error: denied.error }, denied.status)
+      } else if (body.projectToken || body.token) {
+        const projectToken = body.projectToken ?? body.token ?? ''
+        const denied = await assertProjectToken(supabase, projectId, projectToken)
+        if (denied) return jsonResponse({ error: denied.error }, denied.status)
+      } else {
+        return jsonResponse({ error: 'Unauthorized' }, 401)
+      }
+    }
+
+    const { data: projectData, error: projectError } = await supabase
+      .from('projects')
+      .select('id, token, client_name, client_email, agency_id, status, price, payment_status, agencies(id, name)')
+      .eq('id', projectId)
+      .single()
+    if (projectError || !projectData) throw new Error('Project not found')
+
+    projectRow = projectData
+    token = projectData.token
+    clientName = projectData.client_name
+    clientEmail = projectData.client_email
+    agencyId = projectData.agency_id
+    const agenciesRel = projectData.agencies as { id?: string; name?: string } | { id?: string; name?: string }[] | null
+    const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
+    if (agencyRow?.name) agencyName = agencyRow.name
 
     if (!token || !clientName || !clientEmail) {
       throw new Error('Missing invite payload')
@@ -110,15 +124,12 @@ serve(async (req) => {
 
     if (isDev) {
       console.log('MODE DEV — Email simulé pour:', clientEmail, portalUrl)
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'Email simulé en développement',
-          recipient: clientEmail,
-          portalUrl,
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+      return jsonResponse({
+        success: true,
+        message: 'Email simulé en développement',
+        recipient: clientEmail,
+        portalUrl,
+      })
     }
 
     const subject = isReminderMode
@@ -177,15 +188,9 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ success: true, portalUrl }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ success: true })
   } catch (error) {
     console.error('Error:', (error as Error).message)
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ error: (error as Error).message }, 400)
   }
 })

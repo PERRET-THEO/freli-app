@@ -3,6 +3,14 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'npm:resend'
 import { getResendFrom, assertResendOk } from '../_shared/email.ts'
 import { buildClientPaymentEmail } from '../_shared/clientEmailHtml.ts'
+import {
+  assertProjectToken,
+  assertUserOwnsProject,
+  corsHeaders,
+  getAuthenticatedUser,
+  isInternalRequest,
+  jsonResponse,
+} from '../_shared/functionAuth.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -11,11 +19,6 @@ const appUrl = (Deno.env.get('APP_URL') ?? 'http://localhost:5173').replace(/\/$
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 const resend = new Resend(resendApiKey)
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -25,18 +28,26 @@ serve(async (req) => {
   try {
     const rawBody = await req.text()
     if (!rawBody || rawBody.trim() === '') {
-      return new Response(JSON.stringify({ error: 'Body vide' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Body vide' }, 400)
     }
 
-    const body = JSON.parse(rawBody) as { projectId?: string }
+    const body = JSON.parse(rawBody) as { projectId?: string; projectToken?: string }
     if (!body.projectId) {
-      return new Response(JSON.stringify({ error: 'Missing projectId' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ error: 'Missing projectId' }, 400)
+    }
+
+    const internal = isInternalRequest(req)
+    if (!internal) {
+      const user = await getAuthenticatedUser(req)
+      if (user) {
+        const denied = await assertUserOwnsProject(supabase, user.id, body.projectId)
+        if (denied) return jsonResponse({ error: denied.error }, denied.status)
+      } else if (body.projectToken) {
+        const denied = await assertProjectToken(supabase, body.projectId, body.projectToken)
+        if (denied) return jsonResponse({ error: denied.error }, denied.status)
+      } else {
+        return jsonResponse({ error: 'Unauthorized' }, 401)
+      }
     }
 
     const { data: project, error: projectError } = await supabase
@@ -47,10 +58,7 @@ serve(async (req) => {
     if (projectError || !project) throw new Error('Project not found')
 
     if (project.payment_status === 'paid') {
-      return new Response(JSON.stringify({ skipped: 'already paid' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ skipped: 'already paid' })
     }
     if (!project.stripe_checkout_url) throw new Error('No checkout URL available')
     if (!project.client_email) throw new Error('No client email')
@@ -61,10 +69,7 @@ serve(async (req) => {
 
     if (appUrl.includes('localhost')) {
       console.log('MODE DEV — Email paiement simulé pour:', project.client_email)
-      return new Response(JSON.stringify({ success: true, message: 'Email simulé' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ success: true, message: 'Email simulé' })
     }
 
     const html = buildClientPaymentEmail({
@@ -88,15 +93,9 @@ serve(async (req) => {
       .update({ last_payment_email_sent_at: new Date().toISOString() })
       .eq('id', project.id)
 
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ success: true })
   } catch (error) {
     console.error('send-payment-link-email error:', (error as Error).message)
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ error: (error as Error).message }, 400)
   }
 })

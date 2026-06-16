@@ -4,8 +4,10 @@ import { SignatureModal } from '../components/onboarding/SignatureModal'
 import { Button } from '../components/ui'
 import { triggerIntegrations } from '../lib/integrations/triggerIntegrations'
 import type { IntegrationResults } from '../lib/integrations/triggerIntegrations'
+import { getPortalTemplatePdfUrl } from '../lib/contractStorage'
 import { sendProjectCompletedEmail } from '../lib/resend'
 import { getPaymentState, formatPriceEur } from '../lib/payments'
+import { normalizeBrandColor, DEFAULT_BRAND_COLOR } from '../lib/agencyBranding'
 import { supabase } from '../lib/supabase'
 
 type ProjectRecord = {
@@ -18,7 +20,23 @@ type ProjectRecord = {
   price?: number | null
   payment_status?: string | null
   stripe_checkout_url?: string | null
-  agencies?: { logo_url: string | null; name?: string } | { logo_url: string | null; name?: string }[] | null
+  agencies?: {
+    logo_url: string | null
+    name?: string
+    brand_color?: string | null
+    portal_welcome_message?: string | null
+    tagline?: string | null
+    contact_email?: string | null
+    contact_phone?: string | null
+  } | {
+    logo_url: string | null
+    name?: string
+    brand_color?: string | null
+    portal_welcome_message?: string | null
+    tagline?: string | null
+    contact_email?: string | null
+    contact_phone?: string | null
+  }[] | null
 }
 
 type ChecklistItemRecord = {
@@ -136,22 +154,35 @@ export function ClientPortal() {
   const stepRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const [signingItemId, setSigningItemId] = useState<string | null>(null)
   const [loadedTemplate, setLoadedTemplate] = useState<LoadedTemplate | null>(null)
+  const [templatePdfUrl, setTemplatePdfUrl] = useState<string | null>(null)
   const [integrationResults, setIntegrationResults] = useState<IntegrationResults>({})
   const [integrationsSent, setIntegrationsSent] = useState(false)
 
-  const agencyLogoUrl = useMemo(() => {
+  const agencyRelation = useMemo(() => {
     const relation = project?.agencies
     if (!relation) return null
-    if (Array.isArray(relation)) return relation[0]?.logo_url ?? null
-    return (relation as { logo_url: string | null }).logo_url
+    return Array.isArray(relation) ? relation[0] : relation
   }, [project?.agencies])
 
-  const agencyName = useMemo(() => {
-    const relation = project?.agencies
-    if (!relation) return 'votre agence'
-    if (Array.isArray(relation)) return relation[0]?.name ?? 'votre agence'
-    return (relation as { name?: string }).name ?? 'votre agence'
-  }, [project?.agencies])
+  const agencyLogoUrl = agencyRelation?.logo_url ?? null
+
+  const agencyName = agencyRelation?.name ?? 'votre agence'
+
+  const brandColor = normalizeBrandColor(agencyRelation?.brand_color ?? DEFAULT_BRAND_COLOR)
+
+  const portalWelcomeMessage =
+    agencyRelation?.portal_welcome_message?.trim() ||
+    'Complétez les étapes ci-dessous pour démarrer votre projet. Cela prend environ 10 minutes.'
+
+  const agencyTagline = agencyRelation?.tagline?.trim() ?? ''
+
+  const agencyContactEmail = agencyRelation?.contact_email?.trim() ?? ''
+  const agencyContactPhone = agencyRelation?.contact_phone?.trim() ?? ''
+
+  const portalStyle = useMemo(
+    () => ({ ['--accent' as string]: brandColor, ['--portal-accent' as string]: brandColor }),
+    [brandColor],
+  )
 
   const firstIncompleteId = useMemo(
     () => items.find((i) => !i.completed)?.id ?? null,
@@ -206,6 +237,24 @@ export function ClientPortal() {
   }, [signingItemId, items, project])
 
   useEffect(() => {
+    if (!loadedTemplate?.id || !token) {
+      setTemplatePdfUrl(null)
+      return
+    }
+    let cancelled = false
+    void getPortalTemplatePdfUrl(token, loadedTemplate.id)
+      .then((url) => {
+        if (!cancelled) setTemplatePdfUrl(url)
+      })
+      .catch(() => {
+        if (!cancelled) setTemplatePdfUrl(loadedTemplate.pdf_url)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadedTemplate, token])
+
+  useEffect(() => {
     if (!openStepId && firstIncompleteId) {
       setOpenStepId(firstIncompleteId)
     }
@@ -221,7 +270,7 @@ export function ClientPortal() {
 
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
-        .select('id, client_name, client_email, status, token, agency_id, price, payment_status, stripe_checkout_url, agencies(logo_url, name)')
+        .select('id, client_name, client_email, status, token, agency_id, price, payment_status, stripe_checkout_url, agencies(logo_url, name, brand_color, portal_welcome_message, tagline, contact_email, contact_phone)')
         .eq('token', token)
         .maybeSingle()
 
@@ -305,7 +354,7 @@ export function ClientPortal() {
       setTimeout(() => setShowConfetti(false), 5000)
       supabase.from('projects').update({ status: 'completed' }).eq('id', project.id).then()
       if (!completionEmailSent) {
-        sendProjectCompletedEmail({ projectId: project.id }).then(() => setCompletionEmailSent(true))
+        sendProjectCompletedEmail({ projectId: project.id, projectToken: project.token }).then(() => setCompletionEmailSent(true))
       }
       if (!integrationsSent && project.payment_status !== 'paid' && !project.stripe_checkout_url) {
         setIntegrationsSent(true)
@@ -415,7 +464,7 @@ export function ClientPortal() {
   if (!project) return null
 
   return (
-    <div className="min-h-screen bg-[var(--surface)]">
+    <div className="min-h-screen bg-[var(--surface)]" style={portalStyle}>
       {showConfetti && <Confetti />}
 
       <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--white)]/95 backdrop-blur-md">
@@ -459,9 +508,10 @@ export function ClientPortal() {
             <p className="mt-2 font-body text-base text-[var(--ink-soft)]">
               Votre espace d&apos;onboarding avec <strong>{agencyName}</strong>
             </p>
-            <p className="mt-1 font-body text-sm text-[var(--ink-muted)]">
-              Complétez les étapes ci-dessous pour démarrer votre projet. Cela prend environ 10 minutes.
-            </p>
+            {agencyTagline ? (
+              <p className="mt-1 font-body text-sm text-[var(--ink-muted)]">{agencyTagline}</p>
+            ) : null}
+            <p className="mt-2 font-body text-sm text-[var(--ink-muted)]">{portalWelcomeMessage}</p>
             <Button className="mt-5 w-full sm:w-auto" onClick={scrollToFirstIncomplete}>Commencer →</Button>
           </div>
         )}
@@ -552,7 +602,7 @@ export function ClientPortal() {
                   </div>
                 </button>
 
-                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`} style={{ marginLeft: 52 }}>
+                <div className={`overflow-hidden pl-0 transition-all duration-300 ease-in-out sm:pl-[52px] ${isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
                   <div className="pb-6 pr-1">
                     {item.type === 'text' && !item.completed && (
                       <div className="space-y-3">
@@ -621,6 +671,12 @@ export function ClientPortal() {
       </main>
 
       <footer className="pb-8 text-center">
+        {(agencyContactEmail || agencyContactPhone) && (
+          <div className="mb-3 font-body text-xs text-[var(--ink-muted)]">
+            {agencyContactEmail ? <p>{agencyContactEmail}</p> : null}
+            {agencyContactPhone ? <p className="mt-0.5">{agencyContactPhone}</p> : null}
+          </div>
+        )}
         <p className="font-body text-xs text-[var(--ink-muted)]">
           Propulsé par{' '}<span className="font-display font-bold text-[var(--ink)]">Freli</span>
         </p>
@@ -629,7 +685,7 @@ export function ClientPortal() {
       {signingItemId && project && (
         <SignatureModal
           contractName={loadedTemplate?.name ?? signingItem?.label ?? 'Contrat'}
-          pdfUrl={loadedTemplate?.pdf_url ?? null}
+          pdfUrl={templatePdfUrl}
           signaturePage={loadedTemplate?.signature_page}
           signatureX={loadedTemplate?.signature_x}
           signatureY={loadedTemplate?.signature_y}

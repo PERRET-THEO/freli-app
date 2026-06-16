@@ -172,7 +172,35 @@ export function Clients() {
               </p>
             </Card>
           ) : (
-            <div className="mt-6 overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)]">
+            <>
+              <div className="mt-6 space-y-3 md:hidden">
+                {filtered.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => navigate(`/dashboard/client/${c.id}`)}
+                    className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-4 text-left transition hover:border-[var(--accent)]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-display font-bold text-[var(--white)]">
+                        {c.first_name[0]?.toUpperCase()}{c.last_name[0]?.toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-[var(--ink)]">{c.first_name} {c.last_name}</p>
+                        <p className="truncate text-xs text-[var(--ink-muted)]">{c.email}</p>
+                        {c.company_name ? (
+                          <p className="truncate text-xs text-[var(--accent)]">{c.company_name}</p>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 rounded-full bg-[var(--surface)] px-2.5 py-1 text-xs font-medium text-[var(--ink)]">
+                        {c.projectCount} projet{c.projectCount !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+            <div className="mt-6 hidden overflow-x-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] md:block">
               <table className="w-full text-left text-sm font-body">
                 <thead>
                   <tr className="border-b border-[var(--border)] bg-[var(--surface)]">
@@ -207,6 +235,7 @@ export function Clients() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </>
       )}

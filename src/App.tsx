@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { resolveAuthCallbackPath } from './lib/authCallbackRoute'
 import { supabase } from './lib/supabase'
 import { ClientPortal } from './pages/ClientPortal'
@@ -21,6 +22,7 @@ import { Templates } from './pages/Templates'
 import { Clients } from './pages/Clients'
 import { ClientDetail } from './pages/ClientDetail'
 import { Integrations } from './pages/Integrations'
+import { PortalPreview } from './pages/PortalPreview'
 
 function RequireAuth() {
   const [loading, setLoading] = useState(true)
@@ -117,7 +119,8 @@ function LandingEntry() {
 
 function App() {
   return (
-    <Routes>
+    <ErrorBoundary>
+      <Routes>
       <Route path="/" element={<AppRoot />} />
       <Route path="/demo" element={<Demo />} />
       <Route path="/confidentialite" element={<PrivacyPolicy />} />
@@ -141,8 +144,10 @@ function App() {
         <Route path="/dashboard/integrations" element={<Integrations />} />
       </Route>
       <Route path="/p/:token" element={<ClientPortal />} />
+      <Route path="/portal-preview" element={<PortalPreview />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </ErrorBoundary>
   )
 }
 

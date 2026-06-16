@@ -1,19 +1,28 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
-import { Button, Card, Input } from '../components/ui'
+import { BrandColorPicker } from '../components/settings/BrandColorPicker'
+import { LogoUpload } from '../components/settings/LogoUpload'
+import { PortalPreviewLink } from '../components/settings/PortalPreviewLink'
+import { ReminderSettingsPanel } from '../components/settings/ReminderSettingsPanel'
+import { SettingsNav } from '../components/settings/SettingsNav'
+import { SettingsSection } from '../components/settings/SettingsSection'
+import { SettingsSkeleton } from '../components/settings/SettingsSkeleton'
+import {
+  DEFAULT_BRAND_COLOR,
+  normalizeBrandColor,
+  type AgencyBranding,
+} from '../lib/agencyBranding'
 import { getOrCreateAgency } from '../lib/agency'
+import { normalizeReminderDelayHours } from '../lib/reminderSettings'
 import { supabase } from '../lib/supabase'
 import { SUPPORT_EMAIL, supportMailto } from '../lib/support'
-
-type AgencyRecord = {
-  id: string
-  name: string
-  logo_url: string | null
-  plan: string | null
-}
+import { Button, Card, Input } from '../components/ui'
 
 type SectionFeedback = { type: 'success' | 'error'; text: string } | null
+
+const AGENCY_SELECT =
+  'id, name, logo_url, plan, brand_color, portal_welcome_message, tagline, contact_email, contact_phone, auto_reminders_enabled, auto_reminders_delay_hours'
 
 function SectionMessage({ feedback }: { feedback: SectionFeedback }) {
   if (!feedback) return null
@@ -28,32 +37,65 @@ function SectionMessage({ feedback }: { feedback: SectionFeedback }) {
   )
 }
 
+function accountInitials(email: string): string {
+  const part = email.split('@')[0] ?? 'U'
+  return part.slice(0, 2).toUpperCase()
+}
+
 export function Settings() {
   const navigate = useNavigate()
   const [userId, setUserId] = useState<string | null>(null)
-  const [agency, setAgency] = useState<AgencyRecord | null>(null)
+  const [agency, setAgency] = useState<AgencyBranding | null>(null)
   const [agencyName, setAgencyName] = useState('')
+  const [tagline, setTagline] = useState('')
+  const [brandColor, setBrandColor] = useState(DEFAULT_BRAND_COLOR)
+  const [welcomeMessage, setWelcomeMessage] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
   const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
+  const [logoError, setLogoError] = useState<string | null>(null)
   const [accountEmail, setAccountEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [showPasswordForm, setShowPasswordForm] = useState(false)
   const [agencyFeedback, setAgencyFeedback] = useState<SectionFeedback>(null)
   const [passwordFeedback, setPasswordFeedback] = useState<SectionFeedback>(null)
   const [agencySaving, setAgencySaving] = useState(false)
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [pageLoading, setPageLoading] = useState(true)
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteFeedback, setInviteFeedback] = useState<SectionFeedback>(null)
-  const [inviteSending, setInviteSending] = useState(false)
+  const [autoRemindersEnabled, setAutoRemindersEnabled] = useState(true)
+  const [autoRemindersDelayHours, setAutoRemindersDelayHours] = useState(48)
+  const [reminderFeedback, setReminderFeedback] = useState<SectionFeedback>(null)
+  const [reminderSaving, setReminderSaving] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
-  const inviteAdminEmails = (import.meta.env.VITE_INVITE_ADMIN_EMAILS ?? '')
-    .split(',')
-    .map((e: string) => e.trim().toLowerCase())
-    .filter(Boolean)
-  const canInviteUsers =
-    inviteAdminEmails.length > 0 &&
-    accountEmail.trim().toLowerCase() !== '' &&
-    inviteAdminEmails.includes(accountEmail.trim().toLowerCase())
+  const showToast = useCallback((msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2500)
+  }, [])
+
+  useEffect(() => {
+    if (!logoFile) {
+      setLogoPreviewUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(logoFile)
+    setLogoPreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [logoFile])
+
+  const loadAgencyFields = (row: AgencyBranding) => {
+    setAgency(row)
+    setAgencyName(row.name ?? '')
+    setTagline(row.tagline ?? '')
+    setBrandColor(normalizeBrandColor(row.brand_color))
+    setWelcomeMessage(row.portal_welcome_message ?? '')
+    setContactEmail(row.contact_email ?? '')
+    setContactPhone(row.contact_phone ?? '')
+    setAutoRemindersEnabled(row.auto_reminders_enabled !== false)
+    setAutoRemindersDelayHours(normalizeReminderDelayHours(row.auto_reminders_delay_hours))
+  }
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -67,19 +109,38 @@ export function Settings() {
 
       const { data: agencyData } = await supabase
         .from('agencies')
-        .select('id, name, logo_url, plan')
+        .select(AGENCY_SELECT)
         .eq('user_id', userData.user.id)
         .maybeSingle()
 
-      if (agencyData) {
-        setAgency(agencyData as AgencyRecord)
-        setAgencyName(agencyData.name ?? '')
-      }
+      if (agencyData) loadAgencyFields(agencyData as AgencyBranding)
       setPageLoading(false)
     }
 
     loadSettings()
   }, [])
+
+  const previewData = useMemo(
+    () => ({
+      name: agencyName.trim() || 'Mon agence',
+      logoUrl: logoPreviewUrl ?? agency?.logo_url ?? null,
+      brandColor: normalizeBrandColor(brandColor),
+      tagline: tagline.trim(),
+      welcomeMessage: welcomeMessage.trim(),
+      contactEmail: contactEmail.trim(),
+      contactPhone: contactPhone.trim(),
+    }),
+    [
+      agency?.logo_url,
+      agencyName,
+      brandColor,
+      contactEmail,
+      contactPhone,
+      logoPreviewUrl,
+      tagline,
+      welcomeMessage,
+    ],
+  )
 
   const uploadLogo = async (agencyId: string, currentLogoUrl: string | null): Promise<string | null> => {
     if (!logoFile) return currentLogoUrl
@@ -89,15 +150,17 @@ export function Settings() {
     const { error: uploadError } = await supabase.storage
       .from('logos')
       .upload(filePath, logoFile, { upsert: true })
-    if (uploadError) {
-      throw new Error("Impossible d'uploader le logo.")
-    }
+    if (uploadError) throw new Error("Impossible d'uploader le logo.")
     const { data } = supabase.storage.from('logos').getPublicUrl(filePath)
     return data.publicUrl
   }
 
   const handleSaveAgency = async () => {
     setAgencyFeedback(null)
+    if (logoError) {
+      setAgencyFeedback({ type: 'error', text: logoError })
+      return
+    }
     const trimmedName = agencyName.trim()
     if (!trimmedName) {
       setAgencyFeedback({ type: 'error', text: 'Le nom de l’agence est obligatoire.' })
@@ -108,40 +171,52 @@ export function Settings() {
       return
     }
 
+    const payload = {
+      name: trimmedName,
+      tagline: tagline.trim() || null,
+      brand_color: normalizeBrandColor(brandColor),
+      portal_welcome_message: welcomeMessage.trim() || null,
+      contact_email: contactEmail.trim() || null,
+      contact_phone: contactPhone.trim() || null,
+    }
+
     setAgencySaving(true)
     try {
       if (agency?.id) {
         const logoUrl = await uploadLogo(agency.id, agency.logo_url)
-        const { error: updateError } = await supabase
+        const { data: updated, error: updateError } = await supabase
           .from('agencies')
-          .update({ name: trimmedName, logo_url: logoUrl })
+          .update({ ...payload, logo_url: logoUrl })
           .eq('id', agency.id)
+          .select(AGENCY_SELECT)
+          .single()
 
         if (updateError) {
           setAgencyFeedback({ type: 'error', text: updateError.message })
           return
         }
 
-        setAgency({ ...agency, name: trimmedName, logo_url: logoUrl })
+        loadAgencyFields(updated as AgencyBranding)
         setLogoFile(null)
-        setAgencyFeedback({ type: 'success', text: 'Paramètres agence enregistrés.' })
+        setAgencyFeedback({ type: 'success', text: 'Paramètres enregistrés.' })
+        showToast('Paramètres enregistrés.')
         return
       }
 
       const createdBase = await getOrCreateAgency(userId, trimmedName)
       if (!createdBase?.id) {
-        setAgencyFeedback({
-          type: 'error',
-          text: 'Impossible de créer votre agence.',
-        })
+        setAgencyFeedback({ type: 'error', text: 'Impossible de créer votre agence.' })
         return
       }
 
+      let logoUrl: string | null = null
+      if (logoFile) logoUrl = await uploadLogo(createdBase.id, null)
+
       const { data: created, error: updateNameError } = await supabase
         .from('agencies')
-        .update({ name: trimmedName })
+        .update({ ...payload, logo_url: logoUrl })
         .eq('id', createdBase.id)
-        .select('id, name, logo_url, plan')
+        .select(AGENCY_SELECT)
         .single()
 
       if (updateNameError || !created) {
@@ -152,21 +227,10 @@ export function Settings() {
         return
       }
 
-      let logoUrl = created.logo_url as string | null
-      if (logoFile) {
-        logoUrl = await uploadLogo(created.id, null)
-        await supabase.from('agencies').update({ logo_url: logoUrl }).eq('id', created.id)
-      }
-
-      const record: AgencyRecord = {
-        id: created.id,
-        name: trimmedName,
-        logo_url: logoUrl,
-        plan: created.plan ?? null,
-      }
-      setAgency(record)
+      loadAgencyFields(created as AgencyBranding)
       setLogoFile(null)
       setAgencyFeedback({ type: 'success', text: 'Agence créée et enregistrée.' })
+      showToast('Agence créée.')
     } catch (reason) {
       setAgencyFeedback({
         type: 'error',
@@ -201,46 +265,42 @@ export function Settings() {
     }
     setPassword('')
     setPasswordConfirm('')
+    setShowPasswordForm(false)
     setPasswordFeedback({ type: 'success', text: 'Mot de passe mis à jour.' })
+    showToast('Mot de passe mis à jour.')
   }
 
-  const handleInviteUser = async () => {
-    setInviteFeedback(null)
-    const email = inviteEmail.trim().toLowerCase()
-    if (!email || !email.includes('@')) {
-      setInviteFeedback({ type: 'error', text: 'Adresse email invalide.' })
+  const handleSaveReminders = async () => {
+    setReminderFeedback(null)
+    if (!agency?.id) {
+      setReminderFeedback({
+        type: 'error',
+        text: 'Créez d’abord votre agence dans la section Organisation.',
+      })
       return
     }
 
-    setInviteSending(true)
-    try {
-      const { data, error: invokeError } = await supabase.functions.invoke('invite-user', {
-        body: { email },
+    setReminderSaving(true)
+    const { data: updated, error } = await supabase
+      .from('agencies')
+      .update({
+        auto_reminders_enabled: autoRemindersEnabled,
+        auto_reminders_delay_hours: normalizeReminderDelayHours(autoRemindersDelayHours),
       })
-      if (invokeError) {
-        setInviteFeedback({ type: 'error', text: 'Impossible d\u2019envoyer l\u2019invitation.' })
-        return
-      }
-      if (data && typeof data === 'object' && 'error' in data && data.error) {
-        const message = String(data.error)
-        if (message === 'Forbidden') {
-          setInviteFeedback({
-            type: 'error',
-            text: 'Vous n\u2019avez pas les droits pour inviter des utilisateurs.',
-          })
-          return
-        }
-        setInviteFeedback({ type: 'error', text: message })
-        return
-      }
-      setInviteEmail('')
-      setInviteFeedback({
-        type: 'success',
-        text: `Invitation envoyée à ${email}.`,
-      })
-    } finally {
-      setInviteSending(false)
+      .eq('id', agency.id)
+      .select(AGENCY_SELECT)
+      .single()
+
+    setReminderSaving(false)
+
+    if (error) {
+      setReminderFeedback({ type: 'error', text: error.message })
+      return
     }
+
+    loadAgencyFields(updated as AgencyBranding)
+    setReminderFeedback({ type: 'success', text: 'Paramètres de relance enregistrés.' })
+    showToast('Relances enregistrées.')
   }
 
   const handleLogout = async () => {
@@ -250,147 +310,273 @@ export function Settings() {
 
   if (pageLoading) {
     return (
-      <DashboardLayout title="Paramètres" subtitle="Agence & compte" maxWidth="4xl">
-        <p className="text-sm font-body text-[var(--ink-muted)]">Chargement des paramètres…</p>
+      <DashboardLayout title="Paramètres" subtitle="Agence, portail client et compte" maxWidth="5xl">
+        <SettingsSkeleton />
       </DashboardLayout>
     )
   }
 
+  const planLabel = agency?.plan?.trim() || 'Accès Freli'
+
   return (
-    <DashboardLayout title="Paramètres" subtitle="Agence & compte" maxWidth="4xl">
+    <DashboardLayout title="Paramètres" subtitle="Agence, portail client et compte" maxWidth="5xl">
       <div className="space-y-4">
         <Card>
-          <h2 className="font-display text-xl font-semibold text-[var(--ink)]">
-            {agency ? 'Mon agence' : 'Créer mon agence'}
-          </h2>
-          <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">
-            {agency
-              ? 'Nom et logo affichés sur vos espaces clients.'
-              : 'Configurez votre agence pour utiliser Freli.'}
-          </p>
-          <div className="mt-4 space-y-3">
-            {agency?.logo_url ? (
+          <div className="flex flex-wrap items-center gap-4">
+            {previewData.logoUrl ? (
               <img
-                src={agency.logo_url}
-                alt="Logo de l'agence"
-                className="h-14 w-14 rounded-[var(--radius-sm)] border border-[var(--border)] object-cover"
+                src={previewData.logoUrl}
+                alt=""
+                className="h-16 w-16 rounded-full border border-[var(--border)] object-cover"
               />
-            ) : null}
-            <Input
-              placeholder="Nom de l'agence"
-              value={agencyName}
-              onChange={(event) => setAgencyName(event.target.value)}
-            />
-            <label className="block text-sm font-body text-[var(--ink-soft)]">
-              Logo de l&apos;agence
-              <input
-                type="file"
-                accept="image/*"
-                className="mt-2 block w-full text-sm font-body"
-                onChange={(event) => setLogoFile(event.target.files?.[0] ?? null)}
-              />
-            </label>
-            <Button onClick={handleSaveAgency} disabled={agencySaving}>
-              {agencySaving ? 'Enregistrement…' : agency ? 'Enregistrer' : 'Créer mon agence'}
-            </Button>
-            <SectionMessage feedback={agencyFeedback} />
-          </div>
-        </Card>
-
-        <Card>
-          <h2 className="font-display text-xl font-semibold text-[var(--ink)]">Mon compte</h2>
-          <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">{accountEmail}</p>
-          <div className="mt-4 space-y-3">
-            <Input
-              type="password"
-              placeholder="Nouveau mot de passe"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-            <Input
-              type="password"
-              placeholder="Confirmer le mot de passe"
-              value={passwordConfirm}
-              onChange={(event) => setPasswordConfirm(event.target.value)}
-            />
-            <Button onClick={handleChangePassword} disabled={passwordSaving}>
-              {passwordSaving ? 'Mise à jour…' : 'Changer le mot de passe'}
-            </Button>
-            <SectionMessage feedback={passwordFeedback} />
-          </div>
-        </Card>
-
-        {canInviteUsers ? (
-          <Card>
-            <h2 className="font-display text-xl font-semibold text-[var(--ink)]">
-              Inviter un utilisateur
-            </h2>
-            <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-              Envoyez une invitation pour créer un compte Freli. L&apos;email part via Resend
-              (comme le mot de passe oublié).
-            </p>
-            <div className="mt-4 space-y-3">
-              <Input
-                type="email"
-                placeholder="email@exemple.com"
-                value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
-              />
-              <Button onClick={handleInviteUser} disabled={inviteSending}>
-                {inviteSending ? 'Envoi…' : 'Envoyer l\u2019invitation'}
-              </Button>
-              <SectionMessage feedback={inviteFeedback} />
+            ) : (
+              <div
+                className="flex h-16 w-16 items-center justify-center rounded-full font-display text-lg font-bold text-white"
+                style={{ backgroundColor: previewData.brandColor }}
+              >
+                {agencyName.trim().slice(0, 2).toUpperCase() || 'AG'}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-display text-xl font-bold text-[var(--ink)]">
+                  {agencyName.trim() || 'Mon agence'}
+                </h2>
+                <span className="rounded-full bg-[var(--accent-soft)] px-2.5 py-0.5 text-xs font-body font-medium text-[var(--accent)]">
+                  {planLabel}
+                </span>
+              </div>
+              <p className="mt-1 truncate text-sm font-body text-[var(--ink-muted)]">{accountEmail}</p>
+              {tagline.trim() ? (
+                <p className="mt-0.5 text-sm font-body text-[var(--ink-soft)]">{tagline.trim()}</p>
+              ) : null}
             </div>
-          </Card>
-        ) : null}
-
-        <Card>
-          <h2 className="font-display text-xl font-semibold text-[var(--ink)]">Votre accès Freli</h2>
-          <p className="mt-2 text-sm font-body leading-relaxed text-[var(--ink-muted)]">
-            Freli est une application payante. Votre accès a été activé par l&apos;équipe Freli sur
-            invitation — sans action de votre part, aucun compte ne peut être créé.
-          </p>
-          <p className="mt-3 text-sm font-body text-[var(--ink-soft)]">
-            Pour toute question sur votre abonnement ou votre accès, contactez le support.
-          </p>
-          <a
-            href={supportMailto}
-            className="mt-4 inline-flex rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-5 py-2.5 text-sm font-body font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-          >
-            Contacter le support ({SUPPORT_EMAIL})
-          </a>
-        </Card>
-
-        <Card>
-          <h2 className="font-display text-xl font-semibold text-[var(--ink)]">Documents</h2>
-          <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-            Modèles de contrats et signature électronique pour vos projets clients.
-          </p>
-          <div className="mt-4">
-            <Link to="/dashboard/templates">
-              <Button variant="secondary">Gérer mes contrats</Button>
-            </Link>
           </div>
         </Card>
 
-        <Card className="border border-[var(--amber)]/40 bg-[rgba(245,166,35,0.04)]">
-          <h2 className="font-display text-xl font-semibold text-[var(--ink)]">Session</h2>
-          <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-            Vous serez redirigé vers la page de connexion. La suppression de compte est gérée
-            uniquement par l&apos;équipe Freli sur demande au support.
-          </p>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-[13px] font-body text-[var(--ink-soft)]">Fin de session sur cet appareil</p>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-[var(--radius-sm)] border border-[var(--amber)] bg-[var(--amber-soft)] px-5 py-2.5 text-sm font-body font-medium text-[var(--amber)] transition hover:brightness-95"
+        <div className="grid gap-4 lg:grid-cols-[200px_1fr] lg:items-start">
+          <SettingsNav />
+
+          <div className="space-y-4">
+            <SettingsSection
+              id="settings-organisation"
+              icon="🏢"
+              title={agency ? 'Organisation' : 'Créer mon agence'}
+              description="Nom et logo affichés sur vos espaces clients et emails."
             >
-              Se déconnecter
-            </button>
+              <div className="space-y-4">
+                <Input
+                  placeholder="Nom de l'agence"
+                  value={agencyName}
+                  onChange={(event) => setAgencyName(event.target.value)}
+                />
+                <LogoUpload
+                  currentUrl={agency?.logo_url ?? null}
+                  file={logoFile}
+                  onFileChange={setLogoFile}
+                  onError={setLogoError}
+                />
+                <div className="rounded-[var(--radius-sm)] bg-[var(--surface-warm)] p-3">
+                  <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Comment ça marche</p>
+                  <p className="mt-1.5 text-xs font-body leading-relaxed text-[var(--ink-muted)]">
+                    Le logo et le nom apparaissent en en-tête du portail client et dans les communications
+                    liées à vos projets.
+                  </p>
+                </div>
+                <Button onClick={handleSaveAgency} disabled={agencySaving}>
+                  {agencySaving ? 'Enregistrement…' : 'Enregistrer'}
+                </Button>
+              </div>
+            </SettingsSection>
+
+            <SettingsSection
+              id="settings-portail"
+              icon="🎨"
+              title="Portail client"
+              description="Personnalisez l'expérience de vos clients pendant l'onboarding."
+            >
+              <div className="space-y-4">
+                <Input
+                  placeholder="Sous-titre (ex. Studio créatif à Paris)"
+                  value={tagline}
+                  onChange={(event) => setTagline(event.target.value)}
+                />
+                <div>
+                  <label className="mb-1.5 block text-sm font-body font-medium text-[var(--ink-soft)]">
+                    Message d&apos;accueil
+                  </label>
+                  <textarea
+                    value={welcomeMessage}
+                    onChange={(event) => setWelcomeMessage(event.target.value)}
+                    placeholder="Complétez les étapes ci-dessous pour démarrer votre projet. Cela prend environ 10 minutes."
+                    rows={3}
+                    className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] outline-none transition focus:border-[var(--accent)]"
+                  />
+                </div>
+                <BrandColorPicker value={brandColor} onChange={setBrandColor} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input
+                    type="email"
+                    placeholder="Email de contact (optionnel)"
+                    value={contactEmail}
+                    onChange={(event) => setContactEmail(event.target.value)}
+                  />
+                  <Input
+                    type="tel"
+                    placeholder="Téléphone (optionnel)"
+                    value={contactPhone}
+                    onChange={(event) => setContactPhone(event.target.value)}
+                  />
+                </div>
+                <PortalPreviewLink data={previewData} />
+                <Button onClick={handleSaveAgency} disabled={agencySaving}>
+                  {agencySaving ? 'Enregistrement…' : 'Enregistrer les paramètres'}
+                </Button>
+                <SectionMessage feedback={agencyFeedback} />
+              </div>
+            </SettingsSection>
+
+            <SettingsSection
+              id="settings-relances"
+              icon="📬"
+              title="Relances automatiques"
+              description="Configurez les emails de relance envoyés aux clients dont la checklist est incomplète."
+            >
+              <ReminderSettingsPanel
+                agencyId={agency?.id ?? null}
+                enabled={autoRemindersEnabled}
+                delayHours={autoRemindersDelayHours}
+                onEnabledChange={setAutoRemindersEnabled}
+                onDelayChange={setAutoRemindersDelayHours}
+                onSave={handleSaveReminders}
+                saving={reminderSaving}
+                feedback={reminderFeedback}
+              />
+            </SettingsSection>
+
+            <SettingsSection
+              id="settings-compte"
+              icon="👤"
+              title="Mon compte"
+              description="Identifiants de connexion à Freli."
+            >
+              <div className="flex items-center gap-3 rounded-[var(--radius-sm)] bg-[var(--surface-warm)] px-4 py-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] font-body text-sm font-semibold text-[var(--accent)]">
+                  {accountInitials(accountEmail)}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-body font-medium text-[var(--ink)]">{accountEmail}</p>
+                  <p className="text-xs font-body text-[var(--ink-muted)]">Compte agence Freli</p>
+                </div>
+              </div>
+
+              {!showPasswordForm ? (
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordForm(true)}
+                  className="mt-4 text-sm font-body font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+                >
+                  Modifier le mot de passe
+                </button>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  <Input
+                    type="password"
+                    placeholder="Nouveau mot de passe"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                  <Input
+                    type="password"
+                    placeholder="Confirmer le mot de passe"
+                    value={passwordConfirm}
+                    onChange={(event) => setPasswordConfirm(event.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={handleChangePassword} disabled={passwordSaving}>
+                      {passwordSaving ? 'Mise à jour…' : 'Mettre à jour'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setShowPasswordForm(false)
+                        setPassword('')
+                        setPasswordConfirm('')
+                        setPasswordFeedback(null)
+                      }}
+                    >
+                      Annuler
+                    </Button>
+                  </div>
+                </div>
+              )}
+              <SectionMessage feedback={passwordFeedback} />
+            </SettingsSection>
+
+            <SettingsSection
+              id="settings-aide"
+              icon="💬"
+              title="Aide & accès"
+              description="Support, abonnement et documents légaux."
+            >
+              <p className="text-sm font-body leading-relaxed text-[var(--ink-muted)]">
+                Freli est une application sur invitation. Pour toute question sur votre abonnement ou
+                votre accès, contactez le support.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <a
+                  href={supportMailto}
+                  className="inline-flex rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-5 py-2.5 text-sm font-body font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                >
+                  Contacter le support ({SUPPORT_EMAIL})
+                </a>
+                <Link
+                  to="/dashboard/integrations"
+                  className="inline-flex rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-5 py-2.5 text-sm font-body font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                >
+                  Intégrations
+                </Link>
+                <Link
+                  to="/confidentialite"
+                  className="inline-flex rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-5 py-2.5 text-sm font-body font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                >
+                  Confidentialité
+                </Link>
+                <Link
+                  to="/conditions-utilisation"
+                  className="inline-flex rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-5 py-2.5 text-sm font-body font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                >
+                  Conditions d&apos;utilisation
+                </Link>
+              </div>
+            </SettingsSection>
+
+            <Card className="border border-[var(--border)]">
+              <h2 className="font-display text-lg font-semibold text-[var(--ink)]">Session</h2>
+              <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
+                Déconnexion sur cet appareil. La suppression de compte se fait sur demande au support.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+                <p className="text-[13px] font-body text-[var(--ink-soft)]">{accountEmail}</p>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-5 py-2.5 text-sm font-body font-medium text-[var(--ink)] transition hover:border-[var(--ink-muted)]"
+                >
+                  Se déconnecter
+                </button>
+              </div>
+            </Card>
           </div>
-        </Card>
+        </div>
       </div>
+
+      {toast ? (
+        <div className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-sm font-body text-[var(--white)] shadow-lg md:bottom-8">
+          {toast}
+        </div>
+      ) : null}
     </DashboardLayout>
   )
 }

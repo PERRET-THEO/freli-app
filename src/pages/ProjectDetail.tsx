@@ -491,7 +491,7 @@ export function ProjectDetail() {
             <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
               Le projet de <strong>{project.client_name}</strong> sera définitivement supprimé ainsi que tous ses documents et étapes.
             </p>
-            <div className="mt-5 flex gap-3">
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <Button variant="secondary" onClick={() => setShowDeleteModal(false)} disabled={deleteLoading}>
                 Annuler
               </Button>

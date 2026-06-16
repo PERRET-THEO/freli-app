@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { Badge, Button, Card, Input } from '../components/ui'
+import { resolveAgencyContractPdfUrl } from '../lib/contractStorage'
 import { supabase } from '../lib/supabase'
 import { pdfjs, setupPdfWorker } from '../lib/pdfWorker'
 import { ChecklistTemplatesManager } from '../components/checklist/ChecklistTemplatesManager'
@@ -106,7 +107,9 @@ function PositionEditor({ template, onSave, onClose }: {
     const run = async () => {
       setPdfLoading(true)
       try {
-        const res = await fetch(template.pdf_url!)
+        const pdfUrl = await resolveAgencyContractPdfUrl(template.pdf_url)
+        if (!pdfUrl) return
+        const res = await fetch(pdfUrl)
         const buf = await res.arrayBuffer()
         const pdf = await pdfjs.getDocument({ data: buf }).promise
         const pageNum = (template.signature_page ?? -1) === -1 ? pdf.numPages : Math.min(template.signature_page + 1, pdf.numPages)
@@ -309,15 +312,13 @@ export function Templates() {
 
       let pdfUrl: string | null = null
       if (file) {
-        await supabase.storage.createBucket('contracts', { public: true })
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
         const filePath = `templates/${agency.id}/${Date.now()}_${safeName}`
         const { error: uploadError } = await supabase.storage
           .from('contracts')
           .upload(filePath, file, { contentType: 'application/pdf', upsert: true })
         if (uploadError) throw new Error(`Upload PDF échoué : ${uploadError.message}`)
-        const { data: urlData } = supabase.storage.from('contracts').getPublicUrl(filePath)
-        pdfUrl = urlData.publicUrl
+        pdfUrl = filePath
       }
 
       if (isDefault) {

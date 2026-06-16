@@ -492,13 +492,20 @@ export async function syncProjectArtifactsToDrive(
   return { uploaded, skipped, failed, status }
 }
 
+function oauthHmacKey(): Uint8Array {
+  if (!googleClientSecret) {
+    throw new Error('GOOGLE_CLIENT_SECRET non configuré')
+  }
+  return new TextEncoder().encode(googleClientSecret)
+}
+
 /** Signe un state OAuth (userId + timestamp). */
 export async function signOAuthState(userId: string): Promise<string> {
   const ts = Date.now()
   const payload = `${userId}:${ts}`
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(googleClientSecret || 'fallback'),
+    oauthHmacKey(),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
@@ -524,7 +531,7 @@ export async function verifyOAuthState(state: string, maxAgeMs = 600_000): Promi
 
     const key = await crypto.subtle.importKey(
       'raw',
-      new TextEncoder().encode(googleClientSecret || 'fallback'),
+      oauthHmacKey(),
       { name: 'HMAC', hash: 'SHA-256' },
       false,
       ['sign'],

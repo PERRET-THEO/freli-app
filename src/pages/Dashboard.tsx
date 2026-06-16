@@ -566,13 +566,17 @@ export function Dashboard() {
                                   {project.companyName}
                                 </p>
                               )}
-                              <p className="group/tip relative mt-0.5 truncate text-xs font-body text-[var(--ink-muted)]">
+                              <p className="mt-0.5 truncate text-xs font-body text-[var(--ink-muted)]">
                                 {project.clientEmail}
-                                {project.clientPhone && (
-                                  <span className="pointer-events-none absolute -top-8 left-0 z-10 whitespace-nowrap rounded-[var(--radius-sm)] bg-[var(--ink)] px-2 py-1 text-xs text-[var(--white)] opacity-0 transition group-hover/tip:opacity-100">
+                                {project.clientPhone ? (
+                                  <a
+                                    href={`tel:${project.clientPhone.replace(/\s/g, '')}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="ml-2 inline-flex min-h-6 items-center text-[var(--accent)] underline-offset-2 hover:underline"
+                                  >
                                     {project.clientPhone}
-                                  </span>
-                                )}
+                                  </a>
+                                ) : null}
                               </p>
                             </div>
 
@@ -594,7 +598,7 @@ export function Dashboard() {
                                   e.stopPropagation()
                                   setMenuOpenId(menuOpenId === project.id ? null : project.id)
                                 }}
-                                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
+                                className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
                                 aria-label="Plus d'options"
                               >
                                 ⋯
@@ -731,7 +735,7 @@ export function Dashboard() {
             <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
               Le projet de <strong>{deletingProject.clientName}</strong> sera définitivement supprimé ainsi que tous ses documents et étapes.
             </p>
-            <div className="mt-5 flex gap-3">
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <Button variant="secondary" onClick={() => setDeletingProject(null)} disabled={deleteLoading}>
                 Annuler
               </Button>

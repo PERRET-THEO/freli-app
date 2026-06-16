@@ -1,0 +1,6 @@
+ALTER TABLE agencies
+  ADD COLUMN IF NOT EXISTS brand_color TEXT DEFAULT '#5b6ef5',
+  ADD COLUMN IF NOT EXISTS portal_welcome_message TEXT,
+  ADD COLUMN IF NOT EXISTS tagline TEXT,
+  ADD COLUMN IF NOT EXISTS contact_email TEXT,
+  ADD COLUMN IF NOT EXISTS contact_phone TEXT;

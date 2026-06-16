@@ -143,7 +143,9 @@ serve(async (req) => {
                 results.stripe = stripeResult
                 const { error: emailError } = await supabase.functions.invoke(
                   'send-payment-link-email',
-                  { body: { projectId: project.id } },
+                  {
+                    body: { projectId: project.id, projectToken: body.projectToken },
+                  },
                 )
                 if (emailError) console.error('payment email failed:', emailError.message)
               }
