@@ -1,0 +1,48 @@
+name: Test relance IA
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: 'ID projet (optionnel — sinon batch complet)'
+        required: false
+        type: string
+
+jobs:
+  test-smart-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Batch relances intelligentes
+        if: ${{ inputs.project_id == '' }}
+        run: |
+          HTTP_CODE=$(curl -s -o /tmp/smart.txt -w "%{http_code}" \
+            -X POST "${SUPABASE_PROJECT_URL}/functions/v1/smart-reminders-batch" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "x-cron-secret: ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "Réponse ($HTTP_CODE):"
+          cat /tmp/smart.txt
+          if [ "$HTTP_CODE" -ge 300 ]; then exit 1; fi
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Relance IA ciblée (projet test)
+        if: ${{ inputs.project_id != '' }}
+        run: |
+          HTTP_CODE=$(curl -s -o /tmp/gen.txt -w "%{http_code}" \
+            -X POST "${SUPABASE_PROJECT_URL}/functions/v1/generate-smart-reminder" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "x-cron-secret: ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "{\"projectId\":\"${PROJECT_ID}\",\"behaviorCategory\":\"not_opened\"}")
+          echo "Réponse ($HTTP_CODE):"
+          cat /tmp/gen.txt
+          if [ "$HTTP_CODE" -ge 300 ]; then exit 1; fi
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          PROJECT_ID: ${{ inputs.project_id }}
