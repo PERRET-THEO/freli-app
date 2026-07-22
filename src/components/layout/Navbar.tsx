@@ -5,6 +5,7 @@ import { Button } from '../ui'
 
 const NAV_LINKS = [
   { href: '#features', label: 'Fonctionnalités', external: false },
+  { href: '#integrations', label: 'Intégrations', external: false },
   { href: '#how-it-works', label: 'Comment ça marche', external: false },
   { href: 'https://calendly.com/freli/demo', label: 'Réserver une démo', external: true },
 ]

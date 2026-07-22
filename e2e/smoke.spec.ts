@@ -4,6 +4,8 @@ test.describe('Freli public pages', () => {
   test('landing page loads', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('link', { name: /Freli/i }).first()).toBeVisible()
+    await expect(page.locator('#integrations')).toBeVisible()
+    await expect(page.getByRole('heading', { name: /s'intègre à votre stack/i })).toBeVisible()
   })
 
   test('sign-in page loads', async ({ page }) => {
@@ -16,6 +18,7 @@ test.describe('Freli public pages', () => {
     await page.goto('/')
     await page.getByRole('button', { name: /ouvrir le menu/i }).click()
     await expect(page.getByRole('link', { name: /Fonctionnalités/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: /Intégrations/i })).toBeVisible()
   })
 })
 
