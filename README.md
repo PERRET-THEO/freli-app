@@ -83,5 +83,9 @@ export default defineConfig([
 3. **Variables d’environnement** (Production, et Preview si tu veux des previews fonctionnelles) : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Puis **Redeploy** (Vite injecte les `VITE_*` au build).
 4. **Supabase** → Authentication → URL Configuration : **Site URL** = `https://app.freli.fr`. **Redirect URLs** : `https://app.freli.fr/**` et `https://freli.fr/**` (plus les URLs locales si besoin).
 5. **Smoke test** : `https://freli.fr` (landing), `https://app.freli.fr/signin`, recharger `/dashboard` et un lien `/p/<token>` ; tester login / signup.
-6. **Edge / Stripe** : secret Supabase `APP_URL=https://app.freli.fr` et webhooks Stripe comme indiqué dans [`.env.example`](.env.example).
+6. **Edge / Stripe (Live)** :
+   - Secrets Supabase : `APP_URL=https://app.freli.fr`, `STRIPE_SECRET_KEY=sk_live_...`, `STRIPE_WEBHOOK_SECRET=whsec_...` (secret **Live**).
+   - Webhook Stripe Live → `https://xxghfeshnihagvahmmpr.supabase.co/functions/v1/stripe-webhook` avec **Connected accounts** activé et events `account.updated`, `checkout.session.completed`, `checkout.session.expired` (détail dans [`.env.example`](.env.example)).
+   - Après bascule Live : chaque agence doit **reconnecter** Stripe (comptes Express Test ≠ Live).
+   - Déployer les fonctions : `supabase functions deploy stripe-webhook stripe-connect-status stripe-connect-start stripe-payment-link stripe-connect-dashboard trigger-integrations send-payment-link-email`
 7. **Webhooks sortants** : Dashboard → Intégrations → ajouter une URL Zapier/Make, bouton Tester, puis valider un événement réel (création projet ou fin onboarding).

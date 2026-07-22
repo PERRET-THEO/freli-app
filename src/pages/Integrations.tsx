@@ -179,11 +179,23 @@ export function Integrations() {
     setSaving('stripe')
     try {
       const { data, error } = await supabase.functions.invoke('stripe-connect-start', { body: {} })
+      const payload = data as { url?: string; error?: string } | null
+
       if (error) {
-        setStripeError(error.message)
+        let detail = payload?.error ?? error.message
+        // Supabase FunctionsHttpError: body JSON often in error.context
+        const ctx = (error as { context?: Response }).context
+        if (!payload?.error && ctx && typeof ctx.json === 'function') {
+          try {
+            const body = (await ctx.json()) as { error?: string }
+            if (body?.error) detail = body.error
+          } catch {
+            /* ignore parse errors */
+          }
+        }
+        setStripeError(detail)
         return
       }
-      const payload = data as { url?: string; error?: string } | null
       if (payload?.error) {
         setStripeError(payload.error)
         return

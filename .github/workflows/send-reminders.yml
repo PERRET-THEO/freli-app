@@ -31,3 +31,22 @@ jobs:
           SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Déclencher le batch de relances intelligentes (IA)
+        run: |
+          HTTP_CODE=$(curl -s -o /tmp/smart.txt -w "%{http_code}" \
+            -X POST "${SUPABASE_PROJECT_URL}/functions/v1/smart-reminders-batch" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "x-cron-secret: ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "Réponse ($HTTP_CODE):"
+          cat /tmp/smart.txt
+          if [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Echec du batch de relances intelligentes (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

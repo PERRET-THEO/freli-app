@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { Button, Input } from '../ui'
 import {
   CHECKLIST_TYPE_OPTIONS,
+  countAiGenerateItems,
   createDraftItem,
   duplicateItem,
   moveItem,
   type ChecklistItemType,
   type DraftChecklistItem,
 } from '../../lib/checklist'
+import { ContractItemConfig } from './ContractItemConfig'
 
 type ContractTemplateOption = { id: string; name: string }
 
@@ -18,6 +20,9 @@ type ChecklistItemsEditorProps = {
   items: DraftChecklistItem[]
   onChange: (items: DraftChecklistItem[]) => void
   contractTemplates: ContractTemplateOption[]
+  aiContractsEnabled?: boolean
+  hasDefaultContract?: boolean
+  defaultContractBrief?: string
   emptyMessage?: string
 }
 
@@ -25,6 +30,9 @@ export function ChecklistItemsEditor({
   items,
   onChange,
   contractTemplates,
+  aiContractsEnabled = false,
+  hasDefaultContract = false,
+  defaultContractBrief = '',
   emptyMessage = 'Checklist vide. Choisis un modèle ou ajoute des items ci-dessous.',
 }: ChecklistItemsEditorProps) {
   const [newItemLabel, setNewItemLabel] = useState('')
@@ -37,10 +45,30 @@ export function ChecklistItemsEditor({
   const addItem = (type: ChecklistItemType, label?: string) => {
     const resolvedLabel = (label ?? newItemLabel).trim()
     if (!resolvedLabel) return
-    onChange([...items, createDraftItem(resolvedLabel, type)])
+    if (type === 'signature' && countAiGenerateItems(items) >= 1) {
+      onChange([
+        ...items,
+        createDraftItem(resolvedLabel, type, {
+          contractSource: contractTemplates.length > 0 ? 'existing' : hasDefaultContract ? 'default' : 'existing',
+          contractTemplateId: contractTemplates[0]?.id ?? null,
+        }),
+      ])
+    } else if (type === 'signature') {
+      onChange([
+        ...items,
+        createDraftItem(resolvedLabel, type, {
+          contractSource: 'default',
+          contractBrief: defaultContractBrief,
+        }),
+      ])
+    } else {
+      onChange([...items, createDraftItem(resolvedLabel, type)])
+    }
     setNewItemLabel('')
     setNewItemType('text')
   }
+
+  const aiItemCount = countAiGenerateItems(items)
 
   return (
     <div>
@@ -65,12 +93,24 @@ export function ChecklistItemsEditor({
                 <select
                   className={smallSelectCls}
                   value={item.type}
-                  onChange={(e) =>
-                    updateItem(item.id, {
-                      type: e.target.value as ChecklistItemType,
-                      contractTemplateId: null,
-                    })
-                  }
+                  onChange={(e) => {
+                    const nextType = e.target.value as ChecklistItemType
+                    if (nextType === 'signature') {
+                      updateItem(item.id, {
+                        type: nextType,
+                        contractSource: 'default',
+                        contractTemplateId: null,
+                        contractBrief: defaultContractBrief,
+                      })
+                    } else {
+                      updateItem(item.id, {
+                        type: nextType,
+                        contractTemplateId: null,
+                        contractSource: undefined,
+                        contractBrief: undefined,
+                      })
+                    }
+                  }}
                 >
                   {CHECKLIST_TYPE_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -116,23 +156,19 @@ export function ChecklistItemsEditor({
                 </div>
               </div>
 
-              {item.type === 'signature' && (
-                <div className="mt-2">
-                  <p className="text-xs font-body text-[var(--ink-muted)]">Contrat à faire signer :</p>
-                  <select
-                    className="mt-1 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-xs font-body text-[var(--ink)]"
-                    value={item.contractTemplateId ?? ''}
-                    onChange={(e) => updateItem(item.id, { contractTemplateId: e.target.value || null })}
-                  >
-                    <option value="">Aucun contrat (signature simple)</option>
-                    {contractTemplates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {item.type === 'signature' ? (
+                <ContractItemConfig
+                  item={item}
+                  contractTemplates={contractTemplates}
+                  aiContractsEnabled={aiContractsEnabled}
+                  hasDefaultContract={hasDefaultContract}
+                  defaultBrief={defaultContractBrief}
+                  hasOtherAiItem={
+                    item.contractSource !== 'ai_generate' && aiItemCount >= 1
+                  }
+                  onChange={(patch) => updateItem(item.id, patch)}
+                />
+              ) : null}
             </div>
           ))
         )}
@@ -185,10 +221,10 @@ export function ChecklistItemsEditor({
           </button>
           <button
             type="button"
-            onClick={() => addItem('signature', 'Document à signer')}
+            onClick={() => addItem('signature', 'Contrat à signer')}
             className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
           >
-            + Signature
+            + Contrat à signer
           </button>
         </div>
       </div>

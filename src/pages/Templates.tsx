@@ -1,11 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { DashboardLayout } from '../components/DashboardLayout'
-import { Badge, Button, Card, Input } from '../components/ui'
+import { Button, Card, Input } from '../components/ui'
 import { resolveAgencyContractPdfUrl } from '../lib/contractStorage'
 import { supabase } from '../lib/supabase'
 import { pdfjs, setupPdfWorker } from '../lib/pdfWorker'
 import { ChecklistTemplatesManager } from '../components/checklist/ChecklistTemplatesManager'
+import {
+  ContractTemplateCard,
+  type ContractTemplate,
+} from '../components/contracts/ContractTemplateCard'
+import { AiReferenceModelsManager } from '../components/contracts/AiReferenceModelsManager'
+import {
+  TemplateEmptyState,
+  TemplateIntroCard,
+  TemplatesGridSkeleton,
+  TemplatesTabNav,
+  type TemplatesTab,
+} from '../components/templates'
 
 let pdfOpenLockUntil = 0
 
@@ -17,17 +29,10 @@ function openPdfOnce(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
-type ContractTemplate = {
-  id: string
-  name: string
-  pdf_url: string | null
-  is_default: boolean
-  created_at: string
-  signature_page: number
-  signature_x: number
-  signature_y: number
-  signature_width: number
-  signature_height: number
+async function openContractPdf(storagePathOrUrl: string) {
+  const url = await resolveAgencyContractPdfUrl(storagePathOrUrl)
+  if (!url) return
+  openPdfOnce(url)
 }
 
 const PRESETS = [
@@ -255,9 +260,11 @@ export function Templates() {
   const [file, setFile] = useState<File | null>(null)
   const [isDefault, setIsDefault] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [dataLoading, setDataLoading] = useState(true)
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<'contracts' | 'checklists'>('contracts')
+  const [tab, setTab] = useState<TemplatesTab>('contracts')
+  const checklistActionsRef = useRef<{ openCreate: () => void } | null>(null)
 
   const closeModal = () => {
     setShowModal(false)
@@ -268,25 +275,30 @@ export function Templates() {
   }
 
   const loadData = async () => {
-    const { data: userData } = await supabase.auth.getUser()
-    if (!userData.user) return
-    const { data: agency } = await supabase
-      .from('agencies')
-      .select('id')
-      .eq('user_id', userData.user.id)
-      .maybeSingle()
-    if (!agency?.id) return
-    setAgencyId(agency.id)
-    const { data } = await supabase
-      .from('contract_templates')
-      .select('*')
-      .eq('agency_id', agency.id)
-      .order('created_at', { ascending: false })
-    setTemplates(
-      Array.from(
-        new Map(((data ?? []) as ContractTemplate[]).map((row) => [row.id, row])).values(),
-      ),
-    )
+    setDataLoading(true)
+    try {
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData.user) return
+      const { data: agency } = await supabase
+        .from('agencies')
+        .select('id')
+        .eq('user_id', userData.user.id)
+        .maybeSingle()
+      if (!agency?.id) return
+      setAgencyId(agency.id)
+      const { data } = await supabase
+        .from('contract_templates')
+        .select('*')
+        .eq('agency_id', agency.id)
+        .order('created_at', { ascending: false })
+      setTemplates(
+        Array.from(
+          new Map(((data ?? []) as ContractTemplate[]).map((row) => [row.id, row])).values(),
+        ),
+      )
+    } finally {
+      setDataLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -377,110 +389,77 @@ export function Templates() {
   const isPositioned = (t: ContractTemplate) =>
     Math.abs((t.signature_x ?? 0.7) - 0.7) > 0.001 || Math.abs((t.signature_y ?? 0.85) - 0.85) > 0.001
 
+  const handleChecklistActionsReady = useCallback((actions: { openCreate: () => void }) => {
+    checklistActionsRef.current = actions
+  }, [])
+
   return (
     <DashboardLayout
       title="Modèles & signature"
       subtitle="Gérez vos contrats à signer et vos modèles de checklist réutilisables"
       maxWidth="5xl"
     >
-        <div className="mb-6 flex flex-wrap items-center gap-2 border-b border-[var(--border)]">
-          <button
-            type="button"
-            onClick={() => setTab('contracts')}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-body font-medium transition ${tab === 'contracts' ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--ink-muted)] hover:text-[var(--ink)]'}`}
-          >
-            Contrats
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('checklists')}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-body font-medium transition ${tab === 'checklists' ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--ink-muted)] hover:text-[var(--ink)]'}`}
-          >
-            Modèles de checklist
-          </button>
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <TemplatesTabNav activeTab={tab} onTabChange={setTab} />
+          {tab === 'contracts' ? (
+            <Button className="shrink-0" onClick={() => setShowModal(true)}>
+              Ajouter un contrat
+            </Button>
+          ) : null}
+          {tab === 'checklists' ? (
+            <Button className="shrink-0" onClick={() => checklistActionsRef.current?.openCreate()}>
+              Nouveau modèle
+            </Button>
+          ) : null}
         </div>
 
         {tab === 'checklists' ? (
           <ChecklistTemplatesManager
             agencyId={agencyId}
+            agencyLoading={dataLoading}
             contractTemplates={templates.map((t) => ({ id: t.id, name: t.name }))}
+            onActionsReady={handleChecklistActionsReady}
           />
         ) : null}
 
-        {tab === 'contracts' ? (
-        <>
-        <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
-          <Button onClick={() => setShowModal(true)}>Ajouter un contrat</Button>
-        </div>
-        {error ? <p className="mt-3 text-sm font-body text-[var(--amber)]">{error}</p> : null}
+        {tab === 'ai-models' ? <AiReferenceModelsManager agencyId={agencyId} /> : null}
 
-        {templates.length === 0 ? (
-          <Card className="mt-6 text-center">
-            <p className="text-sm font-body text-[var(--ink-muted)]">Aucun contrat — Ajoutez votre premier PDF</p>
-          </Card>
+        {tab === 'contracts' ? (
+        <div className="space-y-4">
+        {error ? <p className="text-sm font-body text-[var(--amber)]">{error}</p> : null}
+
+        <TemplateIntroCard
+          title="Contrats à faire signer"
+          description="Uploadez vos PDF, positionnez la zone de signature et définissez le contrat utilisé par défaut lors de la création de projets."
+          countLabel={`${templates.length} contrat${templates.length !== 1 ? 's' : ''}`}
+        />
+
+        {dataLoading ? (
+          <TemplatesGridSkeleton />
+        ) : templates.length === 0 ? (
+          <TemplateEmptyState
+            icon="📄"
+            title="Aucun contrat"
+            description="Ajoutez votre premier PDF pour le faire signer par vos clients lors de l'onboarding."
+            action={<Button onClick={() => setShowModal(true)}>Ajouter un contrat</Button>}
+          />
         ) : (
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2">
             {templates.map((template) => (
-              <Card key={template.id}>
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-display text-xl font-semibold text-[var(--ink)]">{template.name}</p>
-                    <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
-                      Créé le {new Date(template.created_at).toLocaleDateString('fr-FR')}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {template.pdf_url ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-soft)] px-2.5 py-0.5 text-xs font-body font-medium text-[var(--accent)]">
-                          📄 PDF chargé
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--surface-warm)] px-2.5 py-0.5 text-xs font-body text-[var(--ink-muted)]">
-                          Pas de PDF
-                        </span>
-                      )}
-                      {template.pdf_url && (
-                        isPositioned(template) ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--mint-soft)] px-2.5 py-0.5 text-xs font-body font-medium text-[var(--mint)]">
-                            ✍️ Signature positionnée
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--amber-soft)] px-2.5 py-0.5 text-xs font-body font-medium text-[var(--amber)]">
-                            ⚠️ Position par défaut
-                          </span>
-                        )
-                      )}
-                    </div>
-                    {template.pdf_url && (
-                      <a
-                        href={template.pdf_url}
-                        rel="noreferrer"
-                        className="mt-1 inline-block text-xs font-body text-[var(--accent)] underline"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          openPdfOnce(template.pdf_url!)
-                        }}
-                      >
-                        Voir le PDF ↗
-                      </a>
-                    )}
-                  </div>
-                  {template.is_default ? <Badge variant="in_progress">Par défaut</Badge> : null}
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {template.pdf_url && (
-                    <Button variant="secondary" onClick={() => setEditingTemplate(template)}>Modifier la position</Button>
-                  )}
-                  <Button variant="secondary" onClick={() => setDefault(template.id)}>Définir par défaut</Button>
-                  <Button variant="secondary" onClick={() => removeTemplate(template)} disabled={deletingTemplateId === template.id}>
-                    {deletingTemplateId === template.id ? 'Suppression…' : 'Supprimer'}
-                  </Button>
-                </div>
-              </Card>
+              <ContractTemplateCard
+                key={template.id}
+                template={template}
+                isPositioned={isPositioned(template)}
+                deleting={deletingTemplateId === template.id}
+                onOpenPdf={(pdfUrl) => void openContractPdf(pdfUrl)}
+                onEditPosition={setEditingTemplate}
+                onSetDefault={setDefault}
+                onRemove={removeTemplate}
+              />
             ))}
           </div>
         )}
-        </>
+        </div>
         ) : null}
 
       {showModal ? (

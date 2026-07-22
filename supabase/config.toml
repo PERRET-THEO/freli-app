@@ -57,3 +57,47 @@ verify_jwt = false
 # Test webhook sortant (dashboard agence)
 [functions.test-webhook]
 verify_jwt = true
+
+# IA — extraction documentaire : déclenchée par le portail client (auth par projectToken)
+[functions.extract-document-data]
+verify_jwt = false
+
+# IA — validation des données extraites depuis le dashboard agence
+[functions.apply-extracted-data]
+verify_jwt = true
+
+# Resend → plateforme (signature Svix dans les headers)
+[functions.resend-events-webhook]
+verify_jwt = false
+
+# IA — batch relances intelligentes (cron, secret partagé)
+[functions.smart-reminders-batch]
+verify_jwt = false
+
+# IA — génération du contenu de relance (cron interne ou JWT agence)
+[functions.generate-smart-reminder]
+verify_jwt = false
+
+# IA — envoi d'un brouillon de relance validé (dashboard agence)
+[functions.send-smart-reminder]
+verify_jwt = true
+
+# IA — analyse d'un modèle de référence de contrat (dashboard agence)
+[functions.analyze-contract-model]
+verify_jwt = true
+
+# IA — génération d'un brouillon de contrat depuis un brief (dashboard agence)
+[functions.generate-contract-draft]
+verify_jwt = true
+
+# IA — rendu PDF + entrée contract_templates (dashboard agence)
+[functions.finalize-generated-document]
+verify_jwt = true
+
+# IA — aperçu HTML d'un brouillon de contrat (dashboard agence)
+[functions.preview-generated-document]
+verify_jwt = true
+
+# Recherche d'entreprises via l'API Gouv (dashboard agence)
+[functions.search-companies]
+verify_jwt = true

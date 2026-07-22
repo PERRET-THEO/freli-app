@@ -6,6 +6,11 @@ import {
   REMINDER_DELAY_OPTIONS,
   type ReminderLogRow,
 } from '../../lib/reminderSettings'
+import {
+  SMART_REMINDER_MAX_OPTIONS,
+  TONE_OPTIONS,
+  type SmartReminderTone,
+} from '../../lib/smartReminders'
 import { supabase } from '../../lib/supabase'
 
 type ReminderSettingsPanelProps = {
@@ -17,6 +22,13 @@ type ReminderSettingsPanelProps = {
   onSave: () => void
   saving: boolean
   feedback: { type: 'success' | 'error'; text: string } | null
+  aiEnabled: boolean
+  aiTone: SmartReminderTone
+  aiAutoSend: boolean
+  aiMaxPerProject: number
+  onAiToneChange: (tone: SmartReminderTone) => void
+  onAiAutoSendChange: (value: boolean) => void
+  onAiMaxChange: (value: number) => void
 }
 
 function clientNameFromLog(log: ReminderLogRow): string {
@@ -35,6 +47,13 @@ export function ReminderSettingsPanel({
   onSave,
   saving,
   feedback,
+  aiEnabled,
+  aiTone,
+  aiAutoSend,
+  aiMaxPerProject,
+  onAiToneChange,
+  onAiAutoSendChange,
+  onAiMaxChange,
 }: ReminderSettingsPanelProps) {
   const [autoCountMonth, setAutoCountMonth] = useState(0)
   const [recentLogs, setRecentLogs] = useState<ReminderLogRow[]>([])
@@ -123,6 +142,102 @@ export function ReminderSettingsPanel({
               {option.label}
             </label>
           ))}
+        </div>
+      </div>
+
+      <div className="rounded-[var(--radius-sm)] border border-[var(--accent)]/25 bg-[var(--accent-soft)]/40 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-body font-semibold text-[var(--ink)]">✨ Relances intelligentes</p>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-body font-medium ${
+              aiEnabled
+                ? 'bg-[var(--mint-soft)] text-[var(--mint)]'
+                : 'bg-[var(--surface-warm)] text-[var(--ink-muted)]'
+            }`}
+          >
+            {aiEnabled ? 'Module activé' : 'Module désactivé'}
+          </span>
+        </div>
+        <p className="mt-1 text-xs font-body leading-relaxed text-[var(--ink-muted)]">
+          Le contenu des relances s&apos;adapte au comportement du client (email non ouvert, portail
+          non visité, étape bloquante). Le déclenchement reste basé sur le délai ci-dessus et sur des
+          règles vérifiables — l&apos;IA ne rédige que le contenu.
+          {!aiEnabled ? ' Activez le module dans la section « Intelligence artificielle ».' : ''}
+        </p>
+
+        <div className={aiEnabled ? 'mt-4 space-y-4' : 'pointer-events-none mt-4 space-y-4 opacity-50'}>
+          <div>
+            <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Ton de marque</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {TONE_OPTIONS.map((option) => (
+                <label
+                  key={option.value}
+                  className={`flex cursor-pointer items-center rounded-full border px-3 py-1.5 text-xs font-body transition ${
+                    aiTone === option.value
+                      ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                      : 'border-[var(--border)] bg-[var(--white)] text-[var(--ink-soft)] hover:border-[var(--accent)]'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="ai-reminder-tone"
+                    value={option.value}
+                    checked={aiTone === option.value}
+                    onChange={() => onAiToneChange(option.value)}
+                    className="sr-only"
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-body font-medium text-[var(--ink-soft)]">
+              Plafond de relances IA par projet (anti-harcèlement)
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {SMART_REMINDER_MAX_OPTIONS.map((value) => (
+                <label
+                  key={value}
+                  className={`flex cursor-pointer items-center rounded-full border px-3 py-1.5 text-xs font-body transition ${
+                    aiMaxPerProject === value
+                      ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                      : 'border-[var(--border)] bg-[var(--white)] text-[var(--ink-soft)] hover:border-[var(--accent)]'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="ai-reminder-max"
+                    value={value}
+                    checked={aiMaxPerProject === value}
+                    onChange={() => onAiMaxChange(value)}
+                    className="sr-only"
+                  />
+                  {value} max
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] p-3">
+            <input
+              type="checkbox"
+              checked={aiAutoSend}
+              onChange={(e) => onAiAutoSendChange(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-[var(--border)] accent-[var(--accent)]"
+            />
+            <span>
+              <span className="block text-xs font-body font-medium text-[var(--ink)]">
+                Envoi automatique des relances générées
+              </span>
+              <span className="mt-0.5 block text-xs font-body text-[var(--ink-muted)]">
+                {aiAutoSend
+                  ? 'Les relances partent sans validation. Vous gardez l’historique dans chaque fiche projet.'
+                  : 'Chaque relance est proposée en brouillon dans la fiche projet, à valider avant envoi.'}
+              </span>
+            </span>
+          </label>
         </div>
       </div>
 

@@ -152,6 +152,17 @@ serve(async (req) => {
     console.log('Resend response:', JSON.stringify(result))
     assertResendOk(result)
 
+    // Trace l'envoi pour le tracking comportemental (relances intelligentes) :
+    // le webhook Resend rattachera les événements opened/clicked à ce projet.
+    const resendEmailId = (result.data as { id?: string } | null)?.id
+    if (resendEmailId && projectId) {
+      await supabase.from('email_events').insert({
+        project_id: projectId,
+        resend_email_id: resendEmailId,
+        event_type: 'sent',
+      })
+    }
+
     if (isReminderMode && projectId) {
       await supabase
         .from('projects')

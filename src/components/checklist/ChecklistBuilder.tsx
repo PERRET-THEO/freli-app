@@ -3,6 +3,7 @@ import { Button, Input } from '../ui'
 import {
   BUILTIN_TEMPLATES,
   buildItemsFromSeeds,
+  hasAiGenerateItems,
   type BuiltinTemplateKey,
   type DraftChecklistItem,
 } from '../../lib/checklist'
@@ -22,6 +23,9 @@ type ChecklistBuilderProps = {
   agencyTemplates: AgencyChecklistTemplate[]
   agencyId: string | null
   onTemplatesChanged: () => void
+  aiContractsEnabled?: boolean
+  hasDefaultContract?: boolean
+  defaultContractBrief?: string
 }
 
 const selectCls =
@@ -36,6 +40,9 @@ export function ChecklistBuilder({
   agencyTemplates,
   agencyId,
   onTemplatesChanged,
+  aiContractsEnabled = false,
+  hasDefaultContract = false,
+  defaultContractBrief = '',
 }: ChecklistBuilderProps) {
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const [loadingTemplate, setLoadingTemplate] = useState(false)
@@ -153,11 +160,27 @@ export function ChecklistBuilder({
         <p className="mt-2 text-sm font-body text-[var(--mint)]">{saveSuccess}</p>
       ) : null}
 
+      {items.some((item) => item.type === 'signature' && !item.contractSource) ? (
+        <p className="mt-2 rounded-[var(--radius-sm)] border border-[var(--amber)]/40 bg-[var(--amber-soft)] px-3 py-2 text-xs font-body text-[var(--amber)]">
+          Configure le contrat pour chaque étape « Contrat à signer » ci-dessous.
+        </p>
+      ) : null}
+
+      {hasAiGenerateItems(items) ? (
+        <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
+          Un contrat sera généré par l&apos;IA à l&apos;étape suivante. Vous pourrez le régénérer
+          après avoir ajusté la checklist, tant que l&apos;invitation n&apos;est pas envoyée.
+        </p>
+      ) : null}
+
       <div className="mt-4">
         <ChecklistItemsEditor
           items={items}
           onChange={onChange}
           contractTemplates={contractTemplates}
+          aiContractsEnabled={aiContractsEnabled}
+          hasDefaultContract={hasDefaultContract}
+          defaultContractBrief={defaultContractBrief}
         />
       </div>
 

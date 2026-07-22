@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Link, NavLink } from 'react-router-dom'
+import { useAgencySession } from '../contexts/AgencyContext'
 import { dashboardNavIcons, sidebarItemClass } from './dashboard/navIcons'
-import { supabase } from '../lib/supabase'
 
 const icons = dashboardNavIcons
 
@@ -10,6 +10,8 @@ type DashboardLayoutProps = {
   title?: string
   subtitle?: string
   maxWidth?: '4xl' | '5xl' | '7xl'
+  loading?: boolean
+  skeleton?: ReactNode
 }
 
 const maxWidthClass: Record<NonNullable<DashboardLayoutProps['maxWidth']>, string> = {
@@ -18,52 +20,83 @@ const maxWidthClass: Record<NonNullable<DashboardLayoutProps['maxWidth']>, strin
   '7xl': 'max-w-7xl',
 }
 
+function MobileMoreMenu() {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex min-h-11 w-full flex-col items-center justify-center gap-0.5 rounded-[var(--radius-sm)] px-1 py-1.5 transition ${
+          open ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
+        }`}
+        aria-label="Plus d'options"
+        aria-expanded={open}
+        aria-haspopup="menu"
+      >
+        <span className="flex h-6 w-6 items-center justify-center text-lg leading-none">⋯</span>
+        <span className="max-w-full truncate text-[10px] font-display font-bold uppercase tracking-wide">
+          Plus
+        </span>
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute bottom-full right-0 z-50 mb-2 w-44 rounded-[var(--radius-md)] border border-[rgba(255,255,255,0.1)] bg-[var(--ink-soft)] py-1 shadow-lg"
+        >
+          <NavLink
+            to="/dashboard/integrations"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2.5 text-sm font-body text-[var(--white)] hover:bg-[rgba(255,255,255,0.06)]"
+          >
+            Intégrations
+          </NavLink>
+          <NavLink
+            to="/dashboard/settings"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2.5 text-sm font-body text-[var(--white)] hover:bg-[rgba(255,255,255,0.06)]"
+          >
+            Réglages
+          </NavLink>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function DashboardLayout({
   children,
   title,
   subtitle,
   maxWidth = '7xl',
+  loading = false,
+  skeleton,
 }: DashboardLayoutProps) {
-  const [authLoading, setAuthLoading] = useState(true)
-  const [email, setEmail] = useState<string | null>(null)
-  const [agencyName, setAgencyName] = useState<string | null>(null)
-  const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null)
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    const loadUser = async () => {
-      const { data, error } = await supabase.auth.getUser()
-      if (error || !data.user) {
-        navigate('/signin', { replace: true })
-        return
-      }
-      setEmail(data.user.email ?? null)
-
-      const { data: agency } = await supabase
-        .from('agencies')
-        .select('name, logo_url')
-        .eq('user_id', data.user.id)
-        .maybeSingle()
-
-      if (agency) {
-        setAgencyName(agency.name ?? null)
-        setAgencyLogoUrl(agency.logo_url ?? null)
-      }
-
-      setAuthLoading(false)
-    }
-    loadUser()
-  }, [navigate])
-
-  if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
-        <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
-      </div>
-    )
-  }
-
+  const { loading: sessionLoading, email, agency } = useAgencySession()
+  const agencyName = agency?.name ?? null
+  const agencyLogoUrl = agency?.logo_url ?? null
   const contentMax = maxWidthClass[maxWidth]
+  const showSkeleton = (sessionLoading || loading) && skeleton
 
   return (
     <div className="min-h-screen bg-[var(--surface)]">
@@ -162,11 +195,7 @@ export function DashboardLayout({
             </p>
             <div className="mt-2 flex items-center gap-2">
               {agencyLogoUrl ? (
-                <img
-                  src={agencyLogoUrl}
-                  alt=""
-                  className="h-7 w-7 shrink-0 rounded object-cover"
-                />
+                <img src={agencyLogoUrl} alt="" className="h-7 w-7 shrink-0 rounded object-cover" />
               ) : (
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-[var(--accent)] font-display text-[10px] font-bold text-white">
                   {(agencyName ?? email ?? 'FR').slice(0, 2).toUpperCase()}
@@ -190,7 +219,11 @@ export function DashboardLayout({
               ) : null}
             </header>
           ) : null}
-          {children}
+          {showSkeleton ? skeleton : sessionLoading ? (
+            <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
+          ) : (
+            children
+          )}
         </main>
       </div>
 
@@ -248,19 +281,7 @@ export function DashboardLayout({
               Contrats
             </span>
           </NavLink>
-          <NavLink
-            to="/dashboard/settings"
-            className={({ isActive }) =>
-              `flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[var(--radius-sm)] px-1 py-1.5 transition ${
-                isActive ? 'text-[var(--accent)]' : 'text-[rgba(255,255,255,0.45)]'
-              }`
-            }
-          >
-            <span className="flex h-6 w-6 items-center justify-center [&>svg]:h-full [&>svg]:w-full">{icons.settings}</span>
-            <span className="max-w-full truncate text-[10px] font-display font-bold uppercase tracking-wide">
-              Réglages
-            </span>
-          </NavLink>
+          <MobileMoreMenu />
         </div>
       </nav>
     </div>

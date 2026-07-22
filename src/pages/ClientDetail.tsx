@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
+import { ClientContactBlock } from '../components/client/ClientContactBlock'
 import { Badge, Button, Card, Input } from '../components/ui'
 import { supabase } from '../lib/supabase'
 
@@ -13,6 +14,8 @@ type ClientRecord = {
   company_name: string | null
   company_type: string | null
   siret: string | null
+  siren: string | null
+  code_naf: string | null
   vat_number: string | null
   address_street: string | null
   address_city: string | null
@@ -106,9 +109,7 @@ export function ClientDetail() {
     ? `${(client.first_name?.[0] ?? '').toUpperCase()}${(client.last_name?.[0] ?? '').toUpperCase()}`
     : '?'
 
-  const subtitle = client
-    ? `${client.email}${client.phone ? ` · ${client.phone}` : ''}`
-    : undefined
+  const subtitle = client?.company_name ?? undefined
 
   const title = client ? `${client.first_name} ${client.last_name}` : 'Client'
 
@@ -195,22 +196,29 @@ export function ClientDetail() {
                   />
                 </>
               ) : (
-                <dl className="space-y-2 text-sm font-body">
-                  {client.company_name && <InfoRow label="Entreprise" value={client.company_name} />}
-                  {client.phone && <InfoRow label="Téléphone" value={client.phone} />}
+                <>
+                  <ClientContactBlock
+                    email={client.email}
+                    phone={client.phone}
+                    companyName={client.company_name}
+                    address={{
+                      street: client.address_street,
+                      postal: client.address_postal_code,
+                      city: client.address_city,
+                      country: client.address_country,
+                    }}
+                  />
+                  <dl className="mt-4 space-y-2 border-t border-[var(--border)] pt-4 text-sm font-body">
                   {client.website && <InfoRow label="Site web" value={client.website} />}
                   {client.siret && <InfoRow label="SIRET" value={client.siret} />}
+                  {client.siren && <InfoRow label="SIREN" value={client.siren} />}
+                  {client.code_naf && <InfoRow label="Code NAF" value={client.code_naf} />}
                   {client.vat_number && <InfoRow label="TVA" value={client.vat_number} />}
-                  {(client.address_street || client.address_city) && (
-                    <InfoRow
-                      label="Adresse"
-                      value={[client.address_street, client.address_postal_code, client.address_city, client.address_country].filter(Boolean).join(', ')}
-                    />
-                  )}
                   {client.company_size && <InfoRow label="Taille" value={client.company_size} />}
                   {client.notes && <InfoRow label="Notes" value={client.notes} />}
                   <InfoRow label="Créé le" value={new Date(client.created_at).toLocaleDateString('fr-FR')} />
                 </dl>
+                </>
               )}
             </div>
           </Card>

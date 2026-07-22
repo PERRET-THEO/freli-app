@@ -32,7 +32,11 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Avoid workbox terser crash on large chunks (pdf.worker) during SW generation.
+        mode: 'development',
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        globIgnores: ['**/pdf.worker*.mjs'],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,

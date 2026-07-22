@@ -77,7 +77,7 @@ serve(async (req) => {
     const accRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}`, {
       headers: {
         Authorization: `Bearer ${stripeSecretKey}`,
-        'Stripe-Account': accountId,
+        'Stripe-Version': '2025-04-30.basil',
       },
     })
     const acc = await accRes.json()

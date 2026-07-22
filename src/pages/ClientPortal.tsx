@@ -135,6 +135,16 @@ function getTemplateIdFromValue(value: string | null): string | null {
   }
 }
 
+function isContractPendingGeneration(value: string | null): boolean {
+  if (!value) return false
+  try {
+    const parsed = JSON.parse(value) as { status?: string }
+    return parsed.status === 'pending_generation'
+  } catch {
+    return false
+  }
+}
+
 export function ClientPortal() {
   const { token } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -157,6 +167,10 @@ export function ClientPortal() {
   const [templatePdfUrl, setTemplatePdfUrl] = useState<string | null>(null)
   const [integrationResults, setIntegrationResults] = useState<IntegrationResults>({})
   const [integrationsSent, setIntegrationsSent] = useState(false)
+  const [checkoutTriggerError, setCheckoutTriggerError] = useState(false)
+  const checkoutTriggerAttempts = useRef(0)
+  const confettiShown = useRef(false)
+  const paymentConfirmPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const agencyRelation = useMemo(() => {
     const relation = project?.agencies
@@ -304,6 +318,13 @@ export function ClientPortal() {
 
       if (parsedItems.every((i) => i.completed)) setShowHero(false)
       setLoading(false)
+
+      // Signal comportemental pour les relances intelligentes (fire-and-forget)
+      void supabase
+        .from('projects')
+        .update({ last_portal_visit_at: new Date().toISOString() })
+        .eq('token', token)
+        .then(() => {})
     }
 
     fetchData()
@@ -328,6 +349,24 @@ export function ClientPortal() {
         setItems((cur) => cur.map((i) => (i.id === next.id ? { ...i, ...next } : i)))
         if (next.type === 'text') setTextValues((cur) => ({ ...cur, [next.id]: next.value ?? '' }))
       })
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${project.id}` },
+        (payload) => {
+          const next = payload.new as Partial<ProjectRecord>
+          if (!next) return
+          setProject((cur) =>
+            cur
+              ? {
+                  ...cur,
+                  payment_status: next.payment_status ?? cur.payment_status,
+                  stripe_checkout_url: next.stripe_checkout_url ?? cur.stripe_checkout_url,
+                  status: (next.status as ProjectRecord['status']) ?? cur.status,
+                }
+              : cur,
+          )
+        },
+      )
       .subscribe()
 
     return () => {
@@ -339,41 +378,114 @@ export function ClientPortal() {
   const totalCount = items.length
   const progressPercent = totalCount ? Math.round((completedCount / totalCount) * 100) : 0
 
-  const paymentState = getPaymentState(
-    project?.price,
-    paymentNotice === 'success' ? 'paid' : project?.payment_status,
-  )
+  const paymentState = getPaymentState(project?.price, project?.payment_status)
+  const awaitingPaymentConfirmation =
+    paymentNotice === 'success' && paymentState !== 'paid' && Boolean(project?.price && project.price > 0)
   const checkoutUrl =
     integrationResults.stripe?.checkoutUrl ?? project?.stripe_checkout_url ?? null
+
+  // After Stripe redirect: poll until webhook confirms payment_status=paid
+  useEffect(() => {
+    if (!awaitingPaymentConfirmation || !project?.id) return
+
+    const refreshPayment = async () => {
+      const { data } = await supabase
+        .from('projects')
+        .select('payment_status, stripe_checkout_url')
+        .eq('id', project.id)
+        .maybeSingle()
+      if (!data) return
+      setProject((cur) =>
+        cur
+          ? {
+              ...cur,
+              payment_status: data.payment_status,
+              stripe_checkout_url: data.stripe_checkout_url,
+            }
+          : cur,
+      )
+    }
+
+    void refreshPayment()
+    paymentConfirmPollRef.current = setInterval(() => {
+      void refreshPayment()
+    }, 2500)
+
+    return () => {
+      if (paymentConfirmPollRef.current) {
+        clearInterval(paymentConfirmPollRef.current)
+        paymentConfirmPollRef.current = null
+      }
+    }
+  }, [awaitingPaymentConfirmation, project?.id])
+
+  useEffect(() => {
+    if (paymentState === 'paid' && paymentConfirmPollRef.current) {
+      clearInterval(paymentConfirmPollRef.current)
+      paymentConfirmPollRef.current = null
+    }
+  }, [paymentState])
 
   useEffect(() => {
     const allDone = totalCount > 0 && completedCount === totalCount
     setIsCompleted(allDone)
     if (allDone && project?.id) {
-      setShowConfetti(true)
-      setTimeout(() => setShowConfetti(false), 5000)
+      if (!confettiShown.current) {
+        confettiShown.current = true
+        setShowConfetti(true)
+        setTimeout(() => setShowConfetti(false), 5000)
+      }
       supabase.from('projects').update({ status: 'completed' }).eq('id', project.id).then()
       if (!completionEmailSent) {
         sendProjectCompletedEmail({ projectId: project.id, projectToken: project.token }).then(() => setCompletionEmailSent(true))
       }
-      if (!integrationsSent && project.payment_status !== 'paid' && !project.stripe_checkout_url) {
+      const needsCheckout =
+        project.payment_status !== 'paid' &&
+        !project.stripe_checkout_url &&
+        !integrationResults.stripe?.checkoutUrl &&
+        Boolean(project.price && project.price > 0)
+      if (needsCheckout && !integrationsSent && checkoutTriggerAttempts.current < 3) {
         setIntegrationsSent(true)
+        setCheckoutTriggerError(false)
+        checkoutTriggerAttempts.current += 1
         void (async () => {
           const pid = project.id
-          console.log('TRIGGER START', pid)
+          console.log('TRIGGER START', pid, 'attempt', checkoutTriggerAttempts.current)
           try {
             const result = await triggerIntegrations(pid, project.token)
             console.log('TRIGGER RESULT:', result)
             setIntegrationResults(result)
+            if (result.stripe?.checkoutUrl) {
+              setProject((cur) =>
+                cur ? { ...cur, stripe_checkout_url: result.stripe!.checkoutUrl } : cur,
+              )
+            } else if (project.price && project.price > 0) {
+              setCheckoutTriggerError(true)
+              // Retry later (max 3) — Stripe may not be ready yet
+              window.setTimeout(() => setIntegrationsSent(false), 8000)
+            }
           } catch (e) {
             console.error('TRIGGER FAILED', e)
+            setCheckoutTriggerError(true)
+            window.setTimeout(() => setIntegrationsSent(false), 8000)
           }
         })()
       }
     } else if (project?.id && completedCount > 0) {
       supabase.from('projects').update({ status: 'in_progress' }).eq('id', project.id).then()
     }
-  }, [completedCount, totalCount, project?.id, completionEmailSent, integrationsSent])
+  }, [
+    completedCount,
+    totalCount,
+    project?.id,
+    project?.payment_status,
+    project?.stripe_checkout_url,
+    project?.price,
+    project?.token,
+    completionEmailSent,
+    integrationsSent,
+    integrationResults.stripe?.checkoutUrl,
+  ])
 
   const advanceToNext = useCallback((currentId: string) => {
     setJustSavedId(currentId)
@@ -421,6 +533,13 @@ export function ClientPortal() {
       return
     }
     await markItemCompleted(itemId, filePath)
+
+    // Extraction IA côté agence (fire-and-forget) : n'impacte jamais le parcours client
+    supabase.functions
+      .invoke('extract-document-data', {
+        body: { projectToken: token, checklistItemId: itemId, storagePath: filePath },
+      })
+      .catch(() => {})
   }
 
   const scrollToFirstIncomplete = () => {
@@ -531,10 +650,19 @@ export function ClientPortal() {
                 </div>
               ))}
             </div>
-            {paymentNotice === 'success' || paymentState === 'paid' ? (
+            {paymentState === 'paid' ? (
               <div className="mx-auto mt-6 max-w-sm rounded-[var(--radius-sm)] bg-[var(--mint-soft)] px-4 py-3">
                 <p className="font-body text-sm font-medium text-[var(--ink)]">
-                  ✅ Paiement confirmé{project.price ? ` — ${formatPriceEur(project.price)}` : ''}. Merci !
+                  Paiement confirmé{project.price ? ` — ${formatPriceEur(project.price)}` : ''}. Merci !
+                </p>
+              </div>
+            ) : awaitingPaymentConfirmation ? (
+              <div className="mx-auto mt-6 max-w-sm rounded-[var(--radius-sm)] bg-[var(--surface-warm)] px-4 py-3">
+                <p className="font-body text-sm font-medium text-[var(--ink)]">
+                  Paiement en cours de confirmation…
+                </p>
+                <p className="mt-1 font-body text-xs text-[var(--ink-muted)]">
+                  Merci, nous finalisons la validation. Cette page se mettra à jour automatiquement.
                 </p>
               </div>
             ) : paymentState === 'pending' ? (
@@ -550,7 +678,7 @@ export function ClientPortal() {
                       href={checkoutUrl}
                       className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-6 py-3 font-body text-sm font-medium text-[var(--white)] transition hover:brightness-95"
                     >
-                      💳 Procéder au paiement{project.price ? ` (${formatPriceEur(project.price)})` : ''}
+                      Procéder au paiement{project.price ? ` (${formatPriceEur(project.price)})` : ''}
                     </a>
                     <p className="mt-3 font-body text-xs text-[var(--ink-muted)]">
                       Un email avec le lien de paiement vous a également été envoyé.
@@ -558,7 +686,9 @@ export function ClientPortal() {
                   </>
                 ) : (
                   <p className="font-body text-sm text-[var(--ink-soft)]">
-                    {agencyName} vous enverra le lien de paiement très bientôt.
+                    {checkoutTriggerError
+                      ? `${agencyName} finalise le lien de paiement — réessayez dans un instant ou contactez l’agence.`
+                      : `${agencyName} vous enverra le lien de paiement très bientôt.`}
                   </p>
                 )}
               </div>
@@ -641,7 +771,15 @@ export function ClientPortal() {
                       </div>
                     )}
 
-                    {item.type === 'signature' && !item.completed && (
+                    {item.type === 'signature' && !item.completed && isContractPendingGeneration(item.value) && (
+                      <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-warm)] p-4">
+                        <p className="font-body text-sm font-medium text-[var(--ink)]">Contrat en préparation</p>
+                        <p className="mt-1 font-body text-sm text-[var(--ink-muted)]">
+                          Votre contrat est en cours de finalisation par {agencyName}. Vous recevrez un email dès qu&apos;il sera prêt à signer.
+                        </p>
+                      </div>
+                    )}
+                    {item.type === 'signature' && !item.completed && !isContractPendingGeneration(item.value) && (
                       <div className="space-y-3">
                         <p className="font-body text-sm text-[var(--ink-muted)]">Lisez et signez le contrat ci-dessous.</p>
                         <Button onClick={() => setSigningItemId(item.id)} disabled={isSaving} className="w-full sm:w-auto">

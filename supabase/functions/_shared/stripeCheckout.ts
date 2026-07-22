@@ -42,6 +42,7 @@ async function fetchSessionStatus(
       headers: {
         Authorization: `Bearer ${stripeSecretKey}`,
         'Stripe-Account': accountId,
+        'Stripe-Version': '2025-04-30.basil',
       },
     })
     if (!res.ok) return null
@@ -103,6 +104,7 @@ export async function ensureCheckoutSession(
       Authorization: `Bearer ${stripeSecretKey}`,
       'Content-Type': 'application/x-www-form-urlencoded',
       'Stripe-Account': connect.accountId,
+      'Stripe-Version': '2025-04-30.basil',
     },
     body: params.toString(),
   })

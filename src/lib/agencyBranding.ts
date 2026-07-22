@@ -20,6 +20,23 @@ export type AgencyBranding = {
   contact_phone: string | null
   auto_reminders_enabled: boolean | null
   auto_reminders_delay_hours: number | null
+  ai_extraction_enabled: boolean | null
+  ai_reminders_enabled: boolean | null
+  ai_contracts_enabled: boolean | null
+  ai_reminder_tone: string | null
+  ai_reminder_auto_send: boolean | null
+  ai_reminder_max_per_project: number | null
+  legal_form: string | null
+  address_street: string | null
+  address_postal_code: string | null
+  address_city: string | null
+  siret: string | null
+  share_capital: string | null
+  vat_number: string | null
+  rcs_city: string | null
+  siren: string | null
+  code_naf: string | null
+  source_donnees_legales: string | null
 }
 
 export type PortalPreviewData = {

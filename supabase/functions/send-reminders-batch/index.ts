@@ -12,6 +12,7 @@ const DEFAULT_DELAY_HOURS = 48
 type AgencyReminderSettings = {
   auto_reminders_enabled: boolean | null
   auto_reminders_delay_hours: number | null
+  ai_reminders_enabled: boolean | null
 }
 
 type ProjectRow = {
@@ -39,6 +40,8 @@ function delayHoursFor(project: ProjectRow): number {
 function isEligibleForReminder(project: ProjectRow, nowMs: number): boolean {
   const settings = agencySettings(project)
   if (settings?.auto_reminders_enabled === false) return false
+  // Les agences en relances IA sortent du circuit classique (pas de doublon)
+  if (settings?.ai_reminders_enabled === true) return false
 
   const delayMs = delayHoursFor(project) * 60 * 60 * 1000
   const thresholdMs = nowMs - delayMs
@@ -74,7 +77,7 @@ serve(async (req) => {
     const { data: projects, error } = await supabase
       .from('projects')
       .select(
-        'id, created_at, status, last_reminder_sent_at, agency_id, agencies(auto_reminders_enabled, auto_reminders_delay_hours)',
+        'id, created_at, status, last_reminder_sent_at, agency_id, agencies(auto_reminders_enabled, auto_reminders_delay_hours, ai_reminders_enabled)',
       )
       .neq('status', 'completed')
 

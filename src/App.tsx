@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { AgencySessionProvider } from './contexts/AgencyContext'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { resolveAuthCallbackPath } from './lib/authCallbackRoute'
 import { supabase } from './lib/supabase'
@@ -134,6 +135,7 @@ function App() {
       <Route path="/confirm" element={<ConfirmEmail />} />
       <Route path="/auth" element={<Navigate to="/signin" replace />} />
       <Route element={<RequireAuth />}>
+        <Route element={<AgencySessionProvider><Outlet /></AgencySessionProvider>}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/dashboard/new" element={<NewProject />} />
         <Route path="/dashboard/project/:id" element={<ProjectDetail />} />
@@ -142,6 +144,7 @@ function App() {
         <Route path="/dashboard/clients" element={<Clients />} />
         <Route path="/dashboard/client/:id" element={<ClientDetail />} />
         <Route path="/dashboard/integrations" element={<Integrations />} />
+        </Route>
       </Route>
       <Route path="/p/:token" element={<ClientPortal />} />
       <Route path="/portal-preview" element={<PortalPreview />} />

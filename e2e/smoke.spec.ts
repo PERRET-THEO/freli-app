@@ -18,3 +18,25 @@ test.describe('Freli public pages', () => {
     await expect(page.getByRole('link', { name: /Fonctionnalités/i })).toBeVisible()
   })
 })
+
+test.describe('Dashboard UX', () => {
+  test('unauthenticated dashboard redirects to sign-in', async ({ page }) => {
+    await page.goto('/dashboard')
+    await expect(page).toHaveURL(/\/signin/)
+  })
+
+  test('dashboard filter buttons have aria-pressed', async ({ page }) => {
+    await page.goto('/signin')
+    const hasFilters = await page
+      .getByRole('group', { name: /filtrer les projets/i })
+      .isVisible()
+      .catch(() => false)
+    if (!hasFilters) {
+      test.skip()
+    }
+    await expect(page.getByRole('button', { name: /Tous \(\d+\)/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+})

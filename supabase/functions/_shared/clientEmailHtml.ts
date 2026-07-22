@@ -158,6 +158,35 @@ ${CLIENT_FEATURES_BLOCK}`
   )
 }
 
+/** Email client : relance intelligente (corps rédigé par l'IA, validé côté agence). */
+export function buildSmartReminderEmail(params: {
+  bodyText: string
+  agencyName: string
+  portalUrl: string
+}): string {
+  const agency = escapeHtml(params.agencyName)
+  const url = escapeHtml(params.portalUrl)
+  const paragraphs = params.bodyText
+    .split(/\n{2,}/)
+    .map((p) => escapeHtml(p.trim()).replace(/\n/g, '<br>'))
+    .filter(Boolean)
+    .map(
+      (p) =>
+        `<p style="font-family:'DM Sans',Arial,sans-serif;font-size:15px;color:#4A4D5C;line-height:1.85;margin:0 0 20px;">${p}</p>`,
+    )
+    .join('')
+
+  return emailShell(
+    '✦ Rappel',
+    'Votre onboarding<br>vous attend',
+    `${agency} vous accompagne — reprenez là où vous en étiez.`,
+    paragraphs,
+    url,
+    '✦ Reprendre mon onboarding',
+    'Ce lien est personnel — ne le partagez pas',
+  )
+}
+
 /** Email client : lien de paiement après onboarding. */
 export function buildClientPaymentEmail(params: {
   clientName: string

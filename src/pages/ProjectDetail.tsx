@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
+import { ExtractionReviewPanel } from '../components/extraction/ExtractionReviewPanel'
+import { SmartRemindersPanel } from '../components/reminders/SmartRemindersPanel'
+import { ContractGeneratorPanel } from '../components/contracts/ContractGeneratorPanel'
+import { ClientContactBlock } from '../components/client/ClientContactBlock'
 import { Badge, Button, Card } from '../components/ui'
 import { sendProjectReminderEmail } from '../lib/resend'
 import { sendPaymentLink } from '../lib/stripePayment'
@@ -8,12 +12,23 @@ import { syncProjectDriveFolder } from '../lib/googleDriveConnect'
 import { openStripeExpressDashboard } from '../lib/stripeConnectDashboard'
 import { getPaymentState, formatPriceEur, PAYMENT_STATE_LABELS } from '../lib/payments'
 import { formatRelative } from '../lib/formatRelative'
+import { fetchAgencyAiFlags } from '../lib/agencyQueries'
 import { supabase } from '../lib/supabase'
+
+type ClientJoin = {
+  phone: string | null
+  address_street: string | null
+  address_postal_code: string | null
+  address_city: string | null
+  address_country: string | null
+  company_name: string | null
+}
 
 type ProjectRecord = {
   id: string
   client_name: string
   client_email: string
+  client_id: string | null
   status: 'pending' | 'in_progress' | 'completed'
   token: string
   created_at: string
@@ -25,7 +40,9 @@ type ProjectRecord = {
   google_drive_folder_url: string | null
   google_drive_files_synced_at: string | null
   google_drive_sync_status: 'synced' | 'partial' | 'failed' | null
+  agency_id: string
   agencies?: { name: string | null } | { name: string | null }[] | null
+  clients?: ClientJoin | ClientJoin[] | null
 }
 
 type ChecklistItemRecord = {
@@ -62,6 +79,7 @@ export function ProjectDetail() {
   const [driveError, setDriveError] = useState<string | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [aiContractsEnabled, setAiContractsEnabled] = useState(false)
 
   const loadProject = useCallback(async () => {
     if (!id) {
@@ -72,7 +90,7 @@ export function ProjectDetail() {
 
     const { data: projectData, error: projectError } = await supabase
       .from('projects')
-      .select('id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, agencies(name)')
+      .select('id, agency_id, client_id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, agencies(name), clients(phone, address_street, address_postal_code, address_city, address_country, company_name)')
       .eq('id', id)
       .maybeSingle()
 
@@ -81,6 +99,9 @@ export function ProjectDetail() {
       setLoading(false)
       return
     }
+
+    const aiFlags = await fetchAgencyAiFlags(projectData.agency_id)
+    setAiContractsEnabled(aiFlags.ai_contracts_enabled === true)
 
     const { data: checklistData, error: checklistError } = await supabase
       .from('checklist_items')
@@ -229,7 +250,10 @@ export function ProjectDetail() {
   }
 
   const layoutTitle = project?.client_name ?? 'Projet'
-  const layoutSubtitle = project?.client_email
+  const clientJoin = useMemo(() => {
+    if (!project?.clients) return null
+    return Array.isArray(project.clients) ? project.clients[0] ?? null : project.clients
+  }, [project?.clients])
 
   if (loading) {
     return (
@@ -248,12 +272,28 @@ export function ProjectDetail() {
   }
 
   return (
-    <DashboardLayout title={layoutTitle} subtitle={layoutSubtitle} maxWidth="7xl">
+    <DashboardLayout title={layoutTitle} maxWidth="7xl">
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           {project ? (
             <>
-              <div className="flex items-center justify-between">
+              <ClientContactBlock
+                email={project.client_email}
+                phone={clientJoin?.phone}
+                companyName={clientJoin?.company_name}
+                address={
+                  clientJoin
+                    ? {
+                        street: clientJoin.address_street,
+                        postal: clientJoin.address_postal_code,
+                        city: clientJoin.address_city,
+                        country: clientJoin.address_country,
+                      }
+                    : null
+                }
+              />
+
+              <div className="mt-5 flex items-center justify-between">
                 <Badge variant={project.status} />
                 <p className="text-xs font-body text-[var(--ink-muted)]">Créé le {createdAtLabel}</p>
               </div>
@@ -471,6 +511,17 @@ export function ProjectDetail() {
           </ul>
         </Card>
       </div>
+
+      {project ? (
+        <div className="mt-4 space-y-4">
+          <SmartRemindersPanel projectId={project.id} onSent={loadProject} />
+          <ExtractionReviewPanel projectId={project.id} />
+          <ContractGeneratorPanel
+            projectId={project.id}
+            aiContractsEnabled={aiContractsEnabled}
+          />
+        </div>
+      ) : null}
 
       {project && (
         <div className="mt-8">

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Button, Card } from '../ui'
+import { useCallback, useEffect, useState } from 'react'
+import { Button } from '../ui'
 import { getOrCreateAgency } from '../../lib/agency'
 import { supabase } from '../../lib/supabase'
 import { CHECKLIST_TYPE_LABELS, type DraftChecklistItem } from '../../lib/checklist'
@@ -9,22 +9,34 @@ import {
   loadChecklistTemplateItems,
   type AgencyChecklistTemplate,
 } from '../../lib/checklistTemplates'
+import {
+  TemplateCardFooterButton,
+  TemplateEmptyState,
+  TemplateIntroCard,
+  TemplateItemCard,
+  TemplatesGridSkeleton,
+} from '../templates'
 import { ChecklistTemplateForm } from './ChecklistTemplateForm'
 
 type ContractTemplateOption = { id: string; name: string }
 
 type ChecklistTemplatesManagerProps = {
   agencyId: string | null
+  agencyLoading?: boolean
   contractTemplates: ContractTemplateOption[]
+  onActionsReady?: (actions: { openCreate: () => void }) => void
 }
 
 export function ChecklistTemplatesManager({
   agencyId: agencyIdProp,
+  agencyLoading = false,
   contractTemplates,
+  onActionsReady,
 }: ChecklistTemplatesManagerProps) {
   const [agencyId, setAgencyId] = useState<string | null>(agencyIdProp)
+  const resolvedAgencyId = agencyIdProp ?? agencyId
   const [templates, setTemplates] = useState<AgencyChecklistTemplate[]>([])
-  const [loading, setLoading] = useState(true)
+  const [lastFetchedAgencyId, setLastFetchedAgencyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -34,38 +46,61 @@ export function ChecklistTemplatesManager({
   const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null)
   const [editingTemplate, setEditingTemplate] = useState<AgencyChecklistTemplate | null>(null)
 
-  const load = async (resolvedAgencyId?: string) => {
-    const id = resolvedAgencyId ?? agencyId
-    if (!id) {
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    setTemplates(await listAgencyChecklistTemplates(id))
-    setLoading(false)
-  }
+  const refreshTemplates = useCallback(async (id: string) => {
+    const data = await listAgencyChecklistTemplates(id)
+    setTemplates(data)
+  }, [])
 
   useEffect(() => {
-    if (agencyIdProp) {
-      setAgencyId(agencyIdProp)
-      void load(agencyIdProp)
+    if (!resolvedAgencyId) {
       return
     }
+    let cancelled = false
+    listAgencyChecklistTemplates(resolvedAgencyId)
+      .then((data) => {
+        if (!cancelled) {
+          setTemplates(data)
+          setLastFetchedAgencyId(resolvedAgencyId)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [resolvedAgencyId])
+
+  const loading =
+    agencyLoading || (!!resolvedAgencyId && lastFetchedAgencyId !== resolvedAgencyId)
+
+  useEffect(() => {
+    if (agencyIdProp || agencyId) return
+
+    let cancelled = false
     void (async () => {
       const { data: userData } = await supabase.auth.getUser()
-      if (!userData.user) {
-        setLoading(false)
+      if (!userData.user || cancelled) {
         return
       }
       const agency = await getOrCreateAgency(userData.user.id)
-      if (!agency?.id) {
-        setLoading(false)
+      if (!agency?.id || cancelled) {
         return
       }
       setAgencyId(agency.id)
-      await load(agency.id)
     })()
-  }, [agencyIdProp])
+
+    return () => {
+      cancelled = true
+    }
+  }, [agencyIdProp, agencyId])
+
+  const openCreate = useCallback(() => {
+    setEditingTemplate(null)
+    setFormMode('create')
+  }, [])
+
+  useEffect(() => {
+    onActionsReady?.({ openCreate })
+  }, [onActionsReady, openCreate])
 
   const togglePreview = async (templateId: string) => {
     if (expandedId === templateId) {
@@ -76,11 +111,6 @@ export function ChecklistTemplatesManager({
     setPreviewLoading(true)
     setPreviewItems(await loadChecklistTemplateItems(templateId))
     setPreviewLoading(false)
-  }
-
-  const openCreate = () => {
-    setEditingTemplate(null)
-    setFormMode('create')
   }
 
   const openEdit = (template: AgencyChecklistTemplate) => {
@@ -94,7 +124,7 @@ export function ChecklistTemplatesManager({
   }
 
   const handleSaved = async () => {
-    await load()
+    if (resolvedAgencyId) await refreshTemplates(resolvedAgencyId)
   }
 
   const handleDelete = async (template: AgencyChecklistTemplate) => {
@@ -103,99 +133,122 @@ export function ChecklistTemplatesManager({
     try {
       await deleteChecklistTemplate(template.id)
       if (expandedId === template.id) setExpandedId(null)
-      await load()
+      if (resolvedAgencyId) await refreshTemplates(resolvedAgencyId)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Impossible de supprimer ce modèle.')
     }
   }
 
   if (loading) {
-    return <p className="mt-6 text-sm font-body text-[var(--ink-muted)]">Chargement…</p>
+    return (
+      <div className="space-y-4">
+        <TemplateIntroCard
+          title="Modèles de checklist"
+          description="Créez des checklists réutilisables pour accélérer la création de vos projets d'onboarding."
+        />
+        <TemplatesGridSkeleton />
+      </div>
+    )
   }
 
-  if (!agencyId) {
+  if (!resolvedAgencyId) {
     return (
-      <Card className="text-center">
-        <p className="text-sm font-body text-[var(--ink-muted)]">
-          Aucune agence trouvée. Complétez vos paramètres avant de créer des modèles.
-        </p>
-      </Card>
+      <TemplateEmptyState
+        icon="⚙️"
+        title="Agence non configurée"
+        description="Complétez vos paramètres avant de créer des modèles de checklist."
+      />
     )
   }
 
   return (
-    <div>
-      <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
-        <Button onClick={openCreate}>Nouveau modèle</Button>
-      </div>
+    <div className="space-y-4">
+      {error ? <p className="text-sm font-body text-[var(--amber)]">{error}</p> : null}
 
-      {error ? <p className="mb-4 text-sm font-body text-[var(--amber)]">{error}</p> : null}
+      <TemplateIntroCard
+        title="Modèles de checklist"
+        description="Créez des checklists réutilisables pour accélérer la création de vos projets d'onboarding."
+        countLabel={`${templates.length} modèle${templates.length !== 1 ? 's' : ''}`}
+      />
 
       {templates.length === 0 ? (
-        <Card className="text-center">
-          <p className="text-sm font-body text-[var(--ink-muted)]">
-            Aucun modèle de checklist. Créez votre premier modèle pour le réutiliser lors de la création de projets.
-          </p>
-          <Button className="mt-4" onClick={openCreate}>
-            Nouveau modèle
-          </Button>
-        </Card>
+        <TemplateEmptyState
+          icon="✓"
+          title="Aucun modèle de checklist"
+          description="Créez votre premier modèle pour le réutiliser lors de la création de projets."
+          action={<Button onClick={openCreate}>Nouveau modèle</Button>}
+        />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {templates.map((template) => (
-            <Card key={template.id}>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-display text-xl font-semibold text-[var(--ink)]">{template.name}</p>
-                  {template.description ? (
-                    <p className="mt-1 text-sm font-body text-[var(--ink-soft)]">{template.description}</p>
-                  ) : null}
-                  <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
-                    {template.itemCount} item{template.itemCount > 1 ? 's' : ''} · Créé le{' '}
-                    {new Date(template.created_at).toLocaleDateString('fr-FR')}
-                  </p>
-                </div>
-              </div>
-
-              {expandedId === template.id ? (
-                <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-warm)] p-3">
-                  {previewLoading ? (
-                    <p className="text-xs font-body text-[var(--ink-muted)]">Chargement…</p>
-                  ) : (
-                    <ul className="space-y-1.5">
-                      {previewItems.map((item) => (
-                        <li key={item.id} className="flex items-center justify-between gap-2 text-sm font-body text-[var(--ink)]">
-                          <span>{item.label}</span>
-                          <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-xs text-[var(--accent)]">
-                            {CHECKLIST_TYPE_LABELS[item.type]}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ) : null}
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button variant="secondary" onClick={() => togglePreview(template.id)}>
-                  {expandedId === template.id ? 'Masquer' : 'Aperçu'}
-                </Button>
-                <Button variant="secondary" onClick={() => openEdit(template)}>
-                  Modifier
-                </Button>
-                <Button variant="secondary" onClick={() => handleDelete(template)}>
-                  Supprimer
-                </Button>
-              </div>
-            </Card>
-          ))}
+          {templates.map((template) => {
+            const isExpanded = expandedId === template.id
+            return (
+              <TemplateItemCard
+                key={template.id}
+                icon={
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--mint-soft)] font-display text-sm font-extrabold text-[var(--mint)]">
+                    ✓
+                  </div>
+                }
+                title={template.name}
+                meta={`${template.itemCount} item${template.itemCount > 1 ? 's' : ''} · Créé le ${new Date(template.created_at).toLocaleDateString('fr-FR')}`}
+                badges={
+                  template.description ? (
+                    <span className="text-sm font-body text-[var(--ink-soft)]">{template.description}</span>
+                  ) : undefined
+                }
+                menuItems={[
+                  {
+                    label: 'Supprimer',
+                    onClick: () => void handleDelete(template),
+                    destructive: true,
+                  },
+                ]}
+                footer={
+                  <>
+                    <TemplateCardFooterButton
+                      onClick={() => void togglePreview(template.id)}
+                      aria-expanded={isExpanded}
+                    >
+                      {isExpanded ? 'Masquer' : 'Aperçu'}
+                    </TemplateCardFooterButton>
+                    <TemplateCardFooterButton onClick={() => openEdit(template)}>
+                      Modifier
+                    </TemplateCardFooterButton>
+                  </>
+                }
+              >
+                {isExpanded ? (
+                  <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-warm)] p-3">
+                    {previewLoading ? (
+                      <p className="text-xs font-body text-[var(--ink-muted)]">Chargement…</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {previewItems.map((item) => (
+                          <li
+                            key={item.id}
+                            className="flex items-center justify-between gap-2 text-sm font-body text-[var(--ink)]"
+                          >
+                            <span>{item.label}</span>
+                            <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-xs text-[var(--accent)]">
+                              {CHECKLIST_TYPE_LABELS[item.type]}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
+              </TemplateItemCard>
+            )
+          })}
         </div>
       )}
 
       {formMode ? (
         <ChecklistTemplateForm
           mode={formMode}
-          agencyId={agencyId}
+          agencyId={resolvedAgencyId}
           contractTemplates={contractTemplates}
           agencyTemplates={templates}
           initialTemplate={editingTemplate ?? undefined}

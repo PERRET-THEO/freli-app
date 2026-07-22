@@ -86,8 +86,26 @@ serve(async (req) => {
 
   const event = parsed.event
   const type = String(event.type ?? '')
+  const eventId = typeof event.id === 'string' ? event.id : ''
 
   try {
+    if (eventId) {
+      const { error: idemErr } = await supabaseAdmin.from('stripe_webhook_events').insert({
+        event_id: eventId,
+        event_type: type || 'unknown',
+      })
+      if (idemErr) {
+        // Unique violation → already processed
+        if (idemErr.code === '23505') {
+          return new Response(JSON.stringify({ received: true, duplicate: true }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+        console.error('stripe-webhook idempotency insert failed:', idemErr.message)
+      }
+    }
+
     if (type === 'account.updated') {
       const account = event.data as { object?: Record<string, unknown> } | undefined
       const obj = account?.object
@@ -124,6 +142,15 @@ serve(async (req) => {
     if (type === 'checkout.session.completed') {
       const sessionWrapper = event.data as { object?: Record<string, unknown> } | undefined
       const session = sessionWrapper?.object
+      const sessionPaymentStatus =
+        session && typeof session.payment_status === 'string' ? session.payment_status : ''
+      if (sessionPaymentStatus !== 'paid') {
+        console.log('checkout.session.completed skipped, payment_status=', sessionPaymentStatus)
+        return new Response(JSON.stringify({ received: true, skipped: 'not_paid' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
       const meta = session?.metadata as Record<string, unknown> | undefined
       const projectId = meta && typeof meta.project_id === 'string' ? meta.project_id : ''
       if (projectId) {
@@ -196,6 +223,9 @@ serve(async (req) => {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     console.error('stripe-webhook handler error:', message)
+    if (eventId) {
+      await supabaseAdmin.from('stripe_webhook_events').delete().eq('event_id', eventId)
+    }
     return new Response(JSON.stringify({ error: message }), { status: 500 })
   }
 })

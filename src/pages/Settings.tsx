@@ -5,6 +5,8 @@ import { BrandColorPicker } from '../components/settings/BrandColorPicker'
 import { LogoUpload } from '../components/settings/LogoUpload'
 import { PortalPreviewLink } from '../components/settings/PortalPreviewLink'
 import { ReminderSettingsPanel } from '../components/settings/ReminderSettingsPanel'
+import { AgencyLegalProfilePanel } from '../components/settings/AgencyLegalProfilePanel'
+import { AiModulesPanel, type AiModuleFlags } from '../components/settings/AiModulesPanel'
 import { SettingsNav } from '../components/settings/SettingsNav'
 import { SettingsSection } from '../components/settings/SettingsSection'
 import { SettingsSkeleton } from '../components/settings/SettingsSkeleton'
@@ -14,15 +16,21 @@ import {
   type AgencyBranding,
 } from '../lib/agencyBranding'
 import { getOrCreateAgency } from '../lib/agency'
+import { AGENCY_SELECT_BASE, mergeAgencyWithAiFlags } from '../lib/agencyQueries'
 import { normalizeReminderDelayHours } from '../lib/reminderSettings'
+import {
+  normalizeSmartReminderMax,
+  normalizeSmartReminderTone,
+  type SmartReminderTone,
+} from '../lib/smartReminders'
 import { supabase } from '../lib/supabase'
+import type { CompanyLookupResult, LegalDataSource } from '../lib/companyLookup'
 import { SUPPORT_EMAIL, supportMailto } from '../lib/support'
 import { Button, Card, Input } from '../components/ui'
 
 type SectionFeedback = { type: 'success' | 'error'; text: string } | null
 
-const AGENCY_SELECT =
-  'id, name, logo_url, plan, brand_color, portal_welcome_message, tagline, contact_email, contact_phone, auto_reminders_enabled, auto_reminders_delay_hours'
+const AGENCY_SELECT = AGENCY_SELECT_BASE
 
 function SectionMessage({ feedback }: { feedback: SectionFeedback }) {
   if (!feedback) return null
@@ -52,6 +60,19 @@ export function Settings() {
   const [welcomeMessage, setWelcomeMessage] = useState('')
   const [contactEmail, setContactEmail] = useState('')
   const [contactPhone, setContactPhone] = useState('')
+  const [legalForm, setLegalForm] = useState('')
+  const [addressStreet, setAddressStreet] = useState('')
+  const [addressPostalCode, setAddressPostalCode] = useState('')
+  const [addressCity, setAddressCity] = useState('')
+  const [siret, setSiret] = useState('')
+  const [shareCapital, setShareCapital] = useState('')
+  const [vatNumber, setVatNumber] = useState('')
+  const [rcsCity, setRcsCity] = useState('')
+  const [siren, setSiren] = useState('')
+  const [codeNaf, setCodeNaf] = useState('')
+  const [legalSource, setLegalSource] = useState<LegalDataSource | null>(null)
+  const [legalFeedback, setLegalFeedback] = useState<SectionFeedback>(null)
+  const [legalSaving, setLegalSaving] = useState(false)
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
   const [logoError, setLogoError] = useState<string | null>(null)
@@ -68,6 +89,16 @@ export function Settings() {
   const [autoRemindersDelayHours, setAutoRemindersDelayHours] = useState(48)
   const [reminderFeedback, setReminderFeedback] = useState<SectionFeedback>(null)
   const [reminderSaving, setReminderSaving] = useState(false)
+  const [aiFlags, setAiFlags] = useState<AiModuleFlags>({
+    extraction: false,
+    reminders: false,
+    contracts: false,
+  })
+  const [aiFeedback, setAiFeedback] = useState<SectionFeedback>(null)
+  const [aiSaving, setAiSaving] = useState(false)
+  const [aiReminderTone, setAiReminderTone] = useState<SmartReminderTone>('professional')
+  const [aiReminderAutoSend, setAiReminderAutoSend] = useState(false)
+  const [aiReminderMax, setAiReminderMax] = useState(3)
   const [toast, setToast] = useState<string | null>(null)
 
   const showToast = useCallback((msg: string) => {
@@ -93,8 +124,27 @@ export function Settings() {
     setWelcomeMessage(row.portal_welcome_message ?? '')
     setContactEmail(row.contact_email ?? '')
     setContactPhone(row.contact_phone ?? '')
+    setLegalForm(row.legal_form ?? '')
+    setAddressStreet(row.address_street ?? '')
+    setAddressPostalCode(row.address_postal_code ?? '')
+    setAddressCity(row.address_city ?? '')
+    setSiret(row.siret ?? '')
+    setShareCapital(row.share_capital ?? '')
+    setVatNumber(row.vat_number ?? '')
+    setRcsCity(row.rcs_city ?? '')
+    setSiren(row.siren ?? '')
+    setCodeNaf(row.code_naf ?? '')
+    setLegalSource((row.source_donnees_legales as LegalDataSource | null) ?? null)
     setAutoRemindersEnabled(row.auto_reminders_enabled !== false)
     setAutoRemindersDelayHours(normalizeReminderDelayHours(row.auto_reminders_delay_hours))
+    setAiFlags({
+      extraction: row.ai_extraction_enabled === true,
+      reminders: row.ai_reminders_enabled === true,
+      contracts: row.ai_contracts_enabled === true,
+    })
+    setAiReminderTone(normalizeSmartReminderTone(row.ai_reminder_tone))
+    setAiReminderAutoSend(row.ai_reminder_auto_send === true)
+    setAiReminderMax(normalizeSmartReminderMax(row.ai_reminder_max_per_project))
   }
 
   useEffect(() => {
@@ -113,7 +163,7 @@ export function Settings() {
         .eq('user_id', userData.user.id)
         .maybeSingle()
 
-      if (agencyData) loadAgencyFields(agencyData as AgencyBranding)
+      if (agencyData) loadAgencyFields(await mergeAgencyWithAiFlags(agencyData as AgencyBranding))
       setPageLoading(false)
     }
 
@@ -196,7 +246,7 @@ export function Settings() {
           return
         }
 
-        loadAgencyFields(updated as AgencyBranding)
+        loadAgencyFields(await mergeAgencyWithAiFlags(updated as AgencyBranding))
         setLogoFile(null)
         setAgencyFeedback({ type: 'success', text: 'Paramètres enregistrés.' })
         showToast('Paramètres enregistrés.')
@@ -227,7 +277,7 @@ export function Settings() {
         return
       }
 
-      loadAgencyFields(created as AgencyBranding)
+      loadAgencyFields(await mergeAgencyWithAiFlags(created as AgencyBranding))
       setLogoFile(null)
       setAgencyFeedback({ type: 'success', text: 'Agence créée et enregistrée.' })
       showToast('Agence créée.')
@@ -286,6 +336,9 @@ export function Settings() {
       .update({
         auto_reminders_enabled: autoRemindersEnabled,
         auto_reminders_delay_hours: normalizeReminderDelayHours(autoRemindersDelayHours),
+        ai_reminder_tone: aiReminderTone,
+        ai_reminder_auto_send: aiReminderAutoSend,
+        ai_reminder_max_per_project: normalizeSmartReminderMax(aiReminderMax),
       })
       .eq('id', agency.id)
       .select(AGENCY_SELECT)
@@ -298,9 +351,97 @@ export function Settings() {
       return
     }
 
-    loadAgencyFields(updated as AgencyBranding)
+    loadAgencyFields(await mergeAgencyWithAiFlags(updated as AgencyBranding))
     setReminderFeedback({ type: 'success', text: 'Paramètres de relance enregistrés.' })
     showToast('Relances enregistrées.')
+  }
+
+  /** Pré-remplissage depuis l'API Recherche d'Entreprises (autocomplete ou refresh). */
+  const handleLegalCompanySelect = (company: CompanyLookupResult) => {
+    if (company.raison_sociale && !agencyName.trim()) setAgencyName(company.raison_sociale)
+    setLegalForm(company.forme_juridique)
+    setAddressStreet(company.adresse)
+    setAddressPostalCode(company.code_postal)
+    setAddressCity(company.ville)
+    setSiret(company.siret)
+    setSiren(company.siren)
+    setCodeNaf(company.code_naf)
+    if (company.vat_number) setVatNumber(company.vat_number)
+    setLegalSource('api_gouv')
+  }
+
+  /** Une correction manuelle après pré-remplissage API change la source des données. */
+  const markLegalManualEdit = () => {
+    setLegalSource((source) => (source === 'api_gouv' ? 'saisie_manuelle' : source))
+  }
+
+  const handleSaveLegal = async () => {
+    if (!agency?.id) {
+      setLegalFeedback({ type: 'error', text: 'Créez d’abord votre agence dans Organisation.' })
+      return
+    }
+    setLegalSaving(true)
+    setLegalFeedback(null)
+    const { data: updated, error } = await supabase
+      .from('agencies')
+      .update({
+        legal_form: legalForm.trim() || null,
+        address_street: addressStreet.trim() || null,
+        address_postal_code: addressPostalCode.trim() || null,
+        address_city: addressCity.trim() || null,
+        siret: siret.trim() || null,
+        share_capital: shareCapital.trim() || null,
+        vat_number: vatNumber.trim() || null,
+        rcs_city: rcsCity.trim() || null,
+        siren: siren.trim() || null,
+        code_naf: codeNaf.trim() || null,
+        source_donnees_legales: legalSource,
+      })
+      .eq('id', agency.id)
+      .select(AGENCY_SELECT)
+      .single()
+    setLegalSaving(false)
+    if (error || !updated) {
+      setLegalFeedback({ type: 'error', text: error?.message ?? 'Enregistrement impossible.' })
+      return
+    }
+    loadAgencyFields(await mergeAgencyWithAiFlags(updated as AgencyBranding))
+    setLegalFeedback({ type: 'success', text: 'Informations légales enregistrées.' })
+    showToast('Informations légales enregistrées.')
+  }
+
+  const handleSaveAi = async () => {
+    setAiFeedback(null)
+    if (!agency?.id) {
+      setAiFeedback({
+        type: 'error',
+        text: 'Créez d’abord votre agence dans la section Organisation.',
+      })
+      return
+    }
+
+    setAiSaving(true)
+    const { data: updated, error } = await supabase
+      .from('agencies')
+      .update({
+        ai_extraction_enabled: aiFlags.extraction,
+        ai_reminders_enabled: aiFlags.reminders,
+        ai_contracts_enabled: aiFlags.contracts,
+      })
+      .eq('id', agency.id)
+      .select(AGENCY_SELECT)
+      .single()
+
+    setAiSaving(false)
+
+    if (error) {
+      setAiFeedback({ type: 'error', text: error.message })
+      return
+    }
+
+    loadAgencyFields(await mergeAgencyWithAiFlags(updated as AgencyBranding))
+    setAiFeedback({ type: 'success', text: 'Modules IA enregistrés.' })
+    showToast('Modules IA enregistrés.')
   }
 
   const handleLogout = async () => {
@@ -390,6 +531,37 @@ export function Settings() {
             </SettingsSection>
 
             <SettingsSection
+              id="settings-legal"
+              icon="📋"
+              title="Informations légales"
+              description="Adresse, SIRET et mentions légales utilisées dans vos contrats générés par l'IA."
+            >
+              <AgencyLegalProfilePanel
+                legalForm={legalForm}
+                addressStreet={addressStreet}
+                addressPostalCode={addressPostalCode}
+                addressCity={addressCity}
+                siret={siret}
+                siren={siren}
+                shareCapital={shareCapital}
+                vatNumber={vatNumber}
+                rcsCity={rcsCity}
+                onLegalFormChange={(v) => { setLegalForm(v); markLegalManualEdit() }}
+                onAddressStreetChange={(v) => { setAddressStreet(v); markLegalManualEdit() }}
+                onAddressPostalCodeChange={(v) => { setAddressPostalCode(v); markLegalManualEdit() }}
+                onAddressCityChange={(v) => { setAddressCity(v); markLegalManualEdit() }}
+                onSiretChange={(v) => { setSiret(v); markLegalManualEdit() }}
+                onShareCapitalChange={setShareCapital}
+                onVatNumberChange={(v) => { setVatNumber(v); markLegalManualEdit() }}
+                onRcsCityChange={setRcsCity}
+                onCompanySelect={handleLegalCompanySelect}
+                onSave={handleSaveLegal}
+                saving={legalSaving}
+              />
+              <SectionMessage feedback={legalFeedback} />
+            </SettingsSection>
+
+            <SettingsSection
               id="settings-portail"
               icon="🎨"
               title="Portail client"
@@ -451,6 +623,29 @@ export function Settings() {
                 onSave={handleSaveReminders}
                 saving={reminderSaving}
                 feedback={reminderFeedback}
+                aiEnabled={aiFlags.reminders}
+                aiTone={aiReminderTone}
+                aiAutoSend={aiReminderAutoSend}
+                aiMaxPerProject={aiReminderMax}
+                onAiToneChange={setAiReminderTone}
+                onAiAutoSendChange={setAiReminderAutoSend}
+                onAiMaxChange={setAiReminderMax}
+              />
+            </SettingsSection>
+
+            <SettingsSection
+              id="settings-ia"
+              icon="✨"
+              title="Intelligence artificielle"
+              description="Activez les modules IA de Freli : extraction de documents, relances intelligentes et génération de contrats."
+            >
+              <AiModulesPanel
+                agencyId={agency?.id ?? null}
+                flags={aiFlags}
+                onFlagsChange={setAiFlags}
+                onSave={handleSaveAi}
+                saving={aiSaving}
+                feedback={aiFeedback}
               />
             </SettingsSection>
 

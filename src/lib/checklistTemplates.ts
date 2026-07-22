@@ -58,8 +58,15 @@ export async function loadChecklistTemplateItems(
   }
 
   return ((data ?? []) as TemplateItemRow[]).map((row) => ({
-    ...createDraftItem(row.label, row.type),
-    contractTemplateId: row.contract_template_id,
+    ...createDraftItem(row.label, row.type, {
+      contractSource:
+        row.type === 'signature'
+          ? row.contract_template_id
+            ? 'existing'
+            : 'default'
+          : undefined,
+      contractTemplateId: row.contract_template_id,
+    }),
   }))
 }
 

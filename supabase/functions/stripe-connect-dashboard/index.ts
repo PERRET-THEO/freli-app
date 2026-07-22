@@ -74,6 +74,7 @@ serve(async (req) => {
       headers: {
         Authorization: `Bearer ${stripeSecretKey}`,
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Stripe-Version': '2025-04-30.basil',
       },
     })
 
