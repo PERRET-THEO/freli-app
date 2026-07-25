@@ -1,12 +1,16 @@
 import { LegalList, LegalPageLayout, LegalParagraph, LegalSection } from '../components/layout/LegalPageLayout'
+import { SeoHead } from '../components/seo/SeoHead'
+import { siteConfig } from '../lib/seo/siteConfig'
 import { SUPPORT_EMAIL } from '../lib/support'
 
 export function PrivacyPolicy() {
   return (
     <LegalPageLayout title="Politique de confidentialité" lastUpdated="3 juin 2026">
+      <SeoHead path="/confidentialite" />
       <LegalSection title="1. Responsable du traitement">
         <LegalParagraph>
-          Freli (accessible sur freli.fr) est édité par l&apos;équipe Freli. Pour toute question
+          Freli (accessible sur freli.fr) est édité par{' '}
+          {siteConfig.legal.legalName ?? "l'équipe Freli"}. Pour toute question
           relative à vos données personnelles, contactez-nous à{' '}
           <a href={`mailto:${SUPPORT_EMAIL}`} className="text-[var(--accent)] hover:underline">
             {SUPPORT_EMAIL}

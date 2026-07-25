@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /signin
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /confirm
+Disallow: /p/
+Disallow: /portal-preview
+
+Sitemap: https://www.freli.fr/sitemap.xml

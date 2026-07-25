@@ -36,6 +36,15 @@ export function LegalPageLayout({ title, lastUpdated, children }: LegalPageLayou
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p className="text-sm font-body text-[var(--ink-muted)]">© 2026 Freli</p>
           <div className="flex flex-wrap gap-5 text-sm font-body text-[var(--surface-warm)]">
+            <Link to="/a-propos" className="hover:text-[var(--white)]">
+              À propos
+            </Link>
+            <Link to="/faq" className="hover:text-[var(--white)]">
+              FAQ
+            </Link>
+            <Link to="/mentions-legales" className="hover:text-[var(--white)]">
+              Mentions légales
+            </Link>
             <Link to="/confidentialite" className="hover:text-[var(--white)]">
               Politique de confidentialité
             </Link>

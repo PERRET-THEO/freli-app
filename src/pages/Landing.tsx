@@ -3,8 +3,15 @@ import { motion, useReducedMotion } from 'motion/react'
 import { Navbar } from '../components/layout/Navbar'
 import { FeatureVisual, type FeatureVisualId } from '../components/landing/FeatureVisuals'
 import { Reveal, RevealStagger, RevealStaggerItem } from '../components/landing/Reveal'
+import { SeoHead } from '../components/seo/SeoHead'
 import { Button, Card } from '../components/ui'
 import { appSignInUrl } from '../lib/appUrl'
+import {
+  jsonLdGraph,
+  organizationJsonLd,
+  softwareApplicationJsonLd,
+  websiteJsonLd,
+} from '../lib/seo/jsonLd'
 
 type TimelineStep = {
   step: string
@@ -131,17 +138,17 @@ const integrations = [
     logo: null,
     icon: '🔗',
     logoClassName: '',
-    text: "Branchez Zapier, Make, n8n, Slack, Notion, Airtable, votre CRM ou votre compta (Pennylane, Tiime, Indy via automatiseur). Événements : projet créé, terminé, paiement reçu, relance envoyée.",
+    text: "Direct : Zapier, Make, n8n, Slack. Via automatisateur : Notion, Airtable, CRM ou compta (Pennylane, Tiime, Indy). Événements : projet créé, terminé, paiement reçu, relance envoyée.",
   },
 ]
 
 const ecosystemTools = [
-  { name: 'Zapier', logo: '/logos/zapier.svg', className: 'h-6 w-auto', chip: 'dark' as const },
-  { name: 'Make', logo: '/logos/make.svg', className: 'h-6 w-auto', chip: 'light' as const },
-  { name: 'n8n', logo: '/logos/n8n.svg', className: 'h-6 w-auto', chip: 'dark' as const },
-  { name: 'Slack', logo: '/logos/slack.svg', className: 'h-7 w-7', chip: 'dark' as const },
-  { name: 'Notion', logo: '/logos/notion.png', className: 'h-6 w-6', chip: 'light' as const },
-  { name: 'Airtable', logo: '/logos/airtable.png', className: 'h-7 w-7', chip: 'dark' as const },
+  { name: 'Zapier', logo: '/logos/zapier.svg', className: 'h-6 w-auto', chip: 'dark' as const, via: null as string | null },
+  { name: 'Make', logo: '/logos/make.svg', className: 'h-6 w-auto', chip: 'light' as const, via: null },
+  { name: 'n8n', logo: '/logos/n8n.svg', className: 'h-6 w-auto', chip: 'dark' as const, via: null },
+  { name: 'Slack', logo: '/logos/slack.svg', className: 'h-7 w-7', chip: 'dark' as const, via: null },
+  { name: 'Notion', logo: '/logos/notion.png', className: 'h-6 w-6', chip: 'light' as const, via: 'via Zapier/Make' },
+  { name: 'Airtable', logo: '/logos/airtable.png', className: 'h-7 w-7', chip: 'dark' as const, via: 'via Zapier/Make' },
 ]
 
 const comparison = {
@@ -196,6 +203,10 @@ export function Landing() {
 
   return (
     <div className="min-h-screen bg-[var(--ink)] text-[var(--white)]">
+      <SeoHead
+        path="/"
+        jsonLd={jsonLdGraph(organizationJsonLd(), websiteJsonLd(), softwareApplicationJsonLd())}
+      />
       <Navbar />
       <main className="mx-auto max-w-6xl px-4 pb-24 pt-20 sm:px-6">
         <div className="mx-auto max-w-3xl text-center">
@@ -217,11 +228,11 @@ export function Landing() {
           </Reveal>
           <Reveal immediate delay={0.2}>
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-              <a href="https://calendly.com/freli/demo" target="_blank" rel="noreferrer">
+              <Link to="/demo">
                 <Button className="transition-transform duration-200 hover:scale-[1.02]">
                   Demander un accès
                 </Button>
-              </a>
+              </Link>
               <a href={appSignInUrl()}>
                 <Button variant="secondary" className="transition-transform duration-200 hover:scale-[1.02]">
                   Se connecter →
@@ -804,12 +815,12 @@ export function Landing() {
                 {ecosystemTools.map((tool) => (
                   <span
                     key={tool.name}
-                    className={`inline-flex items-center justify-center rounded-full border px-4 py-2 transition-transform duration-200 hover:-translate-y-0.5 ${
+                    className={`inline-flex flex-col items-center justify-center gap-1 rounded-full border px-4 py-2 transition-transform duration-200 hover:-translate-y-0.5 ${
                       tool.chip === 'light'
                         ? 'border-[rgba(255,255,255,0.2)] bg-[var(--white)]'
                         : 'border-[rgba(255,255,255,0.1)] bg-[var(--ink)]'
                     }`}
-                    title={tool.name}
+                    title={tool.via ? `${tool.name} (${tool.via})` : tool.name}
                   >
                     <img
                       src={tool.logo}
@@ -817,7 +828,17 @@ export function Landing() {
                       className={tool.className}
                       loading="lazy"
                     />
-                    <span className="sr-only">{tool.name}</span>
+                    {tool.via ? (
+                      <span
+                        className={`text-[10px] font-body leading-none ${
+                          tool.chip === 'light' ? 'text-[var(--ink-muted)]' : 'text-[rgba(253,252,250,0.55)]'
+                        }`}
+                      >
+                        {tool.via}
+                      </span>
+                    ) : (
+                      <span className="sr-only">{tool.name}</span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -829,8 +850,12 @@ export function Landing() {
           <Reveal>
             <div className="mx-auto max-w-3xl text-center">
               <h2 className="font-display text-3xl font-bold tracking-tight text-[var(--white)]">
-                Ils ont simplifié leur onboarding
+                Un onboarding simplifié, concrètement
               </h2>
+              <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
+                Exemples d&apos;usage représentatifs, inspirés des retours de nos premiers
+                utilisateurs.
+              </p>
             </div>
           </Reveal>
           <RevealStagger className="mt-12 grid gap-6 md:mt-14 md:grid-cols-3 md:gap-8">
@@ -864,19 +889,17 @@ export function Landing() {
               Rejoignez les freelances et agences qui automatisent leur onboarding avec Freli.
             </p>
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-              <a href="https://calendly.com/freli/demo" target="_blank" rel="noreferrer">
+              <Link to="/demo">
                 <button className="rounded-[var(--radius-sm)] bg-[var(--white)] px-6 py-3 text-sm font-body font-medium text-[var(--accent)] transition-transform duration-200 hover:scale-[1.02]">
                   Demander un accès
                 </button>
-              </a>
-              <a
-                href="https://calendly.com/freli/demo"
-                target="_blank"
-                rel="noreferrer"
+              </Link>
+              <Link
+                to="/demo"
                 className="rounded-[var(--radius-sm)] border border-[var(--white)] px-6 py-3 text-sm font-body font-medium text-[var(--white)] transition-transform duration-200 hover:scale-[1.02]"
               >
                 Réserver une démo
-              </a>
+              </Link>
             </div>
             <p className="mx-auto mt-5 max-w-3xl text-[13px] font-body text-[rgba(253,252,250,0.75)]">
               ✓ Accompagnement personnalisé &nbsp;&nbsp; ✓ Prise en main en 5 minutes
@@ -900,14 +923,21 @@ export function Landing() {
               <a href="#features">Fonctionnalités</a>
               <a href="#integrations">Intégrations</a>
               <a href="#how-it-works">Comment ça marche</a>
-              <a href="https://calendly.com/freli/demo" target="_blank" rel="noreferrer">
-                Réserver une démo
-              </a>
+              <Link to="/demo">Réserver une démo</Link>
               <a href={appSignInUrl()}>Se connecter</a>
             </div>
             <p className="text-sm font-body text-[var(--ink-muted)] sm:text-right">© 2026 Freli</p>
           </div>
           <div className="flex flex-wrap gap-5 border-t border-[var(--ink-soft)] pt-6 text-sm font-body text-[var(--ink-muted)]">
+            <Link to="/a-propos" className="hover:text-[var(--white)]">
+              À propos
+            </Link>
+            <Link to="/faq" className="hover:text-[var(--white)]">
+              FAQ
+            </Link>
+            <Link to="/mentions-legales" className="hover:text-[var(--white)]">
+              Mentions légales
+            </Link>
             <Link to="/confidentialite" className="hover:text-[var(--white)]">
               Politique de confidentialité
             </Link>

@@ -11,11 +11,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico'],
+      includeAssets: ['favicon.ico', 'favicon.png', 'apple-touch-icon.png', 'og-image.png'],
       manifest: {
         name: 'Freli',
         short_name: 'Freli',
         description: 'Onboarding client simplifié par Freli',
+        lang: 'fr',
         theme_color: '#5B6EF5',
         background_color: '#0D0F14',
         display: 'standalone',
@@ -31,6 +32,7 @@ export default defineConfig({
             src: '/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
+            purpose: 'any maskable',
           },
         ],
       },

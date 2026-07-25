@@ -4,10 +4,10 @@ import { appSignInUrl } from '../../lib/appUrl'
 import { Button } from '../ui'
 
 const NAV_LINKS = [
-  { href: '#features', label: 'Fonctionnalités', external: false },
-  { href: '#integrations', label: 'Intégrations', external: false },
-  { href: '#how-it-works', label: 'Comment ça marche', external: false },
-  { href: 'https://calendly.com/freli/demo', label: 'Réserver une démo', external: true },
+  { href: '#features', label: 'Fonctionnalités', route: false },
+  { href: '#integrations', label: 'Intégrations', route: false },
+  { href: '#how-it-works', label: 'Comment ça marche', route: false },
+  { href: '/demo', label: 'Réserver une démo', route: true },
 ]
 
 const linkClassName =
@@ -49,16 +49,14 @@ export function Navbar() {
 
         <div className="hidden items-center gap-8 md:flex">
           {NAV_LINKS.map((link) =>
-            link.external ? (
-              <a
+            link.route ? (
+              <Link
                 key={link.href}
-                href={link.href}
-                target="_blank"
-                rel="noreferrer"
+                to={link.href}
                 className="font-body text-sm text-[var(--surface-warm)] transition-colors hover:text-[var(--white)]"
               >
                 {link.label}
-              </a>
+              </Link>
             ) : (
               <a
                 key={link.href}
@@ -106,17 +104,15 @@ export function Navbar() {
           >
             <div className="mx-auto flex max-w-6xl flex-col gap-1">
               {NAV_LINKS.map((link) =>
-                link.external ? (
-                  <a
+                link.route ? (
+                  <Link
                     key={link.href}
-                    href={link.href}
-                    target="_blank"
-                    rel="noreferrer"
+                    to={link.href}
                     onClick={closeMenu}
                     className={linkClassName}
                   >
                     {link.label}
-                  </a>
+                  </Link>
                 ) : (
                   <a
                     key={link.href}

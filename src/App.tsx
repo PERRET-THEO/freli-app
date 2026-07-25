@@ -4,12 +4,15 @@ import { AgencySessionProvider } from './contexts/AgencyContext'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { resolveAuthCallbackPath } from './lib/authCallbackRoute'
 import { supabase } from './lib/supabase'
+import { About } from './pages/About'
 import { ClientPortal } from './pages/ClientPortal'
 import { ConfirmEmail } from './pages/ConfirmEmail'
 import { Dashboard } from './pages/Dashboard'
 import { Demo } from './pages/Demo'
+import { Faq } from './pages/Faq'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { Landing } from './pages/Landing'
+import { LegalNotice } from './pages/LegalNotice'
 import { PrivacyPolicy } from './pages/PrivacyPolicy'
 import { TermsOfUse } from './pages/TermsOfUse'
 import { NewProject } from './pages/NewProject'
@@ -124,6 +127,9 @@ function App() {
       <Routes>
       <Route path="/" element={<AppRoot />} />
       <Route path="/demo" element={<Demo />} />
+      <Route path="/a-propos" element={<About />} />
+      <Route path="/faq" element={<Faq />} />
+      <Route path="/mentions-legales" element={<LegalNotice />} />
       <Route path="/confidentialite" element={<PrivacyPolicy />} />
       <Route path="/conditions-utilisation" element={<TermsOfUse />} />
       <Route element={<RedirectIfAuthenticated />}>

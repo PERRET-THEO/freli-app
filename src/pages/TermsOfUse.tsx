@@ -1,9 +1,11 @@
 import { LegalList, LegalPageLayout, LegalParagraph, LegalSection } from '../components/layout/LegalPageLayout'
+import { SeoHead } from '../components/seo/SeoHead'
 import { SUPPORT_EMAIL } from '../lib/support'
 
 export function TermsOfUse() {
   return (
     <LegalPageLayout title="Conditions d'utilisation" lastUpdated="3 juin 2026">
+      <SeoHead path="/conditions-utilisation" />
       <LegalSection title="1. Objet">
         <LegalParagraph>
           Les présentes conditions régissent l’accès et l’utilisation de Freli, plateforme SaaS

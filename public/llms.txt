@@ -1,0 +1,32 @@
+# Freli
+
+> Freli est une plateforme SaaS française qui automatise l'onboarding client des freelances et agences : portail unique de collecte (formulaire, documents, signature électronique), paiement Stripe Connect en fin d'onboarding, synchronisation Google Drive, relances automatiques et préremplissage des données entreprise via l'API Recherche d'Entreprises (data.gouv, SIREN/SIRET).
+
+Freli remplace les chaînes d'emails, les Google Forms et les relances manuelles par un lien
+d'onboarding unique envoyé au client. L'accès se fait sur invitation ; une démo de 30 minutes
+peut être réservée en ligne.
+
+Ne pas confondre avec d'autres entités nommées « Freli » (ex. toponymes ou campings) :
+ici, Freli désigne le produit d'onboarding client édité sur freli.fr.
+
+## Pages principales
+
+- [Accueil](https://www.freli.fr/) : présentation du produit, fonctionnalités et intégrations
+- [Démo](https://www.freli.fr/demo) : réservation d'une démonstration de 30 minutes
+- [À propos](https://www.freli.fr/a-propos) : présentation de l'éditeur et du produit
+- [FAQ](https://www.freli.fr/faq) : questions fréquentes (fonctionnement, accès, RGPD)
+- [Politique de confidentialité](https://www.freli.fr/confidentialite)
+- [Conditions d'utilisation](https://www.freli.fr/conditions-utilisation)
+
+## Produit
+
+- Cible : freelances et agences francophones (web, design, marketing, conseil)
+- Fonctionnalités : portail d'onboarding white-label, signature électronique intégrée,
+  paiement Stripe, sync Google Drive, relances automatiques, webhooks (Zapier, Make, n8n),
+  modules IA optionnels (extraction de documents, relances intelligentes)
+- Application : https://app.freli.fr (réservée aux utilisateurs invités)
+
+## Contact
+
+- Support : support@freli.fr
+- Démo : https://calendly.com/freli/demo
