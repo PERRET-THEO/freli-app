@@ -205,7 +205,7 @@ export function Landing() {
             </span>
           </Reveal>
           <Reveal immediate delay={0.07}>
-            <h1 className="mt-6 text-5xl font-display font-extrabold tracking-tighter">
+            <h1 className="mt-6 break-words text-4xl font-display font-extrabold tracking-tighter sm:text-5xl">
               Onboarder un client ne devrait prendre que <span className="text-[var(--accent)]">2 minutes</span>
             </h1>
           </Reveal>
@@ -337,10 +337,10 @@ export function Landing() {
             </div>
           </Reveal>
 
-          <Reveal className="relative mt-12 md:mt-14">
+          <Reveal className="relative mt-12 overflow-x-clip px-2 md:mt-14">
             <div
               aria-hidden
-              className="pointer-events-none absolute -inset-8 rounded-[40px] bg-[radial-gradient(ellipse_at_top,rgba(90,110,255,0.18),transparent_60%)] blur-2xl"
+              className="pointer-events-none absolute -inset-4 rounded-[40px] bg-[radial-gradient(ellipse_at_top,rgba(90,110,255,0.18),transparent_60%)] blur-2xl sm:-inset-8"
             />
 
             <div className="relative rounded-[var(--radius-xl)] bg-[var(--ink-soft)] p-3 shadow-[0_40px_100px_rgba(0,0,0,0.55)] ring-1 ring-[rgba(255,255,255,0.06)]">
@@ -584,7 +584,7 @@ export function Landing() {
             </div>
 
             <motion.div
-              className="pointer-events-none absolute -bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-[var(--accent)]/30 bg-[var(--ink-soft)] px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.4)] backdrop-blur"
+              className="pointer-events-none absolute inset-x-2 -bottom-6 z-10 mx-auto flex max-w-md items-center gap-3 rounded-full border border-[var(--accent)]/30 bg-[var(--ink-soft)] px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.4)] backdrop-blur"
               initial={reduceMotion ? false : { opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.4 }}
@@ -597,7 +597,7 @@ export function Landing() {
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent-soft)] text-sm">
                 🤖
               </span>
-              <div className="text-left">
+              <div className="min-w-0 text-left">
                 <p className="font-display text-[11px] font-bold text-[var(--white)]">
                   Freli a relancé Maison Lune automatiquement
                 </p>
