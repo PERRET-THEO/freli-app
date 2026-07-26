@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { resolveAuthCallbackPath } from './lib/authCallbackRoute'
 import { supabase } from './lib/supabase'
 import { About } from './pages/About'
+import { ComparisonDetail, ComparisonsHub } from './pages/Comparisons'
 import { ClientPortal } from './pages/ClientPortal'
 import { ConfirmEmail } from './pages/ConfirmEmail'
 import { Dashboard } from './pages/Dashboard'
@@ -27,6 +28,7 @@ import { Clients } from './pages/Clients'
 import { ClientDetail } from './pages/ClientDetail'
 import { Integrations } from './pages/Integrations'
 import { PortalPreview } from './pages/PortalPreview'
+import { Pricing } from './pages/Pricing'
 
 function RequireAuth() {
   const [loading, setLoading] = useState(true)
@@ -129,6 +131,9 @@ function App() {
       <Route path="/demo" element={<Demo />} />
       <Route path="/a-propos" element={<About />} />
       <Route path="/faq" element={<Faq />} />
+      <Route path="/tarifs" element={<Pricing />} />
+      <Route path="/comparatifs" element={<ComparisonsHub />} />
+      <Route path="/vs/:slug" element={<ComparisonDetail />} />
       <Route path="/mentions-legales" element={<LegalNotice />} />
       <Route path="/confidentialite" element={<PrivacyPolicy />} />
       <Route path="/conditions-utilisation" element={<TermsOfUse />} />

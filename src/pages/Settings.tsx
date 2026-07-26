@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { BrandColorPicker } from '../components/settings/BrandColorPicker'
 import { LogoUpload } from '../components/settings/LogoUpload'
@@ -7,9 +7,11 @@ import { PortalPreviewLink } from '../components/settings/PortalPreviewLink'
 import { ReminderSettingsPanel } from '../components/settings/ReminderSettingsPanel'
 import { AgencyLegalProfilePanel } from '../components/settings/AgencyLegalProfilePanel'
 import { AiModulesPanel, type AiModuleFlags } from '../components/settings/AiModulesPanel'
+import { TeamMembersPanel } from '../components/settings/TeamMembersPanel'
 import { SettingsNav } from '../components/settings/SettingsNav'
 import { SettingsSection } from '../components/settings/SettingsSection'
 import { SettingsSkeleton } from '../components/settings/SettingsSkeleton'
+import { useAgencySession } from '../contexts/AgencyContext'
 import {
   DEFAULT_BRAND_COLOR,
   normalizeBrandColor,
@@ -52,6 +54,8 @@ function accountInitials(email: string): string {
 
 export function Settings() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { isOwner, userId: sessionUserId } = useAgencySession()
   const [userId, setUserId] = useState<string | null>(null)
   const [agency, setAgency] = useState<AgencyBranding | null>(null)
   const [agencyName, setAgencyName] = useState('')
@@ -157,18 +161,31 @@ export function Settings() {
       setUserId(userData.user.id)
       setAccountEmail(userData.user.email ?? '')
 
-      const { data: agencyData } = await supabase
-        .from('agencies')
-        .select(AGENCY_SELECT)
-        .eq('user_id', userData.user.id)
-        .maybeSingle()
+      const resolved = await getOrCreateAgency(userData.user.id)
+      if (resolved?.id) {
+        const { data: agencyData } = await supabase
+          .from('agencies')
+          .select(AGENCY_SELECT)
+          .eq('id', resolved.id)
+          .maybeSingle()
 
-      if (agencyData) loadAgencyFields(await mergeAgencyWithAiFlags(agencyData as AgencyBranding))
+        if (agencyData) loadAgencyFields(await mergeAgencyWithAiFlags(agencyData as AgencyBranding))
+      }
       setPageLoading(false)
     }
 
     loadSettings()
   }, [])
+
+  useEffect(() => {
+    if (pageLoading) return
+    const id = location.hash.replace(/^#/, '')
+    if (!id) return
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [pageLoading, location.hash])
 
   const previewData = useMemo(
     () => ({
@@ -529,6 +546,21 @@ export function Settings() {
                 </Button>
               </div>
             </SettingsSection>
+
+            {agency?.id && (userId || sessionUserId) ? (
+              <SettingsSection
+                id="settings-equipe"
+                icon="👥"
+                title="Équipe"
+                description="Partagez Freli avec vos collaborateurs (owner / member)."
+              >
+                <TeamMembersPanel
+                  agencyId={agency.id}
+                  currentUserId={(userId ?? sessionUserId) as string}
+                  isOwner={isOwner}
+                />
+              </SettingsSection>
+            ) : null}
 
             <SettingsSection
               id="settings-legal"

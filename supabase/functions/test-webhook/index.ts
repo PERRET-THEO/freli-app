@@ -87,6 +87,8 @@ serve(async (req) => {
     )
 
     const result = await dispatchToSingleWebhook(
+      supabaseAdmin,
+      user.id,
       row as WebhookEndpoint,
       'webhook.test',
       testData,

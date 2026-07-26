@@ -1,3 +1,4 @@
+import { resolveAgencyIdForUser } from './agencyMembership'
 import { supabase } from './supabase'
 
 export type AgencyRecord = {
@@ -6,25 +7,27 @@ export type AgencyRecord = {
 }
 
 /**
- * Returns the user's agency, creating a default one if missing.
+ * Returns the user's agency (via membership or ownership), creating a default one if missing.
  */
 export async function getOrCreateAgency(
   userId: string,
   defaultName = 'Mon Agence',
 ): Promise<AgencyRecord | null> {
-  const { data: existing, error: selectError } = await supabase
-    .from('agencies')
-    .select('id, name')
-    .eq('user_id', userId)
-    .maybeSingle()
+  const existingId = await resolveAgencyIdForUser(userId)
+  if (existingId) {
+    const { data: existing, error: selectError } = await supabase
+      .from('agencies')
+      .select('id, name')
+      .eq('id', existingId)
+      .maybeSingle()
 
-  if (selectError) {
-    console.warn('getOrCreateAgency select:', selectError.message)
-    return null
-  }
-
-  if (existing?.id) {
-    return { id: existing.id, name: existing.name ?? defaultName }
+    if (selectError) {
+      console.warn('getOrCreateAgency select:', selectError.message)
+      return null
+    }
+    if (existing?.id) {
+      return { id: existing.id, name: existing.name ?? defaultName }
+    }
   }
 
   const { data: created, error: insertError } = await supabase
@@ -34,13 +37,16 @@ export async function getOrCreateAgency(
     .single()
 
   if (insertError) {
-    const { data: retry } = await supabase
-      .from('agencies')
-      .select('id, name')
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (retry?.id) {
-      return { id: retry.id, name: retry.name ?? defaultName }
+    const retryId = await resolveAgencyIdForUser(userId)
+    if (retryId) {
+      const { data: retry } = await supabase
+        .from('agencies')
+        .select('id, name')
+        .eq('id', retryId)
+        .maybeSingle()
+      if (retry?.id) {
+        return { id: retry.id, name: retry.name ?? defaultName }
+      }
     }
     console.warn('getOrCreateAgency insert:', insertError.message)
     return null

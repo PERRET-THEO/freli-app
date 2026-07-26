@@ -27,7 +27,7 @@ export const siteConfig = {
   description:
     "Freli automatise l'onboarding client : portail unique, signature électronique, paiements Stripe, sync Google Drive et autofill entreprise via l'API Recherche d'Entreprises.",
   supportEmail: SUPPORT_EMAIL,
-  calendlyUrl: 'https://calendly.com/freli/demo',
+  calendlyUrl: 'https://calendly.com/freliapp/demo',
   locale: 'fr_FR',
   language: 'fr-FR',
   ogImagePath: '/og-image.png',
@@ -82,6 +82,36 @@ export const routesMeta: Record<string, RouteMeta> = {
     description:
       "Conditions d'utilisation du service Freli : accès, responsabilités, propriété intellectuelle et résiliation.",
     type: 'website',
+  },
+  '/tarifs': {
+    title: 'Tarifs Freli — Solo et Agence',
+    description:
+      'Offres Freli Solo et Agence pour automatiser l’onboarding client. Accès sur invitation — détails tarifaires en démo.',
+    type: 'website',
+  },
+  '/comparatifs': {
+    title: 'Comparatifs Freli — onboarding client',
+    description:
+      'Comparez Freli à Content Snare, Clustdoc et à la stack emails + Forms + DocuSign pour l’onboarding client.',
+    type: 'website',
+  },
+  '/vs/content-snare': {
+    title: 'Freli vs Content Snare — onboarding client',
+    description:
+      'Freli vs Content Snare : portail, e-sign, paiement Stripe et autofill SIREN pour freelances et agences FR.',
+    type: 'article',
+  },
+  '/vs/clustdoc': {
+    title: 'Freli vs Clustdoc — intake client',
+    description:
+      'Freli vs Clustdoc : onboarding client léger pour freelances face à une plateforme d’intake plus lourde.',
+    type: 'article',
+  },
+  '/vs/emails-forms-docusign': {
+    title: 'Freli vs emails + Forms + DocuSign',
+    description:
+      'Remplacez emails, Google Forms et DocuSign par un seul lien Freli : collecte, signature, paiement et relances.',
+    type: 'article',
   },
 }
 

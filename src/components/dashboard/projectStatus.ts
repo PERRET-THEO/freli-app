@@ -26,6 +26,15 @@ export function getStatusLabel({
   return 'En attente'
 }
 
+/** Compact labels for tight mobile badges; keep full label in `title`. */
+export function getShortStatusLabel(input: ProjectStatusInput): string {
+  const full = getStatusLabel(input)
+  if (input.status === 'completed') return 'Complété'
+  if (input.status === 'in_progress') return 'En cours'
+  if (full.startsWith('Relancé')) return 'Relancé'
+  return 'En attente'
+}
+
 export function getSecondaryIndicator(
   project: ProjectCardData,
   pendingExtraction: boolean,

@@ -104,7 +104,7 @@ export function ChecklistTemplateForm({
       setError('Donne un nom à ton modèle.')
       return
     }
-    const validationError = validateChecklist(items)
+    const validationError = validateChecklist(items, { context: 'template' })
     if (validationError) {
       setError(validationError)
       return

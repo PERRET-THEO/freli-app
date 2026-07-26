@@ -24,7 +24,22 @@ export const faqEntries: FaqEntry[] = [
   {
     question: 'Freli remplace-t-il DocuSign pour la signature ?',
     answer:
-      "Oui pour les contrats d'onboarding : la signature électronique est intégrée à Freli. Votre client signe directement depuis son téléphone ou son ordinateur, sans logiciel tiers ni compte à créer.",
+      "Oui pour les contrats d'onboarding : devis, contrat de prestation, autorisation de droit à l'image, cession de droits. Votre client signe directement depuis son téléphone ou son ordinateur, sans logiciel tiers ni compte à créer. Pour des actes nécessitant une signature avancée ou qualifiée (immobilier, acte notarié, certains marchés publics), gardez un prestataire de confiance certifié eIDAS.",
+  },
+  {
+    question: 'Quel niveau de signature électronique Freli propose-t-il ?',
+    answer:
+      "Freli propose une signature électronique simple au sens du règlement eIDAS. C'est le niveau utilisé par la grande majorité des contrats commerciaux entre professionnels : en droit français, un contrat signé électroniquement est valide et recevable (articles 1366 et 1367 du Code civil), la force probante s'appréciant au regard des preuves associées. Freli ne délivre pas de signature avancée ni qualifiée avec certificat nominatif.",
+  },
+  {
+    question: 'Quelles preuves Freli conserve-t-il pour une signature ?',
+    answer:
+      "Pour chaque signature, Freli enregistre le nom et l'email du signataire, la date et l'heure, l'adresse IP, le navigateur utilisé, ainsi qu'une empreinte SHA-256 du PDF signé qui permet de démontrer que le document n'a pas été modifié après signature. Ces informations sont également imprimées sur le document, et l'acceptation explicite des conditions est requise avant de signer.",
+  },
+  {
+    question: 'Combien de temps les contrats signés sont-ils conservés ?',
+    answer:
+      "Les contrats signés et leurs preuves associées restent disponibles dans votre espace Freli pendant toute la durée de votre abonnement, et sont copiés dans votre Google Drive si l'intégration est activée — vous en gardez donc une copie que vous maîtrisez. Nous recommandons d'archiver vos contrats de votre côté selon vos obligations légales de conservation.",
   },
   {
     question: 'Comment fonctionne le paiement Stripe ?',
@@ -54,6 +69,6 @@ export const faqEntries: FaqEntry[] = [
   {
     question: 'Combien coûte Freli ?',
     answer:
-      "Freli est actuellement accessible sur invitation, avec un accompagnement personnalisé à la mise en route. Les conditions tarifaires sont présentées lors de la démo.",
+      "Freli propose deux offres, Solo et Agence (détails sur freli.fr/tarifs). L'accès se fait sur invitation : les conditions tarifaires exactes sont confirmées lors de la démo de 30 minutes.",
   },
 ]

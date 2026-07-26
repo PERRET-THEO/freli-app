@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { Card, Input } from '../components/ui'
+import { getOrCreateAgency } from '../lib/agency'
 import { supabase } from '../lib/supabase'
 
 type ClientRow = {
@@ -40,11 +41,7 @@ export function Clients() {
         return
       }
 
-      const { data: agency } = await supabase
-        .from('agencies')
-        .select('id')
-        .eq('user_id', userData.user.id)
-        .maybeSingle()
+      const agency = await getOrCreateAgency(userData.user.id)
 
       if (!agency?.id) {
         setAgencyMissing(true)

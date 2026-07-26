@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { ExtractionReviewPanel } from '../components/extraction/ExtractionReviewPanel'
+import { ChecklistReviewPanel } from '../components/review/ChecklistReviewPanel'
 import { SmartRemindersPanel } from '../components/reminders/SmartRemindersPanel'
 import { ContractGeneratorPanel } from '../components/contracts/ContractGeneratorPanel'
 import { ClientContactBlock } from '../components/client/ClientContactBlock'
@@ -13,6 +14,15 @@ import { openStripeExpressDashboard } from '../lib/stripeConnectDashboard'
 import { getPaymentState, formatPriceEur, PAYMENT_STATE_LABELS } from '../lib/payments'
 import { formatRelative } from '../lib/formatRelative'
 import { fetchAgencyAiFlags } from '../lib/agencyQueries'
+import { getVisibleItems } from '../lib/checklistConditions'
+import type { ChecklistItemConfig } from '../lib/checklistFields'
+import { countAwaitingReview, isOnboardingSettled, type ReviewStatus } from '../lib/checklistReview'
+import {
+  findProjectBottleneck,
+  formatBottleneckLabel,
+  isBottleneckStale,
+} from '../lib/projectBottleneck'
+import { fetchProjectSignatureProofs, type SignatureProof } from '../lib/signatureProof'
 import { supabase } from '../lib/supabase'
 
 type ClientJoin = {
@@ -48,10 +58,15 @@ type ProjectRecord = {
 type ChecklistItemRecord = {
   id: string
   label: string
-  type: 'text' | 'file' | 'signature'
+  type: string
   completed: boolean
   value: string | null
   order_index: number
+  review_status: ReviewStatus | null
+  review_note: string | null
+  reviewed_at: string | null
+  submitted_at: string | null
+  config: ChecklistItemConfig | null
 }
 
 type ReminderLog = {
@@ -68,6 +83,7 @@ export function ProjectDetail() {
   const [project, setProject] = useState<ProjectRecord | null>(null)
   const [items, setItems] = useState<ChecklistItemRecord[]>([])
   const [reminderLogs, setReminderLogs] = useState<ReminderLog[]>([])
+  const [signatureProofs, setSignatureProofs] = useState<Record<string, SignatureProof>>({})
   const [sendingReminder, setSendingReminder] = useState(false)
   const [reminderFeedback, setReminderFeedback] = useState<string | null>(null)
   const [sendingPayment, setSendingPayment] = useState(false)
@@ -105,7 +121,9 @@ export function ProjectDetail() {
 
     const { data: checklistData, error: checklistError } = await supabase
       .from('checklist_items')
-      .select('id, label, type, completed, value, order_index')
+      .select(
+        'id, label, type, completed, value, order_index, review_status, review_note, reviewed_at, submitted_at, config',
+      )
       .eq('project_id', projectData.id)
       .order('order_index', { ascending: true })
 
@@ -125,6 +143,7 @@ export function ProjectDetail() {
     setProject(projectData as ProjectRecord)
     setItems((checklistData ?? []) as ChecklistItemRecord[])
     setReminderLogs((logsData ?? []) as ReminderLog[])
+    setSignatureProofs(await fetchProjectSignatureProofs(projectData.id))
     setLoading(false)
   }, [id])
 
@@ -132,8 +151,11 @@ export function ProjectDetail() {
     loadProject()
   }, [loadProject])
 
-  const completedCount = items.filter((item) => item.completed).length
-  const totalCount = items.length
+  // Une étape masquée par une condition n'est pas attendue du client : elle ne
+  // compte ni dans l'avancement, ni dans les relances.
+  const visibleItems = useMemo(() => getVisibleItems(items), [items])
+  const completedCount = visibleItems.filter((item) => item.completed).length
+  const totalCount = visibleItems.length
   const progress = totalCount ? Math.round((completedCount / totalCount) * 100) : 0
 
   const createdAtLabel = useMemo(() => {
@@ -145,14 +167,14 @@ export function ProjectDetail() {
     })
   }, [project?.created_at])
 
-  const getFileDownloadUrl = (path: string | null) => {
-    if (!path) return '#'
-    const { data } = supabase.storage.from('documents').getPublicUrl(path)
-    return data.publicUrl
-  }
+  const awaitingReviewCount = countAwaitingReview(visibleItems)
+  const allSettled = isOnboardingSettled(visibleItems)
+  const reminderDisabled = sendingReminder || allSettled
 
-  const allCompleted = totalCount > 0 && completedCount === totalCount
-  const reminderDisabled = sendingReminder || project?.status === 'completed' || allCompleted
+  const bottleneck = useMemo(() => {
+    if (!project || project.status === 'completed') return null
+    return findProjectBottleneck(items, project.created_at)
+  }, [items, project])
 
   const handleSendReminder = async () => {
     if (!project) return
@@ -305,6 +327,27 @@ export function ProjectDetail() {
                 Progression globale : {completedCount}/{totalCount} étapes
               </p>
 
+              {bottleneck ? (
+                <p
+                  className={`mt-3 rounded-[var(--radius-sm)] px-3 py-2 text-xs font-body ${
+                    isBottleneckStale(bottleneck)
+                      ? 'bg-[var(--amber-soft)] font-semibold text-[var(--amber)]'
+                      : bottleneck.owner === 'agency'
+                        ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
+                        : 'bg-[var(--surface-warm)] text-[var(--ink-soft)]'
+                  }`}
+                >
+                  Étape bloquante — {formatBottleneckLabel(bottleneck)}
+                </p>
+              ) : null}
+
+              {awaitingReviewCount > 0 ? (
+                <p className="mt-3 rounded-[var(--radius-sm)] bg-[var(--accent-soft)] px-3 py-2 text-xs font-body text-[var(--accent)]">
+                  {awaitingReviewCount} élément{awaitingReviewCount > 1 ? 's' : ''} transmis
+                  {awaitingReviewCount > 1 ? ' attendent' : ' attend'} votre validation.
+                </p>
+              ) : null}
+
               {project.last_reminder_sent_at ? (
                 <p className="mt-6 text-sm font-body text-[var(--ink-soft)]">
                   Dernière relance {formatRelative(project.last_reminder_sent_at)}
@@ -318,7 +361,7 @@ export function ProjectDetail() {
               <Button className="mt-3" onClick={handleSendReminder} disabled={reminderDisabled}>
                 {sendingReminder ? 'Envoi…' : 'Envoyer une relance'}
               </Button>
-              {allCompleted ? (
+              {allSettled ? (
                 <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
                   Checklist complétée — plus besoin de relancer.
                 </p>
@@ -462,54 +505,14 @@ export function ProjectDetail() {
           ) : null}
         </Card>
 
-        <Card>
-          <h2 className="font-display text-xl font-semibold text-[var(--ink)]">
-            Checklist
-          </h2>
-          <ul className="mt-4 space-y-3 text-sm font-body text-[var(--ink-soft)]">
-            {items.map((item) => (
-              <li key={item.id} className="rounded-[var(--radius-sm)] border border-[var(--border)] p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-body text-sm text-[var(--ink)]">{item.label}</p>
-                  <span className={item.completed ? 'text-[var(--mint)]' : 'text-[var(--ink-muted)]'}>
-                    {item.completed ? '✓' : '○'}
-                  </span>
-                </div>
-
-                {item.completed ? (
-                  <div className="mt-2 text-xs font-body text-[var(--ink-muted)]">
-                    {item.type === 'signature' ? (
-                      <div className="space-y-1">
-                        <p className="text-[var(--mint)]">✅ Contrat signé</p>
-                        {item.value && (
-                          <a
-                            href={item.value}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[var(--accent)] underline"
-                          >
-                            Voir le contrat signé →
-                          </a>
-                        )}
-                      </div>
-                    ) : item.type === 'file' && item.value ? (
-                      <a
-                        href={getFileDownloadUrl(item.value)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[var(--accent)] underline"
-                      >
-                        Télécharger le fichier
-                      </a>
-                    ) : (
-                      <p>{item.value ?? 'Valeur enregistrée'}</p>
-                    )}
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </Card>
+        {project ? (
+          <ChecklistReviewPanel
+            projectId={project.id}
+            items={items}
+            signatureProofs={signatureProofs}
+            onReviewed={loadProject}
+          />
+        ) : null}
       </div>
 
       {project ? (

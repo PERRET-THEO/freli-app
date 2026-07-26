@@ -111,31 +111,76 @@ const CLIENT_FEATURES_BLOCK = `
 </td></tr>
 </table>`
 
+/** Étape encore attendue du client, telle qu'affichée dans une relance. */
+export type PendingChecklistItem = {
+  label: string
+  /** Motif renseigné par l'agence si l'étape a été renvoyée pour correction. */
+  reviewNote?: string | null
+}
+
+/**
+ * Liste nominative de ce qui manque : une relance générique laisse le client
+ * deviner, une relance qui nomme les étapes se traite immédiatement.
+ */
+function pendingItemsBlock(items: PendingChecklistItem[]): string {
+  if (items.length === 0) return CLIENT_FEATURES_BLOCK
+
+  const rows = items
+    .map((item, index) => {
+      const label = escapeHtml(item.label)
+      const note = item.reviewNote?.trim()
+      const noteHtml = note
+        ? `<p style="margin:4px 0 0;font-size:12px;color:#C2410C;">À corriger : ${escapeHtml(note)}</p>`
+        : ''
+      const separator =
+        index > 0 ? '<tr><td style="height:1px;background:#EDEAE3;"></td></tr>' : ''
+      return `${separator}<tr><td style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;">
+<p style="margin:0;font-weight:600;color:#1C1F2A;">${label}</p>${noteHtml}
+</td></tr>`
+    })
+    .join('')
+
+  const count = items.length
+  return `
+<p style="font-family:'DM Sans',Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:#B0ACA3;margin:0 0 14px;">Il reste ${count} étape${count > 1 ? 's' : ''}</p>
+<table width="100%" style="background:#F5F4F0;border-radius:20px;border:1px solid #E8E6DF;">
+${rows}
+</table>`
+}
+
 /** Email client : invitation ou relance onboarding (flux B / C). */
 export function buildClientOnboardingEmail(params: {
   mode: 'invite' | 'reminder'
   clientName: string
   agencyName: string
   portalUrl: string
+  pendingItems?: PendingChecklistItem[]
 }): string {
   const name = escapeHtml(params.clientName)
   const agency = escapeHtml(params.agencyName)
   const url = escapeHtml(params.portalUrl)
 
   if (params.mode === 'reminder') {
+    const pendingItems = params.pendingItems ?? []
+    const needsCorrection = pendingItems.some((item) => item.reviewNote?.trim())
+    const intro = needsCorrection
+      ? `Votre dossier avec <strong style="color:#1C1F2A;">${agency}</strong> a été relu : quelques éléments doivent être complétés ou corrigés.`
+      : `Petit rappel : votre espace d'onboarding avec <strong style="color:#1C1F2A;">${agency}</strong> est toujours en attente. Il ne reste que quelques informations à compléter.`
+
     const body = `
 <p style="font-family:'DM Sans',Arial,sans-serif;font-size:15px;color:#4A4D5C;line-height:1.85;margin:0 0 36px;">
 Bonjour <strong style="color:#1C1F2A;">${name}</strong>,<br><br>
-Petit rappel : votre espace d'onboarding avec <strong style="color:#1C1F2A;">${agency}</strong> est toujours en attente. Il ne reste que quelques informations à compléter.
+${intro}
 </p>
-${CLIENT_FEATURES_BLOCK}`
+${pendingItemsBlock(pendingItems)}`
+
     return emailShell(
-      '✦ Rappel',
-      'Finalisez votre<br>onboarding',
+      needsCorrection ? '✦ À corriger' : '✦ Rappel',
+      needsCorrection ? 'Quelques points<br>à ajuster' : 'Finalisez votre<br>onboarding',
       `${agency} vous attend pour terminer votre dossier.`,
       body,
       url,
-      '✦ Compléter mon onboarding',
+      needsCorrection ? '✦ Reprendre mon dossier' : '✦ Compléter mon onboarding',
       'Ce lien est personnel — ne le partagez pas',
     )
   }

@@ -21,6 +21,31 @@
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://www.freli.fr/tarifs</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.freli.fr/comparatifs</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.freli.fr/vs/content-snare</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.freli.fr/vs/clustdoc</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.freli.fr/vs/emails-forms-docusign</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://www.freli.fr/mentions-legales</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>

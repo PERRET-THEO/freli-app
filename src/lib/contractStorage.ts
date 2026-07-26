@@ -40,16 +40,23 @@ export async function getPortalTemplatePdfUrl(
   return String(data.signedUrl)
 }
 
+export type SignerIdentity = {
+  checklistItemId?: string
+  signerName?: string
+  signerEmail?: string
+}
+
 export async function uploadPortalSignedContract(
   projectToken: string,
   pdfBytes: Uint8Array,
+  signer: SignerIdentity = {},
 ): Promise<string> {
   let binary = ''
   for (const byte of pdfBytes) binary += String.fromCharCode(byte)
   const pdfBase64 = btoa(binary)
 
   const { data, error } = await supabase.functions.invoke('portal-contract', {
-    body: { action: 'uploadSigned', projectToken, pdfBase64 },
+    body: { action: 'uploadSigned', projectToken, pdfBase64, ...signer },
   })
   if (error) throw new Error(error.message)
   if (data?.error) throw new Error(String(data.error))

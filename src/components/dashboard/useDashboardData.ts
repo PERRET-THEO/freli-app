@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAgencySession } from '../../contexts/AgencyContext'
+import {
+  findProjectBottleneck,
+  type BottleneckItem,
+} from '../../lib/projectBottleneck'
+import type { ReviewStatus } from '../../lib/checklistReview'
 import { supabase } from '../../lib/supabase'
 import type { ProjectCardData } from './types'
 
@@ -20,7 +25,13 @@ type ChecklistCountRow = {
   project_id: string
   completed: boolean
   label: string
+  type: string
   order_index: number
+  value: string | null
+  review_status: ReviewStatus | null
+  submitted_at: string | null
+  reviewed_at: string | null
+  config: BottleneckItem['config']
 }
 
 type ReminderLogRow = {
@@ -67,20 +78,33 @@ export function useDashboardData() {
     const projectIds = rawProjects.map((project) => project.id)
     const { data: checklistRows } = await supabase
       .from('checklist_items')
-      .select('project_id, completed, label, order_index')
+      .select(
+        'project_id, completed, label, type, order_index, value, review_status, submitted_at, reviewed_at, config',
+      )
       .in('project_id', projectIds)
       .order('order_index', { ascending: true })
 
+    const itemsByProject = new Map<string, BottleneckItem[]>()
     const countsByProject = new Map<string, { total: number; completed: number }>()
-    const nextStepByProject = new Map<string, string>()
     for (const row of (checklistRows ?? []) as ChecklistCountRow[]) {
       const current = countsByProject.get(row.project_id) ?? { total: 0, completed: 0 }
       current.total += 1
       if (row.completed) current.completed += 1
       countsByProject.set(row.project_id, current)
-      if (!row.completed && !nextStepByProject.has(row.project_id)) {
-        nextStepByProject.set(row.project_id, row.label)
-      }
+
+      const list = itemsByProject.get(row.project_id) ?? []
+      list.push({
+        label: row.label,
+        type: row.type,
+        completed: row.completed,
+        value: row.value,
+        order_index: row.order_index,
+        review_status: row.review_status,
+        submitted_at: row.submitted_at,
+        reviewed_at: row.reviewed_at,
+        config: row.config,
+      })
+      itemsByProject.set(row.project_id, list)
     }
 
     const { data: reminderRows } = await supabase
@@ -108,6 +132,10 @@ export function useDashboardData() {
       const progress = counts.total ? Math.round((counts.completed / counts.total) * 100) : 0
       const rawClients = project.clients
       const clientJoin = Array.isArray(rawClients) ? rawClients[0] ?? null : rawClients ?? null
+      const bottleneck =
+        project.status === 'completed'
+          ? null
+          : findProjectBottleneck(itemsByProject.get(project.id) ?? [], project.created_at)
       return {
         id: project.id,
         clientName: project.client_name,
@@ -124,7 +152,10 @@ export function useDashboardData() {
         completedCount: counts.completed,
         totalCount: counts.total,
         progress,
-        nextStepLabel: nextStepByProject.get(project.id) ?? null,
+        nextStepLabel: bottleneck?.label ?? null,
+        blockingStepLabel: bottleneck?.label ?? null,
+        blockingOwner: bottleneck?.owner ?? null,
+        blockingSince: bottleneck?.since ?? null,
       }
     })
 

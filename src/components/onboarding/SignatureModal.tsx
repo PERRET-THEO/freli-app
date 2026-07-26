@@ -12,6 +12,7 @@ type Props = {
   clientName: string
   clientEmail: string
   projectToken: string
+  checklistItemId?: string
   signaturePage?: number
   signatureX?: number
   signatureY?: number
@@ -31,6 +32,7 @@ export function SignatureModal({
   clientName,
   clientEmail,
   projectToken,
+  checklistItemId,
   signaturePage,
   signatureX,
   signatureY,
@@ -337,7 +339,11 @@ export function SignatureModal({
 
       const pdfBytes = await pdfDoc.save()
 
-      const signedUrl = await uploadPortalSignedContract(projectToken, pdfBytes)
+      const signedUrl = await uploadPortalSignedContract(projectToken, pdfBytes, {
+        checklistItemId,
+        signerName: clientName,
+        signerEmail: clientEmail,
+      })
       onComplete(signedUrl)
     } catch (err) {
       console.error('Erreur signature:', err)
@@ -345,7 +351,7 @@ export function SignatureModal({
     } finally {
       setSaving(false)
     }
-  }, [accepted, pdfUrl, contractName, clientName, clientEmail, projectToken, signaturePage, sxNorm, syNorm, swNorm, shNorm, onComplete])
+  }, [accepted, pdfUrl, contractName, clientName, clientEmail, projectToken, checklistItemId, signaturePage, sxNorm, syNorm, swNorm, shNorm, onComplete])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/50 px-4 py-6">

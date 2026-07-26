@@ -16,9 +16,9 @@ function CardSkeleton() {
           </div>
         </div>
       </div>
-      <div className="mt-4 flex gap-2 border-t border-[var(--border)] pt-3">
-        <Block className="h-8 flex-1" />
-        <Block className="h-8 flex-1" />
+      <div className="mt-4 flex flex-col gap-2 border-t border-[var(--border)] pt-3 sm:flex-row">
+        <Block className="h-8 w-full sm:flex-1" />
+        <Block className="h-8 w-full sm:flex-1" />
       </div>
     </div>
   )

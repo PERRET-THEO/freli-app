@@ -114,6 +114,13 @@ export function About() {
                 </tbody>
               </table>
             </div>
+            <p className="mt-4">
+              Voir aussi les{' '}
+              <Link to="/comparatifs" className="text-[var(--accent)] hover:underline">
+                comparatifs Freli vs Content Snare, Clustdoc et stack manuelle
+              </Link>
+              .
+            </p>
           </section>
 
           <section>

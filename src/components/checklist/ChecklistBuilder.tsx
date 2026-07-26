@@ -26,6 +26,7 @@ type ChecklistBuilderProps = {
   aiContractsEnabled?: boolean
   hasDefaultContract?: boolean
   defaultContractBrief?: string
+  priceEur?: number | null
 }
 
 const selectCls =
@@ -43,6 +44,7 @@ export function ChecklistBuilder({
   aiContractsEnabled = false,
   hasDefaultContract = false,
   defaultContractBrief = '',
+  priceEur = null,
 }: ChecklistBuilderProps) {
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const [loadingTemplate, setLoadingTemplate] = useState(false)
@@ -181,6 +183,7 @@ export function ChecklistBuilder({
           aiContractsEnabled={aiContractsEnabled}
           hasDefaultContract={hasDefaultContract}
           defaultContractBrief={defaultContractBrief}
+          priceEur={priceEur}
         />
       </div>
 

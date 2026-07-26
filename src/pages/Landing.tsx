@@ -923,6 +923,8 @@ export function Landing() {
               <a href="#features">Fonctionnalités</a>
               <a href="#integrations">Intégrations</a>
               <a href="#how-it-works">Comment ça marche</a>
+              <Link to="/tarifs">Tarifs</Link>
+              <Link to="/comparatifs">Comparatifs</Link>
               <Link to="/demo">Réserver une démo</Link>
               <a href={appSignInUrl()}>Se connecter</a>
             </div>

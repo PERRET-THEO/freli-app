@@ -12,6 +12,7 @@ import { CompanySearchAutocomplete } from '../components/company/CompanySearchAu
 import { GeneratedDocumentEditor } from '../components/contracts/GeneratedDocumentEditor'
 import type { CompanyLookupResult, LegalDataSource } from '../lib/companyLookup'
 import {
+  buildChecklistItemConfig,
   buildChecklistItemValue,
   buildContractGenerationContext,
   buildDefaultContractBrief,
@@ -400,6 +401,7 @@ export function NewProject() {
       throw new Error(projectError?.message ?? 'Impossible de créer le projet.')
     }
 
+    // Même sérialisation que syncChecklistToProject : value + config (choix, RDV, conditions).
     const checklistPayload = items.map((item, index) => ({
       project_id: project.id,
       label: item.label.trim(),
@@ -412,6 +414,7 @@ export function NewProject() {
           ? item.contractTemplateId ?? null
           : null,
       value: buildChecklistItemValue(item),
+      config: buildChecklistItemConfig(item, items),
     }))
 
     const { data: insertedItems, error: checklistError } = await supabase
@@ -524,6 +527,7 @@ export function NewProject() {
     const validationError = validateChecklist(items, {
       hasDefaultContract,
       aiContractsEnabled,
+      priceEur,
     })
     if (validationError) {
       setError(validationError)
@@ -789,6 +793,7 @@ export function NewProject() {
                 aiContractsEnabled={aiContractsEnabled}
                 hasDefaultContract={hasDefaultContract}
                 defaultContractBrief={defaultContractBrief}
+                priceEur={priceEur}
                 onTemplatesChanged={() => {
                   if (agencyId) refreshAgencyTemplates(agencyId)
                 }}

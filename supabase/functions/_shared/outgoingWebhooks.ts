@@ -1,4 +1,22 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import {
+  buildFreliEnvelope,
+  buildSlackIncomingPayload,
+  filterMatchingWebhooks,
+  isRetryableWebhookFailure,
+  isSlackIncomingWebhookUrl,
+  MAX_WEBHOOKS_PER_USER,
+  validateWebhookUrl,
+  WEBHOOK_MAX_ATTEMPTS,
+  WEBHOOK_RETRY_BACKOFF_MS,
+} from './webhookHelpers.ts'
+
+export {
+  MAX_WEBHOOKS_PER_USER,
+  validateWebhookUrl,
+  isSlackIncomingWebhookUrl,
+  buildSlackIncomingPayload,
+} from './webhookHelpers.ts'
 
 export const WEBHOOK_EVENTS = [
   'project.created',
@@ -42,49 +60,6 @@ export type ChecklistItemRow = {
 
 const appUrl = (Deno.env.get('APP_URL') ?? 'http://localhost:5173').replace(/\/$/, '')
 const WEBHOOK_TIMEOUT_MS = 10_000
-export const MAX_WEBHOOKS_PER_USER = 5
-
-function isPrivateIpv4(host: string): boolean {
-  const parts = host.split('.').map((p) => parseInt(p, 10))
-  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n) || n < 0 || n > 255)) return false
-  if (parts[0] === 10) return true
-  if (parts[0] === 127) return true
-  if (parts[0] === 169 && parts[1] === 254) return true
-  if (parts[0] === 192 && parts[1] === 168) return true
-  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true
-  return false
-}
-
-/** Validates webhook URL (HTTPS, no localhost/private targets). */
-export function validateWebhookUrl(raw: string): { ok: true; url: URL } | { ok: false; error: string } {
-  let parsed: URL
-  try {
-    parsed = new URL(raw.trim())
-  } catch {
-    return { ok: false, error: 'URL invalide.' }
-  }
-
-  if (parsed.protocol !== 'https:') {
-    return { ok: false, error: 'L\u2019URL doit utiliser HTTPS.' }
-  }
-
-  const host = parsed.hostname.toLowerCase()
-  if (
-    host === 'localhost' ||
-    host.endsWith('.local') ||
-    host === '0.0.0.0' ||
-    host === '[::1]' ||
-    host === '::1'
-  ) {
-    return { ok: false, error: 'URL non autorisée.' }
-  }
-
-  if (isPrivateIpv4(host)) {
-    return { ok: false, error: 'URL non autorisée.' }
-  }
-
-  return { ok: true, url: parsed }
-}
 
 export function generateWebhookSecret(): string {
   const bytes = new Uint8Array(32)
@@ -102,6 +77,10 @@ async function hmacSha256Hex(secret: string, message: string): Promise<string> {
   )
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message))
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export async function getAgencyUserId(
@@ -158,7 +137,30 @@ export async function fetchChecklistItems(
   return (data ?? []) as ChecklistItemRow[]
 }
 
+async function recordDelivery(
+  supabase: SupabaseClient | null,
+  row: {
+    webhook_id: string
+    user_id: string
+    delivery_id: string
+    event: string
+    status: 'success' | 'failed'
+    http_status?: number
+    error?: string
+    attempt: number
+    payload_preview: string
+  },
+): Promise<void> {
+  if (!supabase || !row.user_id) return
+  const { error } = await supabase.from('webhook_deliveries').insert(row)
+  if (error) {
+    console.error('webhook_deliveries insert error:', error.message)
+  }
+}
+
 async function deliverWebhook(
+  supabase: SupabaseClient | null,
+  userId: string | null,
   endpoint: WebhookEndpoint,
   event: WebhookEvent,
   data: Record<string, unknown>,
@@ -170,11 +172,11 @@ async function deliverWebhook(
   }
 
   const deliveryId = crypto.randomUUID()
-  const body = JSON.stringify({
-    event,
-    timestamp: new Date().toISOString(),
-    data,
-  })
+  const slack = isSlackIncomingWebhookUrl(validated.url)
+  const body = slack
+    ? JSON.stringify(buildSlackIncomingPayload(event, data))
+    : JSON.stringify(buildFreliEnvelope(event, data))
+  const payloadPreview = body.length > 500 ? `${body.slice(0, 500)}…` : body
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -183,38 +185,92 @@ async function deliverWebhook(
     'X-Freli-Delivery-Id': deliveryId,
   }
 
+  // Slack Incoming Webhooks ignore custom signatures; only sign Freli envelopes.
   const secret = endpoint.access_token ?? ''
-  if (secret) {
+  if (secret && !slack) {
     headers['X-Freli-Signature'] = `sha256=${await hmacSha256Hex(secret, body)}`
   }
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS)
+  let lastError: string | undefined
+  let lastStatus: number | undefined
 
-  try {
-    const res = await fetch(validated.url.toString(), {
-      method: 'POST',
-      headers,
-      body,
-      signal: controller.signal,
-    })
-    if (!res.ok) {
-      console.error(
-        `webhook delivery failed webhook_id=${endpoint.id} event=${event} status=${res.status}`,
-      )
-      return { ok: false, status: res.status, error: `HTTP ${res.status}` }
+  for (let attempt = 1; attempt <= WEBHOOK_MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS)
+
+    try {
+      const res = await fetch(validated.url.toString(), {
+        method: 'POST',
+        headers,
+        body,
+        signal: controller.signal,
+      })
+      lastStatus = res.status
+
+      if (res.ok) {
+        await recordDelivery(supabase, {
+          webhook_id: endpoint.id,
+          user_id: userId ?? '',
+          delivery_id: deliveryId,
+          event,
+          status: 'success',
+          http_status: res.status,
+          attempt,
+          payload_preview: payloadPreview,
+        })
+        console.log(
+          `webhook delivered webhook_id=${endpoint.id} delivery_id=${deliveryId} event=${event} status=${res.status} attempt=${attempt}`,
+        )
+        return { ok: true, status: res.status }
+      }
+
+      lastError = `HTTP ${res.status}`
+      const retryable = isRetryableWebhookFailure(res.status, false)
+      await recordDelivery(supabase, {
+        webhook_id: endpoint.id,
+        user_id: userId ?? '',
+        delivery_id: deliveryId,
+        event,
+        status: 'failed',
+        http_status: res.status,
+        error: lastError,
+        attempt,
+        payload_preview: payloadPreview,
+      })
+
+      if (!retryable || attempt >= WEBHOOK_MAX_ATTEMPTS) {
+        console.error(
+          `webhook delivery failed webhook_id=${endpoint.id} event=${event} status=${res.status} attempt=${attempt}`,
+        )
+        return { ok: false, status: res.status, error: lastError }
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      lastError = message
+      await recordDelivery(supabase, {
+        webhook_id: endpoint.id,
+        user_id: userId ?? '',
+        delivery_id: deliveryId,
+        event,
+        status: 'failed',
+        error: message,
+        attempt,
+        payload_preview: payloadPreview,
+      })
+
+      if (attempt >= WEBHOOK_MAX_ATTEMPTS) {
+        console.error(`webhook delivery error webhook_id=${endpoint.id} event=${event}:`, message)
+        return { ok: false, error: message }
+      }
+    } finally {
+      clearTimeout(timeout)
     }
-    console.log(
-      `webhook delivered webhook_id=${endpoint.id} delivery_id=${deliveryId} event=${event} status=${res.status}`,
-    )
-    return { ok: true, status: res.status }
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    console.error(`webhook delivery error webhook_id=${endpoint.id} event=${event}:`, message)
-    return { ok: false, error: message }
-  } finally {
-    clearTimeout(timeout)
+
+    const backoff = WEBHOOK_RETRY_BACKOFF_MS[attempt - 1] ?? 3000
+    await sleep(backoff)
   }
+
+  return { ok: false, status: lastStatus, error: lastError ?? 'Delivery failed' }
 }
 
 export async function dispatchOutgoingWebhooks(
@@ -235,16 +291,12 @@ export async function dispatchOutgoingWebhooks(
   }
 
   const endpoints = (rows ?? []) as WebhookEndpoint[]
-  const matching = endpoints.filter((row) => {
-    if (row.config?.enabled === false) return false
-    const events = Array.isArray(row.config?.events) ? row.config.events : []
-    return events.includes(event)
-  })
+  const matching = filterMatchingWebhooks(endpoints, event)
 
   if (matching.length === 0) return
 
   await Promise.allSettled(
-    matching.map((endpoint) => deliverWebhook(endpoint, event, data)),
+    matching.map((endpoint) => deliverWebhook(supabase, userId, endpoint, event, data)),
   )
 }
 
@@ -261,9 +313,11 @@ export function fireOutgoingWebhooks(
 }
 
 export async function dispatchToSingleWebhook(
+  supabase: SupabaseClient,
+  userId: string,
   endpoint: WebhookEndpoint,
   event: WebhookEvent,
   data: Record<string, unknown>,
 ): Promise<{ ok: boolean; status?: number; error?: string }> {
-  return deliverWebhook(endpoint, event, data)
+  return deliverWebhook(supabase, userId, endpoint, event, data)
 }

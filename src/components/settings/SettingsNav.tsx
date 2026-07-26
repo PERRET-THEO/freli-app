@@ -1,5 +1,6 @@
 const SECTIONS = [
   { id: 'settings-organisation', label: 'Organisation' },
+  { id: 'settings-equipe', label: 'Équipe' },
   { id: 'settings-legal', label: 'Informations légales' },
   { id: 'settings-portail', label: 'Portail client' },
   { id: 'settings-relances', label: 'Relances' },

@@ -45,9 +45,9 @@ export function TemplateItemCard({
   const hasMenu = menuItems && menuItems.length > 0
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <div
-        className={`rounded-[var(--radius-lg)] bg-[var(--white)] p-5 shadow-[0_2px_16px_rgba(13,15,20,0.06),0_0_0_1px_rgba(13,15,20,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(13,15,20,0.08),0_0_0_1px_rgba(13,15,20,0.06)] ${
+        className={`min-w-0 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--white)] p-4 shadow-[0_2px_16px_rgba(13,15,20,0.06),0_0_0_1px_rgba(13,15,20,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(13,15,20,0.08),0_0_0_1px_rgba(13,15,20,0.06)] sm:p-5 ${
           highlighted ? 'ring-1 ring-[var(--accent)]/20' : ''
         }`}
       >
@@ -57,7 +57,9 @@ export function TemplateItemCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <h2 className="truncate font-display text-[17px] font-bold text-[var(--ink)]">{title}</h2>
+                <h2 className="line-clamp-2 break-words font-display text-[17px] font-bold text-[var(--ink)]">
+                  {title}
+                </h2>
                 {meta ? (
                   <p className="mt-0.5 text-xs font-body text-[var(--ink-muted)]">{meta}</p>
                 ) : null}
@@ -83,10 +85,12 @@ export function TemplateItemCard({
           </div>
         </div>
 
-        {children ? <div className="mt-3">{children}</div> : null}
+        {children ? <div className="mt-3 min-w-0">{children}</div> : null}
 
         {footer ? (
-          <div className="mt-4 flex gap-2 border-t border-[var(--border)] pt-3">{footer}</div>
+          <div className="mt-4 flex flex-col gap-2 border-t border-[var(--border)] pt-3 sm:flex-row">
+            {footer}
+          </div>
         ) : null}
       </div>
 
@@ -134,7 +138,7 @@ export function TemplateCardFooterButton({
   className?: string
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'children'>) {
   const base =
-    'flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] font-body font-semibold transition disabled:opacity-50'
+    'flex w-full items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] font-body font-semibold transition disabled:opacity-50 sm:flex-1'
   const styles =
     variant === 'primary'
       ? 'bg-[var(--ink)] text-[var(--white)] hover:bg-[var(--ink-soft)]'

@@ -1,4 +1,8 @@
-import { buildChecklistItemValue, type DraftChecklistItem } from './checklist'
+import {
+  buildChecklistItemConfig,
+  buildChecklistItemValue,
+  type DraftChecklistItem,
+} from './checklist'
 import { supabase } from './supabase'
 
 export type SyncChecklistResult = {
@@ -54,6 +58,7 @@ export async function syncChecklistToProject(
           ? item.contractTemplateId ?? null
           : null,
       value: buildChecklistItemValue(item),
+      config: buildChecklistItemConfig(item, items),
     }
     if (
       preservedSignatureId &&

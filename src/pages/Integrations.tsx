@@ -25,6 +25,15 @@ type IntegrationRow = {
   config: Record<string, unknown>
 }
 
+type WebhookDeliverySummary = {
+  webhook_id: string
+  status: 'success' | 'failed'
+  event: string
+  created_at: string
+  http_status: number | null
+  error: string | null
+}
+
 type ProviderKey = 'stripe' | 'google_drive'
 
 const PROVIDERS: { key: ProviderKey; label: string; icon: string; description: string }[] = [
@@ -59,19 +68,47 @@ export function Integrations() {
     'project.completed',
   ])
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null)
+  const [lastDeliveries, setLastDeliveries] = useState<Record<string, WebhookDeliverySummary>>({})
+  const [editingWebhookId, setEditingWebhookId] = useState<string | null>(null)
+  const [editLabel, setEditLabel] = useState('')
+  const [editUrl, setEditUrl] = useState('')
+  const [editEvents, setEditEvents] = useState<WebhookEvent[]>([])
 
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const webhookRows = integrations.filter((i) => i.provider === 'webhook')
 
+  const reloadDeliveries = useCallback(async (uid: string, webhookIds: string[]) => {
+    if (webhookIds.length === 0) {
+      setLastDeliveries({})
+      return
+    }
+    const { data } = await supabase
+      .from('webhook_deliveries')
+      .select('webhook_id, status, event, created_at, http_status, error')
+      .eq('user_id', uid)
+      .in('webhook_id', webhookIds)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    const map: Record<string, WebhookDeliverySummary> = {}
+    for (const row of (data ?? []) as WebhookDeliverySummary[]) {
+      if (!map[row.webhook_id]) map[row.webhook_id] = row
+    }
+    setLastDeliveries(map)
+  }, [])
+
   const reloadIntegrations = useCallback(async (uid: string) => {
     const { data } = await supabase
       .from('integrations')
       .select('id, provider, config')
       .eq('user_id', uid)
-    setIntegrations((data ?? []) as IntegrationRow[])
-  }, [])
+    const rows = (data ?? []) as IntegrationRow[]
+    setIntegrations(rows)
+    const webhookIds = rows.filter((r) => r.provider === 'webhook').map((r) => r.id)
+    await reloadDeliveries(uid, webhookIds)
+  }, [reloadDeliveries])
 
   useEffect(() => {
     const load = async () => {
@@ -275,6 +312,84 @@ export function Integrations() {
     )
   }
 
+  const toggleEditWebhookEvent = (event: WebhookEvent) => {
+    setEditEvents((prev) =>
+      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event],
+    )
+  }
+
+  const startEditWebhook = (row: IntegrationRow) => {
+    const cfg = parseWebhookConfig(row.config)
+    setEditingWebhookId(row.id)
+    setEditLabel(cfg.label)
+    setEditUrl(cfg.url)
+    setEditEvents(cfg.events)
+    setWebhookError(null)
+  }
+
+  const cancelEditWebhook = () => {
+    setEditingWebhookId(null)
+    setEditLabel('')
+    setEditUrl('')
+    setEditEvents([])
+  }
+
+  const handleSaveEditWebhook = async (row: IntegrationRow) => {
+    setWebhookError(null)
+    const urlError = validateWebhookUrlClient(editUrl)
+    if (urlError) {
+      setWebhookError(urlError)
+      return
+    }
+    if (editEvents.length === 0) {
+      setWebhookError('Sélectionnez au moins un événement.')
+      return
+    }
+
+    const label = editLabel.trim() || 'Webhook'
+    const nextConfig = {
+      ...row.config,
+      url: editUrl.trim(),
+      label,
+      events: editEvents,
+    }
+
+    setSaving('webhook')
+    const { error } = await supabase
+      .from('integrations')
+      .update({ config: nextConfig })
+      .eq('id', row.id)
+    setSaving(null)
+
+    if (error) {
+      setWebhookError(error.message)
+      return
+    }
+
+    setIntegrations((prev) =>
+      prev.map((i) => (i.id === row.id ? { ...i, config: nextConfig } : i)),
+    )
+    cancelEditWebhook()
+    showToast('Webhook mis à jour.')
+  }
+
+  const handleRotateSecret = async (row: IntegrationRow) => {
+    setWebhookError(null)
+    const secret = generateWebhookSecret()
+    const { error } = await supabase
+      .from('integrations')
+      .update({ access_token: secret })
+      .eq('id', row.id)
+
+    if (error) {
+      setWebhookError(error.message)
+      return
+    }
+
+    setRevealedSecret(secret)
+    showToast('Nouveau secret généré.')
+  }
+
   const handleAddWebhook = async () => {
     if (!userId) return
     setWebhookError(null)
@@ -358,6 +473,12 @@ export function Integrations() {
       return
     }
     setIntegrations((prev) => prev.filter((i) => i.id !== row.id))
+    setLastDeliveries((prev) => {
+      const next = { ...prev }
+      delete next[row.id]
+      return next
+    })
+    if (editingWebhookId === row.id) cancelEditWebhook()
     showToast('Webhook supprimé.')
   }
 
@@ -377,9 +498,25 @@ export function Integrations() {
         setWebhookError(payload?.error ?? 'Test échoué.')
         return
       }
-      showToast('Webhook de test envoyé.')
+      showToast('Test envoyé (événement webhook.test).')
+      if (userId) {
+        await reloadDeliveries(userId, webhookRows.map((r) => r.id))
+      }
     } finally {
       setTestingWebhookId(null)
+    }
+  }
+
+  const formatDeliveryTime = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString('fr-FR', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    } catch {
+      return iso
     }
   }
 
@@ -557,7 +694,8 @@ export function Integrations() {
             <div className="min-w-0 flex-1">
               <h2 className="font-display text-xl font-semibold text-[var(--ink)]">Webhooks</h2>
               <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">
-                Connectez Freli à Zapier, Make, n8n, Slack, Notion, Airtable… via une URL de webhook HTTPS.
+                Direct : Zapier, Make, n8n, Slack. Via automatisateur : Notion, Airtable, CRM,
+                compta — collez une URL HTTPS.
               </p>
             </div>
           </div>
@@ -568,50 +706,139 @@ export function Integrations() {
             <ul className="mt-4 space-y-3">
               {webhookRows.map((row) => {
                 const cfg = parseWebhookConfig(row.config)
+                const delivery = lastDeliveries[row.id]
+                const isEditing = editingWebhookId === row.id
                 return (
                   <li
                     key={row.id}
                     className="rounded-[var(--radius-sm)] border border-[var(--border)] p-4"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-body text-sm font-medium text-[var(--ink)]">{cfg.label}</p>
-                        <p className="mt-0.5 truncate font-body text-xs text-[var(--ink-muted)]">
-                          {maskWebhookUrl(cfg.url)}
-                        </p>
-                        <p className="mt-2 font-body text-xs text-[var(--ink-soft)]">
-                          {cfg.events.map((e) => WEBHOOK_EVENT_LABELS[e]?.label ?? e).join(' · ')}
-                        </p>
+                    {isEditing ? (
+                      <div className="space-y-3">
+                        <Input
+                          placeholder="Nom"
+                          value={editLabel}
+                          onChange={(e) => setEditLabel(e.target.value)}
+                        />
+                        <Input
+                          placeholder="https://…"
+                          value={editUrl}
+                          onChange={(e) => setEditUrl(e.target.value)}
+                        />
+                        <fieldset className="space-y-2">
+                          <legend className="text-xs font-body font-medium text-[var(--ink-soft)]">
+                            Événements
+                          </legend>
+                          {WEBHOOK_EVENTS.map((event) => (
+                            <label key={event} className="flex cursor-pointer items-start gap-2">
+                              <input
+                                type="checkbox"
+                                checked={editEvents.includes(event)}
+                                onChange={() => toggleEditWebhookEvent(event)}
+                                className="mt-0.5"
+                              />
+                              <span className="text-sm font-body text-[var(--ink)]">
+                                {WEBHOOK_EVENT_LABELS[event].label}
+                              </span>
+                            </label>
+                          ))}
+                        </fieldset>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={saving === 'webhook'}
+                            onClick={() => handleSaveEditWebhook(row)}
+                            className="rounded-[var(--radius-sm)] bg-[var(--accent)] px-3 py-1.5 text-xs font-body font-medium text-[var(--white)] disabled:opacity-50"
+                          >
+                            Enregistrer
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditWebhook}
+                            className="rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink)]"
+                          >
+                            Annuler
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleWebhook(row)}
-                          className={`rounded-full px-2.5 py-0.5 text-xs font-body font-medium ${
-                            cfg.enabled
-                              ? 'bg-[var(--mint-soft)] text-[var(--mint)]'
-                              : 'bg-[var(--surface-warm)] text-[var(--ink-muted)]'
-                          }`}
-                        >
-                          {cfg.enabled ? 'Actif' : 'Inactif'}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={testingWebhookId === row.id}
-                          onClick={() => handleTestWebhook(row.id)}
-                          className="rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink)] hover:border-[var(--accent)]"
-                        >
-                          {testingWebhookId === row.id ? '...' : 'Tester'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteWebhook(row)}
-                          className="rounded-[var(--radius-sm)] border border-[#EF4444] px-3 py-1.5 text-xs font-body text-[#EF4444] hover:bg-[#FEF2F2]"
-                        >
-                          Supprimer
-                        </button>
-                      </div>
-                    </div>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-body text-sm font-medium text-[var(--ink)]">
+                              {cfg.label}
+                            </p>
+                            <p className="mt-0.5 truncate font-body text-xs text-[var(--ink-muted)]">
+                              {maskWebhookUrl(cfg.url)}
+                            </p>
+                            <p className="mt-2 font-body text-xs text-[var(--ink-soft)]">
+                              {cfg.events.map((e) => WEBHOOK_EVENT_LABELS[e]?.label ?? e).join(' · ')}
+                            </p>
+                            {delivery ? (
+                              <p
+                                className={`mt-2 font-body text-xs ${
+                                  delivery.status === 'success'
+                                    ? 'text-[var(--mint)]'
+                                    : 'text-[var(--amber)]'
+                                }`}
+                              >
+                                Dernière livraison :{' '}
+                                {delivery.status === 'success' ? 'succès' : 'échec'}
+                                {delivery.http_status ? ` (${delivery.http_status})` : ''} ·{' '}
+                                {formatDeliveryTime(delivery.created_at)}
+                                {delivery.error ? ` — ${delivery.error}` : ''}
+                              </p>
+                            ) : (
+                              <p className="mt-2 font-body text-xs text-[var(--ink-muted)]">
+                                Aucune livraison enregistrée.
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleWebhook(row)}
+                              className={`rounded-full px-2.5 py-0.5 text-xs font-body font-medium ${
+                                cfg.enabled
+                                  ? 'bg-[var(--mint-soft)] text-[var(--mint)]'
+                                  : 'bg-[var(--surface-warm)] text-[var(--ink-muted)]'
+                              }`}
+                            >
+                              {cfg.enabled ? 'Actif' : 'Inactif'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => startEditWebhook(row)}
+                              className="rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink)] hover:border-[var(--accent)]"
+                            >
+                              Modifier
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRotateSecret(row)}
+                              className="rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink)] hover:border-[var(--accent)]"
+                            >
+                              Régénérer secret
+                            </button>
+                            <button
+                              type="button"
+                              disabled={testingWebhookId === row.id}
+                              onClick={() => handleTestWebhook(row.id)}
+                              className="rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink)] hover:border-[var(--accent)]"
+                            >
+                              {testingWebhookId === row.id ? '...' : 'Tester'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteWebhook(row)}
+                              className="rounded-[var(--radius-sm)] border border-[#EF4444] px-3 py-1.5 text-xs font-body text-[#EF4444] hover:bg-[#FEF2F2]"
+                            >
+                              Supprimer
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </li>
                 )
               })}

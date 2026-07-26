@@ -39,6 +39,12 @@ export function LegalPageLayout({ title, lastUpdated, children }: LegalPageLayou
             <Link to="/a-propos" className="hover:text-[var(--white)]">
               À propos
             </Link>
+            <Link to="/tarifs" className="hover:text-[var(--white)]">
+              Tarifs
+            </Link>
+            <Link to="/comparatifs" className="hover:text-[var(--white)]">
+              Comparatifs
+            </Link>
             <Link to="/faq" className="hover:text-[var(--white)]">
               FAQ
             </Link>

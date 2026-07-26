@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { appSignInUrl } from '../../lib/appUrl'
+import { siteConfig } from '../../lib/seo/siteConfig'
 import { Button } from '../ui'
 
 const NAV_LINKS = [
   { href: '#features', label: 'Fonctionnalités', route: false },
   { href: '#integrations', label: 'Intégrations', route: false },
   { href: '#how-it-works', label: 'Comment ça marche', route: false },
-  { href: '/demo', label: 'Réserver une démo', route: true },
+  { href: '/tarifs', label: 'Tarifs', route: true },
+  { href: siteConfig.calendlyUrl, label: 'Réserver une démo', route: false },
 ]
 
 const linkClassName =

@@ -15,16 +15,20 @@ export function StatusFilterBar({ filter, onFilterChange, projects }: StatusFilt
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="font-display text-lg font-semibold text-[var(--ink)]">Projets</h2>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrer les projets">
+    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <h2 className="shrink-0 font-display text-lg font-semibold text-[var(--ink)]">Projets</h2>
+      <div
+        className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        role="group"
+        aria-label="Filtrer les projets"
+      >
         {(Object.keys(FILTER_LABELS) as StatusFilter[]).map((key) => (
           <button
             key={key}
             type="button"
             onClick={() => onFilterChange(key)}
             aria-pressed={filter === key}
-            className={`rounded-full px-3 py-1.5 text-sm font-body transition ${
+            className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-body transition ${
               filter === key
                 ? 'bg-[var(--accent)] text-[var(--white)]'
                 : 'border border-[var(--border)] bg-[var(--white)] text-[var(--ink-soft)]'

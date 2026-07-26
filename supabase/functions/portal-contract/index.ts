@@ -8,7 +8,28 @@ const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 type Body =
   | { action: 'getTemplatePdfUrl'; projectToken: string; templateId: string }
-  | { action: 'uploadSigned'; projectToken: string; pdfBase64: string }
+  | {
+      action: 'uploadSigned'
+      projectToken: string
+      pdfBase64: string
+      checklistItemId?: string
+      signerName?: string
+      signerEmail?: string
+    }
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+/** Première IP de la chaîne de proxies, la seule non falsifiable côté edge. */
+function clientIp(req: Request): string | null {
+  const forwarded = req.headers.get('x-forwarded-for') ?? ''
+  const first = forwarded.split(',')[0]?.trim()
+  return first || null
+}
 
 function storagePathFromPdfUrl(pdfUrl: string): string | null {
   if (!pdfUrl.startsWith('http')) return pdfUrl
@@ -105,6 +126,19 @@ serve(async (req) => {
         .from('contracts')
         .createSignedUrl(filePath, 60 * 60 * 24 * 7)
       if (signError || !data?.signedUrl) throw new Error(signError?.message ?? 'Signed URL failed')
+
+      // Preuve côté serveur : le client ne peut ni l'écrire ni la modifier.
+      const { error: proofError } = await supabase.from('contract_signature_events').insert({
+        project_id: project.id,
+        checklist_item_id: body.checklistItemId ?? null,
+        signer_name: body.signerName ?? null,
+        signer_email: body.signerEmail ?? null,
+        ip_address: clientIp(req),
+        user_agent: req.headers.get('user-agent'),
+        document_sha256: await sha256Hex(binary),
+        storage_path: filePath,
+      })
+      if (proofError) console.error('signature proof insert failed:', proofError.message)
 
       return jsonResponse({ signedUrl: data.signedUrl, storagePath: filePath })
     }

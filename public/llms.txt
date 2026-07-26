@@ -15,6 +15,8 @@ ici, Freli désigne le produit d'onboarding client édité sur freli.fr.
 - [Démo](https://www.freli.fr/demo) : réservation d'une démonstration de 30 minutes
 - [À propos](https://www.freli.fr/a-propos) : présentation de l'éditeur et du produit
 - [FAQ](https://www.freli.fr/faq) : questions fréquentes (fonctionnement, accès, RGPD)
+- [Tarifs](https://www.freli.fr/tarifs) : offres Solo et Agence
+- [Comparatifs](https://www.freli.fr/comparatifs) : Freli vs Content Snare, Clustdoc, stack manuelle
 - [Politique de confidentialité](https://www.freli.fr/confidentialite)
 - [Conditions d'utilisation](https://www.freli.fr/conditions-utilisation)
 

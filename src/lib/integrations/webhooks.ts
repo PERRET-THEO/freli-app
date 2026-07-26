@@ -95,7 +95,8 @@ export const WEBHOOK_SETUP_GUIDES: WebhookSetupGuide[] = [
     id: 'slack',
     name: 'Slack',
     category: 'notification',
-    summary: 'Slack → Apps → Incoming Webhooks → ajouter à un canal → copier l\u2019URL.',
+    summary:
+      'Slack → Apps → Incoming Webhooks → ajouter à un canal → copier l\u2019URL. Freli formate automatiquement le message ({ text, blocks }).',
   },
   {
     id: 'notion',
@@ -157,14 +158,43 @@ export function maskWebhookUrl(url: string): string {
   }
 }
 
+function isPrivateIpv4(host: string): boolean {
+  const parts = host.split('.').map((p) => parseInt(p, 10))
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n) || n < 0 || n > 255)) return false
+  if (parts[0] === 10) return true
+  if (parts[0] === 127) return true
+  if (parts[0] === 169 && parts[1] === 254) return true
+  if (parts[0] === 192 && parts[1] === 168) return true
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true
+  return false
+}
+
+/** Aligné sur supabase/functions/_shared/webhookHelpers.ts (sans resolve DNS). */
+function isBlockedWebhookHostname(host: string): boolean {
+  const h = host.replace(/^\[|\]$/g, '').toLowerCase()
+  if (
+    h === 'localhost' ||
+    h.endsWith('.local') ||
+    h === '0.0.0.0' ||
+    h === '::1' ||
+    h === '0:0:0:0:0:0:0:1'
+  ) {
+    return true
+  }
+  if (h.startsWith('fe80:')) return true
+  if (/^f[cd][0-9a-f]{2}:/i.test(h)) return true
+  if (/^ff[0-9a-f]{2}:/i.test(h)) return true
+  if (isPrivateIpv4(h)) return true
+  return false
+}
+
 export function validateWebhookUrlClient(url: string): string | null {
   const trimmed = url.trim()
   if (!trimmed) return 'URL requise.'
   try {
     const parsed = new URL(trimmed)
     if (parsed.protocol !== 'https:') return 'L\u2019URL doit utiliser HTTPS.'
-    const host = parsed.hostname.toLowerCase()
-    if (host === 'localhost' || host.endsWith('.local')) return 'URL non autorisée.'
+    if (isBlockedWebhookHostname(parsed.hostname)) return 'URL non autorisée.'
   } catch {
     return 'URL invalide.'
   }

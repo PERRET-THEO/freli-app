@@ -2,7 +2,12 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'npm:resend'
 import { getResendFrom, assertResendOk } from '../_shared/email.ts'
-import { buildClientOnboardingEmail, isValidProjectToken } from '../_shared/clientEmailHtml.ts'
+import {
+  buildClientOnboardingEmail,
+  isValidProjectToken,
+  type PendingChecklistItem,
+} from '../_shared/clientEmailHtml.ts'
+import { getPendingVisibleItems } from '../_shared/checklistVisibility.ts'
 import {
   buildProjectPayload,
   fireOutgoingWebhooks,
@@ -132,15 +137,36 @@ serve(async (req) => {
       })
     }
 
-    const subject = isReminderMode
-      ? `${agencyName} — rappel : votre onboarding est en attente`
-      : `${agencyName} vous invite à compléter votre onboarding`
+    // Une relance nomme précisément les étapes restantes (et les corrections
+    // demandées) : c'est ce qui la rend actionnable. La liste complète est
+    // nécessaire pour écarter les étapes conditionnelles non déclenchées.
+    let pendingItems: PendingChecklistItem[] = []
+    if (isReminderMode) {
+      const { data: allRows } = await supabase
+        .from('checklist_items')
+        .select('label, completed, value, review_note, review_status, config')
+        .eq('project_id', projectId)
+        .order('order_index', { ascending: true })
+
+      pendingItems = getPendingVisibleItems(allRows ?? []).map((row) => ({
+        label: String(row.label ?? ''),
+        reviewNote: row.review_status === 'rejected' ? (row.review_note as string | null) : null,
+      }))
+    }
+
+    const needsCorrection = pendingItems.some((item) => item.reviewNote?.trim())
+    const subject = !isReminderMode
+      ? `${agencyName} vous invite à compléter votre onboarding`
+      : needsCorrection
+        ? `${agencyName} — quelques éléments à corriger`
+        : `${agencyName} — rappel : votre onboarding est en attente`
 
     const html = buildClientOnboardingEmail({
       mode: emailMode,
       clientName,
       agencyName,
       portalUrl,
+      pendingItems,
     })
 
     const result = await resend.emails.send({

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { Button, Card, Input } from '../components/ui'
+import { getOrCreateAgency } from '../lib/agency'
 import { resolveAgencyContractPdfUrl } from '../lib/contractStorage'
 import { supabase } from '../lib/supabase'
 import { pdfjs, setupPdfWorker } from '../lib/pdfWorker'
@@ -279,11 +280,7 @@ export function Templates() {
     try {
       const { data: userData } = await supabase.auth.getUser()
       if (!userData.user) return
-      const { data: agency } = await supabase
-        .from('agencies')
-        .select('id')
-        .eq('user_id', userData.user.id)
-        .maybeSingle()
+      const agency = await getOrCreateAgency(userData.user.id)
       if (!agency?.id) return
       setAgencyId(agency.id)
       const { data } = await supabase
@@ -314,13 +311,8 @@ export function Templates() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Non connecté.')
 
-      const { data: agency, error: agencyError } = await supabase
-        .from('agencies')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (agencyError || !agency?.id) throw new Error(agencyError?.message ?? 'Aucune agence trouvée.')
+      const agency = await getOrCreateAgency(user.id)
+      if (!agency?.id) throw new Error('Aucune agence trouvée.')
 
       let pdfUrl: string | null = null
       if (file) {
@@ -444,7 +436,7 @@ export function Templates() {
             action={<Button onClick={() => setShowModal(true)}>Ajouter un contrat</Button>}
           />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid min-w-0 gap-4 [&>*]:min-w-0 md:grid-cols-2">
             {templates.map((template) => (
               <ContractTemplateCard
                 key={template.id}

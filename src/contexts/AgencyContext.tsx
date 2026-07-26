@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getOrCreateAgency } from '../lib/agency'
+import { fetchMyAgencyRole, type AgencyRole } from '../lib/agencyMembership'
 import { supabase } from '../lib/supabase'
 
 type AgencyInfo = {
@@ -11,8 +13,11 @@ type AgencyInfo = {
 type AgencySessionContextValue = {
   loading: boolean
   email: string | null
+  userId: string | null
   agency: AgencyInfo | null
+  role: AgencyRole | null
   displayName: string
+  isOwner: boolean
 }
 
 const AgencySessionContext = createContext<AgencySessionContextValue | null>(null)
@@ -21,7 +26,9 @@ export function AgencySessionProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [agency, setAgency] = useState<AgencyInfo | null>(null)
+  const [role, setRole] = useState<AgencyRole | null>(null)
 
   useEffect(() => {
     const load = async () => {
@@ -31,19 +38,24 @@ export function AgencySessionProvider({ children }: { children: ReactNode }) {
         return
       }
       setEmail(data.user.email ?? null)
+      setUserId(data.user.id)
 
-      const { data: agencyRow } = await supabase
-        .from('agencies')
-        .select('id, name, logo_url')
-        .eq('user_id', data.user.id)
-        .maybeSingle()
+      const resolved = await getOrCreateAgency(data.user.id)
+      if (resolved?.id) {
+        const { data: agencyRow } = await supabase
+          .from('agencies')
+          .select('id, name, logo_url')
+          .eq('id', resolved.id)
+          .maybeSingle()
 
-      if (agencyRow) {
-        setAgency({
-          id: agencyRow.id,
-          name: agencyRow.name ?? null,
-          logo_url: agencyRow.logo_url ?? null,
-        })
+        if (agencyRow) {
+          setAgency({
+            id: agencyRow.id,
+            name: agencyRow.name ?? null,
+            logo_url: agencyRow.logo_url ?? null,
+          })
+          setRole(await fetchMyAgencyRole(agencyRow.id, data.user.id))
+        }
       }
 
       setLoading(false)
@@ -60,8 +72,16 @@ export function AgencySessionProvider({ children }: { children: ReactNode }) {
   }, [agency?.name, email])
 
   const value = useMemo(
-    () => ({ loading, email, agency, displayName }),
-    [loading, email, agency, displayName],
+    () => ({
+      loading,
+      email,
+      userId,
+      agency,
+      role,
+      displayName,
+      isOwner: role === 'owner',
+    }),
+    [loading, email, userId, agency, role, displayName],
   )
 
   return <AgencySessionContext.Provider value={value}>{children}</AgencySessionContext.Provider>

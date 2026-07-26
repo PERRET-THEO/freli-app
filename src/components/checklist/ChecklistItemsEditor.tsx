@@ -9,12 +9,27 @@ import {
   type ChecklistItemType,
   type DraftChecklistItem,
 } from '../../lib/checklist'
+import { pruneInvalidConditions } from '../../lib/checklistConditions'
+import { ConditionEditor } from './ConditionEditor'
 import { ContractItemConfig } from './ContractItemConfig'
+import { FieldItemConfig } from './FieldItemConfig'
 
 type ContractTemplateOption = { id: string; name: string }
 
 const smallSelectCls =
   'rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-xs font-body text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]'
+
+const QUICK_ADD_ITEMS: { type: ChecklistItemType; label: string; defaultLabel: string }[] = [
+  { type: 'text', label: 'Texte', defaultLabel: 'Nouvel item texte' },
+  { type: 'file', label: 'Fichier', defaultLabel: 'Nouveau fichier à fournir' },
+  { type: 'email', label: 'Email', defaultLabel: 'Email de contact' },
+  { type: 'phone', label: 'Téléphone', defaultLabel: 'Téléphone de contact' },
+  { type: 'url', label: 'Lien', defaultLabel: 'Lien à fournir' },
+  { type: 'choice', label: 'Choix', defaultLabel: 'Choix à faire' },
+  { type: 'signature', label: 'Contrat à signer', defaultLabel: 'Contrat à signer' },
+  { type: 'payment', label: 'Paiement', defaultLabel: 'Régler l’acompte' },
+  { type: 'schedule', label: 'Rendez-vous', defaultLabel: 'Réserver le rendez-vous de lancement' },
+]
 
 type ChecklistItemsEditorProps = {
   items: DraftChecklistItem[]
@@ -24,27 +39,40 @@ type ChecklistItemsEditorProps = {
   hasDefaultContract?: boolean
   defaultContractBrief?: string
   emptyMessage?: string
+  priceEur?: number | null
 }
 
 export function ChecklistItemsEditor({
   items,
-  onChange,
+  onChange: emitChange,
   contractTemplates,
   aiContractsEnabled = false,
   hasDefaultContract = false,
   defaultContractBrief = '',
   emptyMessage = 'Checklist vide. Choisis un modèle ou ajoute des items ci-dessous.',
+  priceEur = null,
 }: ChecklistItemsEditorProps) {
   const [newItemLabel, setNewItemLabel] = useState('')
   const [newItemType, setNewItemType] = useState<ChecklistItemType>('text')
+
+  /**
+   * Déplacer, supprimer ou retyper une étape peut casser la condition d'une
+   * autre : on nettoie à chaque mutation plutôt que d'interdire le geste.
+   */
+  const onChange = (next: DraftChecklistItem[]) => {
+    emitChange(pruneInvalidConditions(next))
+  }
 
   const updateItem = (id: string, patch: Partial<DraftChecklistItem>) => {
     onChange(items.map((item) => (item.id === id ? { ...item, ...patch } : item)))
   }
 
+  const hasPaymentItem = items.some((item) => item.type === 'payment')
+
   const addItem = (type: ChecklistItemType, label?: string) => {
     const resolvedLabel = (label ?? newItemLabel).trim()
     if (!resolvedLabel) return
+    if (type === 'payment' && hasPaymentItem) return
     if (type === 'signature' && countAiGenerateItems(items) >= 1) {
       onChange([
         ...items,
@@ -95,25 +123,38 @@ export function ChecklistItemsEditor({
                   value={item.type}
                   onChange={(e) => {
                     const nextType = e.target.value as ChecklistItemType
+                    // Changer de type repart d'une config vierge : les réglages
+                    // de l'ancien type ne s'appliquent jamais au nouveau.
+                    const reset = {
+                      type: nextType,
+                      contractTemplateId: null,
+                      contractSource: undefined,
+                      contractBrief: undefined,
+                      choiceOptions: undefined,
+                      scheduleUrl: undefined,
+                    } satisfies Partial<DraftChecklistItem>
+
                     if (nextType === 'signature') {
                       updateItem(item.id, {
-                        type: nextType,
+                        ...reset,
                         contractSource: 'default',
-                        contractTemplateId: null,
                         contractBrief: defaultContractBrief,
                       })
+                    } else if (nextType === 'choice') {
+                      updateItem(item.id, { ...reset, choiceOptions: [] })
+                    } else if (nextType === 'schedule') {
+                      updateItem(item.id, { ...reset, scheduleUrl: '' })
                     } else {
-                      updateItem(item.id, {
-                        type: nextType,
-                        contractTemplateId: null,
-                        contractSource: undefined,
-                        contractBrief: undefined,
-                      })
+                      updateItem(item.id, reset)
                     }
                   }}
                 >
                   {CHECKLIST_TYPE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
+                    <option
+                      key={opt.value}
+                      value={opt.value}
+                      disabled={opt.value === 'payment' && hasPaymentItem && item.type !== 'payment'}
+                    >
                       {opt.label}
                     </option>
                   ))}
@@ -168,7 +209,20 @@ export function ChecklistItemsEditor({
                   }
                   onChange={(patch) => updateItem(item.id, patch)}
                 />
-              ) : null}
+              ) : (
+                <FieldItemConfig
+                  item={item}
+                  priceEur={priceEur}
+                  onChange={(patch) => updateItem(item.id, patch)}
+                />
+              )}
+
+              <ConditionEditor
+                item={item}
+                items={items}
+                index={index}
+                onChange={(patch) => updateItem(item.id, patch)}
+              />
             </div>
           ))
         )}
@@ -205,27 +259,17 @@ export function ChecklistItemsEditor({
           </Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => addItem('text', 'Nouvel item texte')}
-            className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-          >
-            + Texte
-          </button>
-          <button
-            type="button"
-            onClick={() => addItem('file', 'Nouveau fichier à fournir')}
-            className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-          >
-            + Fichier
-          </button>
-          <button
-            type="button"
-            onClick={() => addItem('signature', 'Contrat à signer')}
-            className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-          >
-            + Contrat à signer
-          </button>
+          {QUICK_ADD_ITEMS.map(({ type, label, defaultLabel }) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => addItem(type, defaultLabel)}
+              disabled={type === 'payment' && hasPaymentItem}
+              className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40 disabled:hover:border-[var(--border)] disabled:hover:text-[var(--ink-muted)]"
+            >
+              + {label}
+            </button>
+          ))}
         </div>
       </div>
     </div>

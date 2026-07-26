@@ -209,8 +209,8 @@ export function DashboardLayout({
         </div>
       </aside>
 
-      <div className={`mx-auto md:ml-72 ${contentMax}`}>
-        <main className="w-full px-4 py-8 pb-24 sm:px-8 md:pb-8">
+      <div className={`mx-auto min-w-0 md:ml-72 ${contentMax}`}>
+        <main className="w-full min-w-0 px-4 py-8 pb-24 sm:px-8 md:pb-8">
           {title ? (
             <header className="mb-6">
               <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">{title}</h1>

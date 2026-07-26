@@ -50,12 +50,20 @@ verify_jwt = false
 [functions.portal-contract]
 verify_jwt = false
 
+# Portail client — lien Stripe Checkout pour étape Paiement (auth par projectToken)
+[functions.portal-payment-link]
+verify_jwt = false
+
 # Mot de passe oublié — formulaire public (Resend + generateLink)
 [functions.send-password-reset-email]
 verify_jwt = false
 
 # Test webhook sortant (dashboard agence)
 [functions.test-webhook]
+verify_jwt = true
+
+# Invitation collaborateur agence (owner JWT)
+[functions.invite-agency-member]
 verify_jwt = true
 
 # IA — extraction documentaire : déclenchée par le portail client (auth par projectToken)

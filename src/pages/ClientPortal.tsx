@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
+import { ScheduleBookingStep } from '../components/onboarding/ScheduleBookingStep'
 import { SignatureModal } from '../components/onboarding/SignatureModal'
 import { Button } from '../components/ui'
 import { triggerIntegrations } from '../lib/integrations/triggerIntegrations'
@@ -8,6 +9,26 @@ import { getPortalTemplatePdfUrl } from '../lib/contractStorage'
 import { sendProjectCompletedEmail } from '../lib/resend'
 import { getPaymentState, formatPriceEur } from '../lib/payments'
 import { normalizeBrandColor, DEFAULT_BRAND_COLOR } from '../lib/agencyBranding'
+import { getVisibleItems } from '../lib/checklistConditions'
+import { isOnboardingSettled, isRejected, type ReviewStatus } from '../lib/checklistReview'
+import type { ChecklistItemType } from '../lib/checklist'
+import {
+  FIELD_INPUT_MODES,
+  FIELD_PLACEHOLDERS,
+  isInputType,
+  isSingleLineType,
+  normalizeClientAnswer,
+  validateClientAnswer,
+  type ChecklistItemConfig,
+} from '../lib/checklistFields'
+import { requestPortalPaymentLink } from '../lib/portalPayment'
+import {
+  clearDraft,
+  countRestorableDrafts,
+  mergeDraftsIntoValues,
+  readDrafts,
+  saveDraft,
+} from '../lib/portalDrafts'
 import { supabase } from '../lib/supabase'
 
 type ProjectRecord = {
@@ -42,10 +63,13 @@ type ProjectRecord = {
 type ChecklistItemRecord = {
   id: string
   label: string
-  type: 'text' | 'file' | 'signature'
+  type: ChecklistItemType
   completed: boolean
   value: string | null
   order_index: number
+  review_status: ReviewStatus | null
+  review_note: string | null
+  config: ChecklistItemConfig | null
 }
 
 type LoadedTemplate = {
@@ -114,12 +138,16 @@ function Confetti() {
   )
 }
 
-function StepCircle({ index, status }: { index: number; status: 'completed' | 'active' | 'locked' }) {
+type StepStatus = 'completed' | 'active' | 'locked' | 'rejected'
+
+function StepCircle({ index, status }: { index: number; status: StepStatus }) {
   const base = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-display font-bold transition-all duration-300'
   if (status === 'completed')
     return <div className={`${base} bg-[var(--mint)] text-white`}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
     </div>
+  if (status === 'rejected')
+    return <div className={`${base} bg-[var(--amber)] text-white shadow-[0_0_0_4px_var(--amber-soft)]`}>!</div>
   if (status === 'active')
     return <div className={`${base} bg-[var(--accent)] text-white shadow-[0_0_0_4px_var(--accent-soft)]`}>{index + 1}</div>
   return <div className={`${base} bg-[var(--surface-warm)] text-[var(--ink-muted)]`}>{index + 1}</div>
@@ -154,6 +182,11 @@ export function ClientPortal() {
   const [project, setProject] = useState<ProjectRecord | null>(null)
   const [items, setItems] = useState<ChecklistItemRecord[]>([])
   const [textValues, setTextValues] = useState<Record<string, string>>({})
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [restoredDraftCount, setRestoredDraftCount] = useState(0)
+  const [stepCheckoutUrl, setStepCheckoutUrl] = useState<string | null>(null)
+  const [preparingPayment, setPreparingPayment] = useState(false)
+  const [paymentStepError, setPaymentStepError] = useState<string | null>(null)
   const [savingItemId, setSavingItemId] = useState<string | null>(null)
   const [justSavedId, setJustSavedId] = useState<string | null>(null)
   const [isCompleted, setIsCompleted] = useState(false)
@@ -198,9 +231,15 @@ export function ClientPortal() {
     [brandColor],
   )
 
+  /**
+   * Étapes réellement présentées : `items` reste complet car les conditions
+   * référencent la position de l'étape source dans la liste d'origine.
+   */
+  const visibleItems = useMemo(() => getVisibleItems(items), [items])
+
   const firstIncompleteId = useMemo(
-    () => items.find((i) => !i.completed)?.id ?? null,
-    [items],
+    () => visibleItems.find((i) => !i.completed)?.id ?? null,
+    [visibleItems],
   )
 
   const signingItem = useMemo(
@@ -296,7 +335,9 @@ export function ClientPortal() {
 
       const { data: checklistData, error: checklistError } = await supabase
         .from('checklist_items')
-        .select('id, label, type, completed, value, order_index')
+        .select(
+          'id, label, type, completed, value, order_index, review_status, review_note, config',
+        )
         .eq('project_id', projectData.id)
         .order('order_index', { ascending: true })
 
@@ -307,14 +348,22 @@ export function ClientPortal() {
       }
 
       const initialTextValues: Record<string, string> = {}
+      const openInputIds = new Set<string>()
       for (const item of checklistData ?? []) {
-        if (item.type === 'text') initialTextValues[item.id] = item.value ?? ''
+        if (!isInputType(item.type as ChecklistItemType)) continue
+        initialTextValues[item.id] = item.value ?? ''
+        if (!item.completed) openInputIds.add(item.id)
       }
+
+      // Reprise multi-session : ce qui était tapé sans être validé revient.
+      const drafts = readDrafts(token)
+      const restorable = countRestorableDrafts(initialTextValues, drafts, openInputIds)
 
       setProject(projectData)
       const parsedItems = (checklistData ?? []) as ChecklistItemRecord[]
       setItems(parsedItems)
-      setTextValues(initialTextValues)
+      setTextValues(mergeDraftsIntoValues(initialTextValues, drafts, openInputIds))
+      setRestoredDraftCount(restorable)
 
       if (parsedItems.every((i) => i.completed)) setShowHero(false)
       setLoading(false)
@@ -347,7 +396,9 @@ export function ClientPortal() {
         const next = payload.new as ChecklistItemRecord
         if (!next?.id) return
         setItems((cur) => cur.map((i) => (i.id === next.id ? { ...i, ...next } : i)))
-        if (next.type === 'text') setTextValues((cur) => ({ ...cur, [next.id]: next.value ?? '' }))
+        if (isInputType(next.type)) {
+          setTextValues((cur) => ({ ...cur, [next.id]: next.value ?? '' }))
+        }
       })
       .on(
         'postgres_changes',
@@ -374,8 +425,8 @@ export function ClientPortal() {
     }
   }, [project?.id])
 
-  const completedCount = items.filter((i) => i.completed).length
-  const totalCount = items.length
+  const completedCount = visibleItems.filter((i) => i.completed).length
+  const totalCount = visibleItems.length
   const progressPercent = totalCount ? Math.round((completedCount / totalCount) * 100) : 0
 
   const paymentState = getPaymentState(project?.price, project?.payment_status)
@@ -427,7 +478,7 @@ export function ClientPortal() {
   }, [paymentState])
 
   useEffect(() => {
-    const allDone = totalCount > 0 && completedCount === totalCount
+    const allDone = isOnboardingSettled(visibleItems)
     setIsCompleted(allDone)
     if (allDone && project?.id) {
       if (!confettiShown.current) {
@@ -475,8 +526,8 @@ export function ClientPortal() {
       supabase.from('projects').update({ status: 'in_progress' }).eq('id', project.id).then()
     }
   }, [
+    visibleItems,
     completedCount,
-    totalCount,
     project?.id,
     project?.payment_status,
     project?.stripe_checkout_url,
@@ -490,8 +541,8 @@ export function ClientPortal() {
   const advanceToNext = useCallback((currentId: string) => {
     setJustSavedId(currentId)
     setTimeout(() => setJustSavedId(null), 1200)
-    const idx = items.findIndex((i) => i.id === currentId)
-    const nextIncomplete = items.find((i, j) => j > idx && !i.completed)
+    const idx = visibleItems.findIndex((i) => i.id === currentId)
+    const nextIncomplete = visibleItems.find((i, j) => j > idx && !i.completed)
     if (nextIncomplete) {
       setTimeout(() => {
         setOpenStepId(nextIncomplete.id)
@@ -500,22 +551,92 @@ export function ClientPortal() {
         }, 100)
       }, 400)
     }
-  }, [items])
+  }, [visibleItems])
 
-  const markItemCompleted = async (itemId: string, value: string) => {
+  const markItemCompleted = useCallback(async (itemId: string, value: string) => {
     setSavingItemId(itemId)
+    // Toute nouvelle soumission repasse en attente de revue et efface le motif précédent.
+    const submission = {
+      completed: true,
+      value,
+      review_status: 'pending' as const,
+      review_note: null,
+      submitted_at: new Date().toISOString(),
+    }
     const { error: updateError } = await supabase
       .from('checklist_items')
-      .update({ completed: true, value })
+      .update(submission)
       .eq('id', itemId)
 
     if (!updateError) {
-      setItems((cur) => cur.map((i) => (i.id === itemId ? { ...i, completed: true, value } : i)))
+      setItems((cur) =>
+        cur.map((i) =>
+          i.id === itemId
+            ? { ...i, completed: true, value, review_status: 'pending', review_note: null }
+            : i,
+        ),
+      )
+      // La valeur est côté serveur : le brouillon local n'a plus de raison d'être.
+      if (token) clearDraft(token, itemId)
       advanceToNext(itemId)
     } else {
       setError('Impossible de sauvegarder. Réessayez.')
     }
     setSavingItemId(null)
+  }, [advanceToNext, token])
+
+  // Une étape « Paiement » se valide par le règlement, jamais par une action manuelle.
+  useEffect(() => {
+    if (paymentState !== 'paid') return
+    const unpaidStep = visibleItems.find((i) => i.type === 'payment' && !i.completed)
+    if (!unpaidStep) return
+    void markItemCompleted(unpaidStep.id, 'Paiement confirmé')
+  }, [paymentState, visibleItems, markItemCompleted])
+
+  const handleFieldChange = (itemId: string, value: string) => {
+    setTextValues((cur) => ({ ...cur, [itemId]: value }))
+    setFieldErrors((cur) => {
+      if (!cur[itemId]) return cur
+      const next = { ...cur }
+      delete next[itemId]
+      return next
+    })
+    if (token) saveDraft(token, itemId, value)
+  }
+
+  const submitFieldAnswer = async (item: ChecklistItemRecord) => {
+    const raw = textValues[item.id] ?? ''
+    const validationError = validateClientAnswer(item.type, raw, item.config)
+    if (validationError) {
+      setFieldErrors((cur) => ({ ...cur, [item.id]: validationError }))
+      return
+    }
+    await markItemCompleted(item.id, normalizeClientAnswer(item.type, raw))
+  }
+
+  const preparePaymentStep = async () => {
+    if (!token) return
+    setPreparingPayment(true)
+    setPaymentStepError(null)
+    try {
+      const { checkoutUrl, alreadyPaid } = await requestPortalPaymentLink(token)
+      if (alreadyPaid) {
+        setProject((cur) => (cur ? { ...cur, payment_status: 'paid' } : cur))
+        return
+      }
+      if (!checkoutUrl) {
+        setPaymentStepError(`${agencyName} finalise le lien de paiement — réessayez dans un instant.`)
+        return
+      }
+      setStepCheckoutUrl(checkoutUrl)
+      window.location.href = checkoutUrl
+    } catch (reason) {
+      setPaymentStepError(
+        reason instanceof Error ? reason.message : 'Paiement indisponible pour le moment.',
+      )
+    } finally {
+      setPreparingPayment(false)
+    }
   }
 
   const handleFileUpload = async (itemId: string, file: File | null) => {
@@ -552,8 +673,9 @@ export function ClientPortal() {
     }
   }
 
-  const stepStatus = (item: ChecklistItemRecord): 'completed' | 'active' | 'locked' => {
+  const stepStatus = (item: ChecklistItemRecord): StepStatus => {
     if (item.completed) return 'completed'
+    if (isRejected(item)) return 'rejected'
     if (item.id === firstIncompleteId) return 'active'
     return 'locked'
   }
@@ -618,6 +740,27 @@ export function ClientPortal() {
           </div>
         )}
 
+        {restoredDraftCount > 0 && !isCompleted && (
+          <div className="mb-6 flex items-start gap-3 rounded-[var(--radius-sm)] border border-[var(--accent)]/30 bg-[var(--accent-soft)]/40 p-4">
+            <span className="text-lg">💾</span>
+            <div className="flex-1">
+              <p className="font-body text-sm font-medium text-[var(--ink)]">
+                Nous avons retrouvé {restoredDraftCount} réponse
+                {restoredDraftCount > 1 ? 's' : ''} en cours
+              </p>
+              <p className="mt-0.5 font-body text-xs text-[var(--ink-muted)]">
+                Votre saisie non validée a été restaurée sur cet appareil.
+              </p>
+            </div>
+            <button
+              onClick={() => setRestoredDraftCount(0)}
+              className="font-body text-xs text-[var(--ink-muted)] underline"
+            >
+              Fermer
+            </button>
+          </div>
+        )}
+
         {showHero && !isCompleted && (
           <div className="mb-8 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--white)] p-6 shadow-[0_2px_16px_rgba(13,15,20,0.06)] sm:p-8">
             <p className="text-4xl">👋</p>
@@ -643,7 +786,7 @@ export function ClientPortal() {
               Merci <strong>{project.client_name}</strong>, {agencyName} a été notifié et vous contactera très bientôt.
             </p>
             <div className="mx-auto mt-6 max-w-xs space-y-2 text-left">
-              {items.map((item) => (
+              {visibleItems.map((item) => (
                 <div key={item.id} className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--mint-soft)] px-3 py-2">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0 text-[var(--mint)]"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   <span className="font-body text-sm text-[var(--ink-soft)]">{item.label}</span>
@@ -698,10 +841,10 @@ export function ClientPortal() {
         )}
 
         <div className="space-y-0">
-          {items.map((item, index) => {
+          {visibleItems.map((item, index) => {
             const status = stepStatus(item)
             const isOpen = openStepId === item.id && !item.completed
-            const isLast = index === items.length - 1
+            const isLast = index === visibleItems.length - 1
             const isSaving = savingItemId === item.id
             const wasSaved = justSavedId === item.id
 
@@ -718,13 +861,17 @@ export function ClientPortal() {
                 >
                   <StepCircle index={index} status={status} />
                   <div className="flex flex-1 items-center justify-between pt-1.5">
-                    <h2 className={`font-display text-base font-semibold transition-colors ${status === 'completed' ? 'text-[var(--ink-muted)] line-through decoration-[var(--mint)]' : status === 'active' ? 'text-[var(--ink)]' : 'text-[var(--ink-muted)]'}`}>
+                    <h2 className={`font-display text-base font-semibold transition-colors ${status === 'completed' ? 'text-[var(--ink-muted)] line-through decoration-[var(--mint)]' : status === 'active' || status === 'rejected' ? 'text-[var(--ink)]' : 'text-[var(--ink-muted)]'}`}>
                       {item.label}
                     </h2>
                     {item.completed ? (
                       <span className="flex items-center gap-1 rounded-full bg-[var(--mint-soft)] px-2.5 py-0.5 font-body text-xs font-medium text-[var(--mint)]">
                         <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                         Complété
+                      </span>
+                    ) : status === 'rejected' ? (
+                      <span className="rounded-full bg-[var(--amber-soft)] px-2.5 py-0.5 font-body text-xs font-medium text-[var(--amber)]">
+                        À corriger
                       </span>
                     ) : wasSaved ? (
                       <span className="flex items-center gap-1 rounded-full bg-[var(--mint-soft)] px-2.5 py-0.5 font-body text-xs font-medium text-[var(--mint)] animate-pulse">✓ Enregistré</span>
@@ -734,23 +881,83 @@ export function ClientPortal() {
 
                 <div className={`overflow-hidden pl-0 transition-all duration-300 ease-in-out sm:pl-[52px] ${isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
                   <div className="pb-6 pr-1">
-                    {item.type === 'text' && !item.completed && (
+                    {isRejected(item) && item.review_note ? (
+                      <div className="mb-3 rounded-[var(--radius-sm)] border border-[var(--amber)]/50 bg-[var(--amber-soft)] p-3">
+                        <p className="font-body text-sm font-medium text-[var(--ink)]">
+                          {agencyName} demande une correction
+                        </p>
+                        <p className="mt-1 font-body text-sm text-[var(--ink-soft)]">
+                          {item.review_note}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {isInputType(item.type) && !item.completed && (
                       <div className="space-y-3">
-                        <textarea
-                          className="min-h-28 w-full resize-y rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-sm text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)] transition-all"
-                          placeholder="Décrivez votre projet, vos objectifs..."
-                          value={textValues[item.id] ?? ''}
-                          onChange={(e) => setTextValues((cur) => ({ ...cur, [item.id]: e.target.value }))}
-                        />
-                        <div className="flex items-center justify-between">
-                          <span className="font-body text-xs text-[var(--ink-muted)]">{(textValues[item.id] ?? '').length} caractères</span>
-                          <Button onClick={() => markItemCompleted(item.id, textValues[item.id] ?? '')} disabled={isSaving || !(textValues[item.id] ?? '').trim()}>
+                        {item.type === 'choice' ? (
+                          <div className="space-y-2">
+                            {(item.config?.choiceOptions ?? []).map((option) => (
+                              <label
+                                key={option}
+                                className={`flex cursor-pointer items-center gap-3 rounded-[var(--radius-sm)] border px-4 py-3 font-body text-sm transition-colors ${
+                                  (textValues[item.id] ?? '') === option
+                                    ? 'border-[var(--accent)] bg-[var(--accent-soft)]/40 text-[var(--ink)]'
+                                    : 'border-[var(--border)] bg-[var(--white)] text-[var(--ink-soft)] hover:border-[var(--accent)]'
+                                }`}
+                              >
+                                <input
+                                  type="radio"
+                                  name={`choice-${item.id}`}
+                                  value={option}
+                                  checked={(textValues[item.id] ?? '') === option}
+                                  onChange={() => handleFieldChange(item.id, option)}
+                                  className="accent-[var(--accent)]"
+                                />
+                                {option}
+                              </label>
+                            ))}
+                          </div>
+                        ) : isSingleLineType(item.type) ? (
+                          <input
+                            type="text"
+                            inputMode={FIELD_INPUT_MODES[item.type]}
+                            className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-sm text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)] transition-all"
+                            placeholder={FIELD_PLACEHOLDERS[item.type]}
+                            value={textValues[item.id] ?? ''}
+                            onChange={(e) => handleFieldChange(item.id, e.target.value)}
+                          />
+                        ) : (
+                          <textarea
+                            className="min-h-28 w-full resize-y rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-sm text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)] transition-all"
+                            placeholder={FIELD_PLACEHOLDERS.text}
+                            value={textValues[item.id] ?? ''}
+                            onChange={(e) => handleFieldChange(item.id, e.target.value)}
+                          />
+                        )}
+
+                        {fieldErrors[item.id] ? (
+                          <p className="font-body text-xs text-[var(--amber)]">{fieldErrors[item.id]}</p>
+                        ) : null}
+
+                        <div className="flex items-center justify-between gap-3">
+                          {item.type === 'text' ? (
+                            <span className="font-body text-xs text-[var(--ink-muted)]">
+                              {(textValues[item.id] ?? '').length} caractères
+                              {(textValues[item.id] ?? '').trim() ? ' · brouillon enregistré' : ''}
+                            </span>
+                          ) : (
+                            <span />
+                          )}
+                          <Button
+                            onClick={() => submitFieldAnswer(item)}
+                            disabled={isSaving || !(textValues[item.id] ?? '').trim()}
+                          >
                             {isSaving ? 'Enregistrement...' : 'Valider et continuer →'}
                           </Button>
                         </div>
                       </div>
                     )}
-                    {item.type === 'text' && item.completed && (
+                    {isInputType(item.type) && item.completed && (
                       <p className="rounded-[var(--radius-sm)] bg-[var(--surface)] p-3 font-body text-sm text-[var(--ink-soft)]">{item.value}</p>
                     )}
 
@@ -800,6 +1007,60 @@ export function ClientPortal() {
                         </div>
                       </div>
                     )}
+
+                    {item.type === 'schedule' && !item.completed && (
+                      <ScheduleBookingStep
+                        scheduleUrl={item.config?.scheduleUrl}
+                        agencyName={agencyName}
+                        isSaving={isSaving}
+                        onConfirm={() => {
+                          void markItemCompleted(item.id, 'Rendez-vous réservé')
+                        }}
+                      />
+                    )}
+                    {item.type === 'schedule' && item.completed && (
+                      <div className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--mint-soft)] p-3">
+                        <span className="text-lg text-[var(--mint)]">✓</span>
+                        <span className="font-body text-sm text-[var(--ink-soft)]">
+                          Rendez-vous réservé
+                        </span>
+                      </div>
+                    )}
+
+                    {item.type === 'payment' && !item.completed && (
+                      <div className="space-y-3">
+                        <p className="font-body text-sm text-[var(--ink-muted)]">
+                          Réglez {formatPriceEur(project.price)} pour poursuivre — paiement
+                          sécurisé via Stripe.
+                        </p>
+                        {stepCheckoutUrl ? (
+                          <a
+                            href={stepCheckoutUrl}
+                            className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-6 py-3 font-body text-sm font-medium text-[var(--white)] transition hover:brightness-95"
+                          >
+                            Payer {formatPriceEur(project.price)} →
+                          </a>
+                        ) : (
+                          <Button
+                            onClick={() => void preparePaymentStep()}
+                            disabled={preparingPayment}
+                          >
+                            {preparingPayment ? 'Préparation…' : 'Procéder au paiement'}
+                          </Button>
+                        )}
+                        {paymentStepError ? (
+                          <p className="font-body text-xs text-[var(--amber)]">{paymentStepError}</p>
+                        ) : null}
+                      </div>
+                    )}
+                    {item.type === 'payment' && item.completed && (
+                      <div className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--mint-soft)] p-3">
+                        <span className="text-lg text-[var(--mint)]">✓</span>
+                        <span className="font-body text-sm text-[var(--ink-soft)]">
+                          Paiement confirmé — {formatPriceEur(project.price)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -832,6 +1093,7 @@ export function ClientPortal() {
           clientName={project.client_name}
           clientEmail={(project.client_email ?? '').trim()}
           projectToken={token!}
+          checklistItemId={signingItemId}
           onComplete={async (signedPdfUrl) => {
             await markItemCompleted(signingItemId, signedPdfUrl)
             setSigningItemId(null)

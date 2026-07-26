@@ -10,6 +10,7 @@ import type { ProjectCardData, StatusFilter } from '../components/dashboard/type
 import { DashboardLayout } from '../components/DashboardLayout'
 import { useAgencySession } from '../contexts/AgencyContext'
 import { usePWAInstall } from '../hooks/usePWAInstall'
+import { isBottleneckStale } from '../lib/projectBottleneck'
 import { supabase } from '../lib/supabase'
 import { Button, Card } from '../components/ui'
 
@@ -96,6 +97,19 @@ export function Dashboard() {
     )
   })
 
+  const staleBottleneckProjects = projects.filter(
+    (p) =>
+      p.status !== 'completed' &&
+      p.blockingStepLabel &&
+      p.blockingOwner &&
+      p.blockingSince &&
+      isBottleneckStale({
+        label: p.blockingStepLabel,
+        owner: p.blockingOwner,
+        since: p.blockingSince,
+      }, now),
+  )
+
   const recentAutoReminder =
     [...projects]
       .filter((p) => p.lastReminderSentAt && p.lastReminderSource === 'auto')
@@ -168,7 +182,7 @@ export function Dashboard() {
             </button>
           ) : remindersThisMonth > 0 ? (
             <Link
-              to="/dashboard/integrations"
+              to="/dashboard/settings#settings-relances"
               className="text-sm font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
             >
               Voir les relances
@@ -176,6 +190,19 @@ export function Dashboard() {
           ) : null}
         </div>
       </header>
+
+      {staleBottleneckProjects.length > 0 ? (
+        <div className="mt-4 rounded-[var(--radius-sm)] border border-[rgba(245,158,11,0.25)] bg-[var(--amber-soft)] px-4 py-3">
+          <p className="font-body text-sm text-[var(--amber)]">
+            {staleBottleneckProjects.length} projet
+            {staleBottleneckProjects.length > 1 ? 's bloqués' : ' bloqué'} depuis plus de 48 h
+            {staleBottleneckProjects[0]?.blockingStepLabel
+              ? ` — ex. « ${staleBottleneckProjects[0].blockingStepLabel} »`
+              : ''}
+            .
+          </p>
+        </div>
+      ) : null}
 
       <div className="mt-6">
         <ActivityBanner
@@ -214,7 +241,7 @@ export function Dashboard() {
           )}
         </Card>
       ) : (
-        <section className="mt-4 grid gap-4 md:grid-cols-1 lg:grid-cols-2">
+        <section className="mt-4 grid min-w-0 gap-4 [&>*]:min-w-0 md:grid-cols-1 lg:grid-cols-2">
           {filteredProjects.map((project) => (
             <ProjectCard
               key={project.id}

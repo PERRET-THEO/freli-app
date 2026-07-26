@@ -18,6 +18,10 @@ export type ProjectCardData = {
   totalCount: number
   progress: number
   nextStepLabel: string | null
+  /** Étape qui bloque actuellement l'onboarding (client ou revue agence). */
+  blockingStepLabel: string | null
+  blockingOwner: 'client' | 'agency' | null
+  blockingSince: string | null
 }
 
 export const FILTER_LABELS: Record<StatusFilter, string> = {

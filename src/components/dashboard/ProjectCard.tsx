@@ -2,8 +2,17 @@ import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { mailtoHref, telHref } from '../../lib/contactLinks'
 import { getPaymentState } from '../../lib/payments'
+import {
+  formatBottleneckLabel,
+  isBottleneckStale,
+} from '../../lib/projectBottleneck'
 import { Badge } from '../ui'
-import { getActivityLabel, getSecondaryIndicator, getStatusLabel } from './projectStatus'
+import {
+  getActivityLabel,
+  getSecondaryIndicator,
+  getShortStatusLabel,
+  getStatusLabel,
+} from './projectStatus'
 import type { ProjectCardData } from './types'
 
 const AVATAR_PALETTE = [
@@ -58,12 +67,14 @@ export function ProjectCard({
   const segments = Math.min(totalSteps, 8)
   const completedSegments = Math.round((project.completedCount / totalSteps) * segments)
 
-  const statusLabel = getStatusLabel({
+  const statusInput = {
     status: project.status,
     completedCount: project.completedCount,
     lastReminderSentAt: project.lastReminderSentAt,
     now,
-  })
+  }
+  const statusLabel = getStatusLabel(statusInput)
+  const shortStatusLabel = getShortStatusLabel(statusInput)
 
   const secondary = getSecondaryIndicator(project, pendingExtraction, now)
   const activityLabel = getActivityLabel(project, now)
@@ -85,10 +96,41 @@ export function ProjectCard({
     }
   }, [menuOpen, onMenuToggle])
 
+  const statusBadge =
+    project.status === 'in_progress' ? (
+      <span
+        className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-[var(--accent-soft)] px-2 py-[3px] font-display text-[10px] font-extrabold uppercase tracking-wide text-[var(--accent)]"
+        title={statusLabel}
+      >
+        <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden>
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-75" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+        </span>
+        <span className="truncate">
+          <span className="sm:hidden">{shortStatusLabel}</span>
+          <span className="hidden sm:inline">En cours</span>
+        </span>
+      </span>
+    ) : (
+      <Badge variant={project.status} className="max-w-full truncate">
+        <span className="truncate" title={statusLabel}>
+          <span className="sm:hidden">{shortStatusLabel}</span>
+          <span className="hidden sm:inline">{statusLabel}</span>
+        </span>
+      </Badge>
+    )
+
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
+      {/* Hors de l'article (overflow-hidden) pour ne pas être tronqué par -top-2. */}
+      {isNew && (
+        <span className="pointer-events-none absolute -top-2 left-4 z-[2] inline-flex items-center gap-1 rounded-full bg-[var(--mint)] px-2 py-[2px] font-display text-[10px] font-extrabold uppercase tracking-wide text-[var(--ink)] shadow-sm">
+          Nouveau
+        </span>
+      )}
+
       <article
-        className={`group relative rounded-[var(--radius-lg)] bg-[var(--white)] p-5 shadow-[0_2px_16px_rgba(13,15,20,0.06),0_0_0_1px_rgba(13,15,20,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(13,15,20,0.08),0_0_0_1px_rgba(13,15,20,0.06)] ${
+        className={`group relative min-w-0 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--white)] p-4 shadow-[0_2px_16px_rgba(13,15,20,0.06),0_0_0_1px_rgba(13,15,20,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(13,15,20,0.08),0_0_0_1px_rgba(13,15,20,0.06)] sm:p-5 ${
           project.status === 'in_progress' ? 'ring-1 ring-[var(--accent)]/20' : ''
         }`}
       >
@@ -98,12 +140,6 @@ export function ProjectCard({
           className="absolute inset-0 z-0 rounded-[var(--radius-lg)]"
           aria-label={`Ouvrir le projet de ${project.clientName}`}
         />
-
-        {isNew && (
-          <span className="absolute -top-2 left-4 z-[1] inline-flex items-center gap-1 rounded-full bg-[var(--mint)] px-2 py-[2px] font-display text-[10px] font-extrabold uppercase tracking-wide text-[var(--ink)] shadow-sm">
-            Nouveau
-          </span>
-        )}
 
         <div className="relative z-[1] flex items-start gap-3">
           <div
@@ -116,7 +152,7 @@ export function ProjectCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <h2 className="line-clamp-2 font-display text-[17px] font-bold leading-snug text-[var(--ink)]">
+                <h2 className="line-clamp-2 break-words font-display text-[17px] font-bold leading-snug text-[var(--ink)]">
                   {displayTitle}
                 </h2>
                 {subtitleName ? (
@@ -124,11 +160,11 @@ export function ProjectCard({
                     {subtitleName}
                   </p>
                 ) : null}
-                <p className="mt-0.5 line-clamp-1 text-xs font-body text-[var(--ink-muted)]">
+                <p className="mt-0.5 min-w-0 truncate text-xs font-body text-[var(--ink-muted)]">
                   <a
                     href={mailtoHref(project.clientEmail)}
                     title={project.clientEmail}
-                    className="relative z-[1] text-[var(--accent)] underline-offset-2 hover:underline"
+                    className="relative z-[1] break-all text-[var(--accent)] underline-offset-2 hover:underline"
                   >
                     {project.clientEmail}
                   </a>
@@ -147,24 +183,11 @@ export function ProjectCard({
               </div>
 
               <div className="flex shrink-0 items-center gap-1">
-                {project.status === 'in_progress' ? (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-soft)] px-2 py-[3px] font-display text-[10px] font-extrabold uppercase tracking-wide text-[var(--accent)]"
-                    title={statusLabel}
-                  >
-                    <span className="relative flex h-1.5 w-1.5" aria-hidden>
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-75" />
-                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-                    </span>
-                    En cours
-                  </span>
-                ) : (
-                  <Badge variant={project.status}>{statusLabel}</Badge>
-                )}
+                <div className="hidden max-w-[11rem] sm:block">{statusBadge}</div>
                 <button
                   type="button"
                   onClick={onMenuToggle}
-                  className="relative z-[1] flex h-11 w-11 items-center justify-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
+                  className="relative z-[1] flex h-9 w-9 items-center justify-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)] sm:h-11 sm:w-11"
                   aria-label="Plus d'options"
                   aria-expanded={menuOpen}
                   aria-haspopup="menu"
@@ -173,13 +196,34 @@ export function ProjectCard({
                 </button>
               </div>
             </div>
+
+            <div className="mt-2 sm:hidden">{statusBadge}</div>
           </div>
         </div>
 
-        {project.nextStepLabel && project.status !== 'completed' ? (
-          <p className="relative z-[1] mt-3 text-[11px] font-body text-[var(--ink-muted)]">
-            Prochaine étape :{' '}
-            <span className="font-semibold text-[var(--ink-soft)]">{project.nextStepLabel}</span>
+        {project.blockingStepLabel &&
+        project.blockingOwner &&
+        project.blockingSince &&
+        project.status !== 'completed' ? (
+          <p
+            className={`relative z-[1] mt-3 text-[11px] font-body ${
+              isBottleneckStale({
+                label: project.blockingStepLabel,
+                owner: project.blockingOwner,
+                since: project.blockingSince,
+              }, now)
+                ? 'font-semibold text-[var(--amber)]'
+                : 'text-[var(--ink-muted)]'
+            }`}
+          >
+            {formatBottleneckLabel(
+              {
+                label: project.blockingStepLabel,
+                owner: project.blockingOwner,
+                since: project.blockingSince,
+              },
+              now,
+            )}
           </p>
         ) : null}
 

@@ -1,5 +1,13 @@
 import { supabase } from './supabase'
-import { createDraftItem, type ChecklistItemType, type DraftChecklistItem } from './checklist'
+import {
+  buildChecklistItemConfig,
+  createDraftItem,
+  readChecklistItemConfig,
+  type ChecklistItemType,
+  type DraftChecklistItem,
+} from './checklist'
+import { resolveDraftConditions } from './checklistConditions'
+import type { ChecklistItemConfig } from './checklistFields'
 
 export type AgencyChecklistTemplate = {
   id: string
@@ -15,6 +23,7 @@ type TemplateItemRow = {
   type: ChecklistItemType
   order_index: number
   contract_template_id: string | null
+  config: ChecklistItemConfig | null
 }
 
 export async function listAgencyChecklistTemplates(
@@ -48,7 +57,7 @@ export async function loadChecklistTemplateItems(
 ): Promise<DraftChecklistItem[]> {
   const { data, error } = await supabase
     .from('checklist_template_items')
-    .select('id, label, type, order_index, contract_template_id')
+    .select('id, label, type, order_index, contract_template_id, config')
     .eq('template_id', templateId)
     .order('order_index', { ascending: true })
 
@@ -57,8 +66,10 @@ export async function loadChecklistTemplateItems(
     return []
   }
 
-  return ((data ?? []) as TemplateItemRow[]).map((row) => ({
-    ...createDraftItem(row.label, row.type, {
+  const rows = (data ?? []) as TemplateItemRow[]
+
+  const drafts = rows.map((row) =>
+    createDraftItem(row.label, row.type, {
       contractSource:
         row.type === 'signature'
           ? row.contract_template_id
@@ -66,8 +77,16 @@ export async function loadChecklistTemplateItems(
             : 'default'
           : undefined,
       contractTemplateId: row.contract_template_id,
+      ...readChecklistItemConfig(row.type, row.config),
     }),
-  }))
+  )
+
+  // Les conditions référencent une position : elles ne se résolvent qu'une fois
+  // tous les brouillons créés (et donc leurs nouveaux identifiants connus).
+  return resolveDraftConditions(
+    drafts,
+    rows.map((row) => row.config),
+  )
 }
 
 async function replaceTemplateItems(templateId: string, items: DraftChecklistItem[]) {
@@ -79,6 +98,7 @@ async function replaceTemplateItems(templateId: string, items: DraftChecklistIte
     type: item.type,
     order_index: index,
     contract_template_id: item.type === 'signature' ? item.contractTemplateId ?? null : null,
+    config: buildChecklistItemConfig(item, items),
   }))
   const { error } = await supabase.from('checklist_template_items').insert(payload)
   if (error) throw new Error(error.message)

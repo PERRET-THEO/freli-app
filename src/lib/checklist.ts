@@ -1,4 +1,21 @@
-export type ChecklistItemType = 'text' | 'file' | 'signature'
+import {
+  toStoredCondition,
+  validateConditions,
+  type VisibilityCondition,
+} from './checklistConditions'
+import { isValidHttpUrl, normalizeUrl, type ChecklistItemConfig } from './checklistFields'
+import { isFreliPortalUrl } from './scheduleEmbed'
+
+export type ChecklistItemType =
+  | 'text'
+  | 'file'
+  | 'signature'
+  | 'email'
+  | 'phone'
+  | 'url'
+  | 'choice'
+  | 'payment'
+  | 'schedule'
 
 export type ContractSource = 'existing' | 'ai_generate' | 'default'
 
@@ -9,19 +26,37 @@ export type DraftChecklistItem = {
   contractTemplateId?: string | null
   contractSource?: ContractSource
   contractBrief?: string
+  choiceOptions?: string[]
+  scheduleUrl?: string
+  /** Affiche l'étape uniquement si la condition est remplie. */
+  visibleWhen?: VisibilityCondition | null
 }
 
 export const CHECKLIST_TYPE_LABELS: Record<ChecklistItemType, string> = {
   text: 'Texte',
   file: 'Fichier',
   signature: 'Contrat à signer',
+  email: 'Email',
+  phone: 'Téléphone',
+  url: 'Lien / URL',
+  choice: 'Choix dans une liste',
+  payment: 'Paiement',
+  schedule: 'Prise de rendez-vous',
 }
 
-export const CHECKLIST_TYPE_OPTIONS: { value: ChecklistItemType; label: string }[] = [
-  { value: 'text', label: 'Texte' },
-  { value: 'file', label: 'Fichier' },
-  { value: 'signature', label: 'Contrat à signer' },
-]
+export const CHECKLIST_TYPE_OPTIONS: { value: ChecklistItemType; label: string }[] = (
+  [
+    'text',
+    'email',
+    'phone',
+    'url',
+    'choice',
+    'file',
+    'signature',
+    'payment',
+    'schedule',
+  ] as ChecklistItemType[]
+).map((value) => ({ value, label: CHECKLIST_TYPE_LABELS[value] }))
 
 export type BuiltinTemplateKey =
   | 'website'
@@ -43,6 +78,7 @@ export const BUILTIN_TEMPLATES: Record<
     items: [
       { label: 'Brief', type: 'text' },
       { label: 'Logo', type: 'file' },
+      { label: 'Nom de domaine actuel', type: 'url' },
       { label: 'Accès hébergeur', type: 'text' },
       { label: 'Contrat', type: 'signature' },
       { label: 'Contenu pages', type: 'text' },
@@ -84,6 +120,8 @@ export const BUILTIN_TEMPLATES: Record<
       { label: 'Objectifs de la mission', type: 'text' },
       { label: 'Devis validé', type: 'signature' },
       { label: 'Interlocuteur principal', type: 'text' },
+      { label: 'Email de l’interlocuteur', type: 'email' },
+      { label: 'Téléphone de l’interlocuteur', type: 'phone' },
     ],
   },
   photoVideo: {
@@ -106,10 +144,22 @@ export const BUILTIN_TEMPLATES: Record<
   },
 }
 
+type DraftOverrides = Partial<
+  Pick<
+    DraftChecklistItem,
+    | 'contractSource'
+    | 'contractTemplateId'
+    | 'contractBrief'
+    | 'choiceOptions'
+    | 'scheduleUrl'
+    | 'visibleWhen'
+  >
+>
+
 export function createDraftItem(
   label: string,
   type: ChecklistItemType = 'text',
-  overrides?: Partial<Pick<DraftChecklistItem, 'contractSource' | 'contractTemplateId' | 'contractBrief'>>,
+  overrides?: DraftOverrides,
 ): DraftChecklistItem {
   const base: DraftChecklistItem = {
     id: crypto.randomUUID(),
@@ -121,6 +171,12 @@ export function createDraftItem(
     base.contractSource = overrides?.contractSource ?? 'default'
     base.contractTemplateId = overrides?.contractTemplateId ?? null
     base.contractBrief = overrides?.contractBrief ?? ''
+  }
+  if (type === 'choice') {
+    base.choiceOptions = overrides?.choiceOptions ?? []
+  }
+  if (type === 'schedule') {
+    base.scheduleUrl = overrides?.scheduleUrl ?? ''
   }
   return { ...base, ...overrides }
 }
@@ -174,6 +230,12 @@ export function buildDefaultContractBrief(clientName: string, priceEur?: number 
 const ONBOARDING_TYPE_HINTS: Record<Exclude<ChecklistItemType, 'signature'>, string> = {
   text: 'texte à fournir',
   file: 'fichier à fournir',
+  email: 'email à fournir',
+  phone: 'téléphone à fournir',
+  url: 'lien à fournir',
+  choice: 'choix à faire',
+  payment: 'paiement à régler',
+  schedule: 'rendez-vous à planifier',
 }
 
 export function getChecklistContextLines(items: DraftChecklistItem[]): string[] {
@@ -276,6 +338,13 @@ export function updateAiSignatureBrief(
 type ValidateChecklistOptions = {
   hasDefaultContract?: boolean
   aiContractsEnabled?: boolean
+  /** Prix du projet : requis pour qu'une étape « Paiement » ait un montant. */
+  priceEur?: number | null
+  /**
+   * Un modèle réutilisable n'a pas de prix : le montant est contrôlé à la
+   * création du projet, pas à l'enregistrement du modèle.
+   */
+  context?: 'project' | 'template'
 }
 
 /** Returns an error message if the checklist is invalid, otherwise null. */
@@ -283,7 +352,12 @@ export function validateChecklist(
   items: DraftChecklistItem[],
   options: ValidateChecklistOptions = {},
 ): string | null {
-  const { hasDefaultContract = false, aiContractsEnabled = false } = options
+  const {
+    hasDefaultContract = false,
+    aiContractsEnabled = false,
+    priceEur = null,
+    context = 'project',
+  } = options
 
   if (!items.length) return 'Ajoute au moins un item de checklist.'
   if (items.some((item) => !item.label.trim())) {
@@ -295,7 +369,32 @@ export function validateChecklist(
     return 'Un seul contrat généré par IA est autorisé par projet pour le moment.'
   }
 
+  const paymentCount = items.filter((item) => item.type === 'payment').length
+  if (paymentCount > 1) {
+    return 'Une seule étape de paiement par projet.'
+  }
+  if (paymentCount === 1 && context === 'project' && (!priceEur || priceEur <= 0)) {
+    return 'Renseigne un prix pour utiliser une étape de paiement.'
+  }
+
   for (const item of items) {
+    if (item.type === 'choice') {
+      const options = (item.choiceOptions ?? []).filter((option) => option.trim())
+      if (options.length < 2) {
+        return `L'item « ${item.label.trim()} » doit proposer au moins deux options.`
+      }
+    }
+
+    if (item.type === 'schedule') {
+      const scheduleUrl = item.scheduleUrl ?? ''
+      if (isFreliPortalUrl(scheduleUrl)) {
+        return `L'item « ${item.label.trim()} » : collez un lien Calendly ou Cal.com, pas le lien du portail Freli.`
+      }
+      if (!isValidHttpUrl(scheduleUrl)) {
+        return `L'item « ${item.label.trim()} » nécessite un lien de réservation valide.`
+      }
+    }
+
     if (item.type !== 'signature') continue
 
     const source = item.contractSource ?? 'default'
@@ -318,7 +417,7 @@ export function validateChecklist(
     }
   }
 
-  return null
+  return validateConditions(items)
 }
 
 export function buildChecklistItemValue(item: DraftChecklistItem): string | null {
@@ -330,4 +429,42 @@ export function buildChecklistItemValue(item: DraftChecklistItem): string | null
     return JSON.stringify({ template_id: item.contractTemplateId, status: 'pending' })
   }
   return null
+}
+
+/**
+ * Sérialise la configuration d'une étape vers la colonne `config` (JSONB).
+ * `siblings` sert à convertir la condition d'affichage en position source.
+ */
+export function buildChecklistItemConfig(
+  item: DraftChecklistItem,
+  siblings: DraftChecklistItem[] = [],
+): ChecklistItemConfig | null {
+  const config: ChecklistItemConfig = {}
+
+  if (item.type === 'choice') {
+    const choiceOptions = (item.choiceOptions ?? [])
+      .map((option) => option.trim())
+      .filter(Boolean)
+    if (choiceOptions.length) config.choiceOptions = choiceOptions
+  }
+
+  if (item.type === 'schedule') {
+    const scheduleUrl = normalizeUrl(item.scheduleUrl ?? '')
+    if (scheduleUrl) config.scheduleUrl = scheduleUrl
+  }
+
+  const visibleWhen = toStoredCondition(item, siblings)
+  if (visibleWhen) config.visibleWhen = visibleWhen
+
+  return Object.keys(config).length ? config : null
+}
+
+/** Relit la colonne `config` vers les champs de brouillon correspondants. */
+export function readChecklistItemConfig(
+  type: ChecklistItemType,
+  config: ChecklistItemConfig | null | undefined,
+): Pick<DraftChecklistItem, 'choiceOptions' | 'scheduleUrl'> {
+  if (type === 'choice') return { choiceOptions: config?.choiceOptions ?? [] }
+  if (type === 'schedule') return { scheduleUrl: config?.scheduleUrl ?? '' }
+  return {}
 }

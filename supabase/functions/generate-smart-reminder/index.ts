@@ -116,6 +116,34 @@ serve(async (req) => {
       contextLines.push(`Étape bloquante : « ${body.blockingStepLabel} »`)
     }
 
+    // Nommer les étapes manquantes évite les relances vagues « il reste des
+    // choses ». La liste complète sert à écarter les étapes conditionnelles
+    // non déclenchées, qu'on ne doit pas réclamer.
+    const { data: allRows } = await supabase
+      .from('checklist_items')
+      .select('label, completed, value, review_note, review_status, config')
+      .eq('project_id', project.id)
+      .order('order_index', { ascending: true })
+
+    const pendingItems = getPendingVisibleItems(allRows ?? [])
+    if (pendingItems.length > 0) {
+      contextLines.push(
+        `Étapes encore attendues : ${pendingItems.map((row) => `« ${row.label} »`).join(', ')}`,
+      )
+    }
+
+    const corrections = pendingItems.filter(
+      (row) => row.review_status === 'rejected' && String(row.review_note ?? '').trim(),
+    )
+    if (corrections.length > 0) {
+      contextLines.push(
+        `Corrections demandées par l'agence : ${corrections
+          .map((row) => `« ${row.label} » — ${row.review_note}`)
+          .join(' ; ')}`,
+        "Mentionne explicitement les corrections attendues, sans reprocher quoi que ce soit au client.",
+      )
+    }
+
     const result = await chatJsonSchema<{ subject?: string; body?: string }>({
       model: MODEL_SMALL,
       system: SYSTEM_PROMPT,

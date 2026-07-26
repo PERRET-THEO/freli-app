@@ -48,8 +48,14 @@ export function WebhookSetupGuide() {
         })}
       </div>
       <p className="mt-2.5 text-[var(--ink-muted)]">
-        Freli envoie un JSON (<code>event</code>, <code>timestamp</code>, <code>data</code>). Mappez les
-        champs dans votre outil (ex. <code>data.project.client_email</code>).
+        Freli envoie un JSON (<code>event</code>, <code>timestamp</code>, <code>data</code>) vers
+        Zapier/Make/n8n. Pour Slack Incoming Webhooks, le message est formaté automatiquement. Mappez
+        les champs dans votre outil (ex. <code>data.project.client_email</code>).
+      </p>
+      <p className="mt-1.5 text-[var(--ink-muted)]">
+        Le bouton <strong>Tester</strong> envoie l&apos;événement <code>webhook.test</code> (pas
+        l&apos;événement métier souscrit) — utile pour un Catch Hook, pas pour un filtre Zap sur{' '}
+        <code>project.completed</code>.
       </p>
     </div>
   )
