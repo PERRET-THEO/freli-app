@@ -36,10 +36,11 @@ export function isStoredCondition(value: unknown): value is StoredCondition {
   )
 }
 
+/** Forme minimale pour l'évaluation runtime ; `visibleWhen` est validé via `isStoredCondition`. */
 type RuntimeItem = {
   completed: boolean
   value: string | null
-  config?: { visibleWhen?: StoredCondition | null } | null
+  config?: { visibleWhen?: unknown } | null
 }
 
 function storedCondition(item: RuntimeItem): StoredCondition | null {

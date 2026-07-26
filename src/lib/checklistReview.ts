@@ -29,16 +29,20 @@ export function isReviewableType(type: string): boolean {
   return !NON_REVIEWABLE_TYPES.has(type)
 }
 
-export function getReviewStatus(item: ReviewableItem): ReviewStatus {
+export function getReviewStatus(
+  item: Pick<ReviewableItem, 'review_status'>,
+): ReviewStatus {
   return item.review_status ?? 'pending'
 }
 
 /** Transmis par le client et encore non arbitré par l'agence. */
-export function isAwaitingReview(item: ReviewableItem): boolean {
+export function isAwaitingReview(
+  item: Pick<ReviewableItem, 'completed' | 'type' | 'review_status'>,
+): boolean {
   return item.completed && isReviewableType(item.type) && getReviewStatus(item) === 'pending'
 }
 
-export function isRejected(item: ReviewableItem): boolean {
+export function isRejected(item: Pick<ReviewableItem, 'review_status'>): boolean {
   return getReviewStatus(item) === 'rejected'
 }
 

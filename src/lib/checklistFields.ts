@@ -1,5 +1,5 @@
 import type { ChecklistItemType } from './checklist'
-import type { VisibilityCondition } from './checklistConditions'
+import type { StoredCondition } from './checklistConditions'
 
 /** Étapes dont la réponse est une valeur saisie par le client (stockée dans `value`). */
 const INPUT_TYPES = new Set<ChecklistItemType>(['text', 'email', 'phone', 'url', 'choice'])
@@ -15,11 +15,15 @@ export function isSingleLineType(type: ChecklistItemType): boolean {
   return SINGLE_LINE_TYPES.has(type)
 }
 
-/** Configuration optionnelle portée par une étape (colonne `config` JSONB). */
+/**
+ * Configuration optionnelle portée par une étape (colonne `config` JSONB).
+ * `visibleWhen` est la forme persistée (`sourceIndex`) — la forme builder
+ * (`itemId`) vit sur `DraftChecklistItem.visibleWhen`.
+ */
 export type ChecklistItemConfig = {
   choiceOptions?: string[]
   scheduleUrl?: string
-  visibleWhen?: VisibilityCondition | null
+  visibleWhen?: StoredCondition | null
 }
 
 export const FIELD_PLACEHOLDERS: Partial<Record<ChecklistItemType, string>> = {
