@@ -5,9 +5,9 @@ import { siteConfig } from '../../lib/seo/siteConfig'
 import { Button } from '../ui'
 
 const NAV_LINKS = [
-  { href: '#features', label: 'Fonctionnalités', route: false },
-  { href: '#integrations', label: 'Intégrations', route: false },
-  { href: '#how-it-works', label: 'Comment ça marche', route: false },
+  { href: '/#features', label: 'Fonctionnalités', route: true },
+  { href: '/#integrations', label: 'Intégrations', route: true },
+  { href: '/#how-it-works', label: 'Comment ça marche', route: true },
   { href: '/tarifs', label: 'Tarifs', route: true },
   { href: siteConfig.calendlyUrl, label: 'Réserver une démo', route: false },
 ]

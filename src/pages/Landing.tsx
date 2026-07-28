@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
 import { Navbar } from '../components/layout/Navbar'
 import { FeatureVisual, type FeatureVisualId } from '../components/landing/FeatureVisuals'
@@ -200,6 +201,19 @@ const testimonials = [
 
 export function Landing() {
   const reduceMotion = useReducedMotion()
+  const location = useLocation()
+
+  useEffect(() => {
+    const id = location.hash.replace(/^#/, '')
+    if (!id) return
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({
+        behavior: reduceMotion ? 'auto' : 'smooth',
+        block: 'start',
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [location.hash, reduceMotion])
 
   return (
     <div className="min-h-screen bg-[var(--ink)] text-[var(--white)]">
@@ -262,7 +276,7 @@ export function Landing() {
         </RevealStagger>
 
         <Reveal>
-          <section id="how-it-works" className="mt-24 md:mt-32">
+          <section id="how-it-works" className="mt-24 scroll-mt-24 md:mt-32">
             <div className="mx-auto max-w-3xl text-center">
               <span className="inline-flex rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs font-display font-bold uppercase tracking-wide text-[var(--accent)]">
                 Comment ça marche
@@ -722,7 +736,7 @@ export function Landing() {
 
         <section
           id="features"
-          className="mt-24 rounded-[var(--radius-xl)] bg-[var(--surface)] px-6 py-16 sm:px-10 sm:py-20 md:mt-32 md:py-24"
+          className="mt-24 scroll-mt-24 rounded-[var(--radius-xl)] bg-[var(--surface)] px-6 py-16 sm:px-10 sm:py-20 md:mt-32 md:py-24"
         >
           <Reveal>
             <div className="mx-auto max-w-3xl text-center">
@@ -768,7 +782,7 @@ export function Landing() {
 
         <section
           id="integrations"
-          className="mt-24 rounded-[var(--radius-xl)] bg-[var(--ink-soft)] px-6 py-16 sm:px-10 sm:py-20 md:mt-32 md:py-24"
+          className="mt-24 scroll-mt-24 rounded-[var(--radius-xl)] bg-[var(--ink-soft)] px-6 py-16 sm:px-10 sm:py-20 md:mt-32 md:py-24"
         >
           <Reveal>
             <div className="mx-auto max-w-3xl text-center">
@@ -920,9 +934,9 @@ export function Landing() {
               </span>
             </div>
             <div className="flex flex-wrap gap-5 text-sm font-body text-[var(--surface-warm)]">
-              <a href="#features">Fonctionnalités</a>
-              <a href="#integrations">Intégrations</a>
-              <a href="#how-it-works">Comment ça marche</a>
+              <Link to="/#features">Fonctionnalités</Link>
+              <Link to="/#integrations">Intégrations</Link>
+              <Link to="/#how-it-works">Comment ça marche</Link>
               <Link to="/tarifs">Tarifs</Link>
               <Link to="/comparatifs">Comparatifs</Link>
               <Link to="/demo">Réserver une démo</Link>

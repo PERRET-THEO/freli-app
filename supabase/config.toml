@@ -109,3 +109,23 @@ verify_jwt = true
 # Recherche d'entreprises via l'API Gouv (dashboard agence)
 [functions.search-companies]
 verify_jwt = true
+
+# Abonnement Freli SaaS — Checkout public (pricing) ou admin JWT
+[functions.create-saas-checkout]
+verify_jwt = false
+
+[functions.verify-saas-checkout]
+verify_jwt = false
+
+[functions.complete-saas-signup]
+verify_jwt = false
+
+[functions.list-subscription-leads]
+verify_jwt = true
+
+[functions.resend-subscription-invite]
+verify_jwt = true
+
+# One-shot setup Prices SaaS (protégé par header x-freli-bootstrap)
+[functions.bootstrap-saas-prices]
+verify_jwt = false

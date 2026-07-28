@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
-import { AgencySessionProvider } from './contexts/AgencyContext'
+import { AgencySessionProvider, useAgencySession } from './contexts/AgencyContext'
+import { RequireBillingAccess } from './components/billing/RequireBillingAccess'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { resolveAuthCallbackPath } from './lib/authCallbackRoute'
 import { supabase } from './lib/supabase'
@@ -55,6 +56,24 @@ function RequireAuth() {
   }
 
   return isAuthenticated ? <Outlet /> : <Navigate to="/signin" replace />
+}
+
+function BillingGateOutlet() {
+  const { loading, agency } = useAgencySession()
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
+        <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
+      </div>
+    )
+  }
+
+  return (
+    <RequireBillingAccess agencyId={agency?.id ?? null}>
+      <Outlet />
+    </RequireBillingAccess>
+  )
 }
 
 function RedirectIfAuthenticated() {
@@ -147,6 +166,7 @@ function App() {
       <Route path="/auth" element={<Navigate to="/signin" replace />} />
       <Route element={<RequireAuth />}>
         <Route element={<AgencySessionProvider><Outlet /></AgencySessionProvider>}>
+        <Route element={<BillingGateOutlet />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/dashboard/new" element={<NewProject />} />
         <Route path="/dashboard/project/:id" element={<ProjectDetail />} />
@@ -155,6 +175,7 @@ function App() {
         <Route path="/dashboard/clients" element={<Clients />} />
         <Route path="/dashboard/client/:id" element={<ClientDetail />} />
         <Route path="/dashboard/integrations" element={<Integrations />} />
+        </Route>
         </Route>
       </Route>
       <Route path="/p/:token" element={<ClientPortal />} />

@@ -3,23 +3,31 @@ import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { AuthError, Session } from '@supabase/supabase-js'
 import { getOrCreateAgency } from '../lib/agency'
+import {
+  completeSaasSignup,
+  verifySaasCheckout,
+} from '../lib/billing/saasCheckout'
 import { supabase } from '../lib/supabase'
 import { Button, Card, Input } from '../components/ui'
 
 type SignUpPhase =
   | 'verifying'
   | 'form'
+  | 'saas_form'
   | 'invalid'
   | 'expired'
   | 'already_registered'
+  | 'payment_pending'
 
 function parseHashParams(): URLSearchParams {
   return new URLSearchParams(window.location.hash.replace(/^#/, ''))
 }
 
-/** Nettoie l’URL après établissement de session (tokens, codes). */
-function replaceSignupUrlClean(): void {
-  window.history.replaceState(null, '', `${window.location.pathname}`)
+function replaceSignupUrlClean(keepSessionId?: string | null): void {
+  const next = keepSessionId
+    ? `${window.location.pathname}?session_id=${encodeURIComponent(keepSessionId)}`
+    : `${window.location.pathname}`
+  window.history.replaceState(null, '', next)
 }
 
 async function confirmSessionThenCleanUrl(): Promise<Session | null> {
@@ -86,8 +94,7 @@ async function establishInviteSession(): Promise<{ session: Session | null; phas
   if (early?.user) return { session: early, phase: 'form' }
 
   const hasRecoverableSignal = Boolean(code || tokenHash || hasImplicitHash)
-  const otpExpiredButHasTokens =
-    errorCode === 'otp_expired' && hasImplicitHash
+  const otpExpiredButHasTokens = errorCode === 'otp_expired' && hasImplicitHash
 
   if (oauthErr && !hasRecoverableSignal && !otpExpiredButHasTokens) {
     if (oauthDesc.includes('expired') || oauthErr === 'access_denied') {
@@ -156,8 +163,10 @@ export function SignUp() {
   const [emailLocked, setEmailLocked] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [agencyName, setAgencyName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [saasSessionId, setSaasSessionId] = useState<string | null>(null)
   const submitLock = useRef(false)
   const ranRef = useRef(false)
   const authListenerRef = useRef<{ unsubscribe: () => void } | null>(null)
@@ -171,6 +180,38 @@ export function SignUp() {
   const runEstablish = useCallback(async () => {
     const url = new URL(window.location.href)
     const hashParams = parseHashParams()
+    const sessionId = url.searchParams.get('session_id')?.trim() ?? ''
+
+    // Self-serve post-Checkout : prioritaire sur le flux invite.
+    if (sessionId.startsWith('cs_')) {
+      setSaasSessionId(sessionId)
+      const verified = await verifySaasCheckout(sessionId)
+      if ('error' in verified) {
+        setError(verified.error)
+        setPhase('invalid')
+        return
+      }
+      if (!verified.paid) {
+        setPhase('payment_pending')
+        return
+      }
+      if (verified.existingUser) {
+        setEmailLocked(verified.email)
+        await completeSaasSignup({ sessionId, linkOnly: true })
+        setPhase('already_registered')
+        return
+      }
+      if (!verified.email) {
+        setError('Email introuvable sur le paiement. Contactez le support.')
+        setPhase('invalid')
+        return
+      }
+      setEmailLocked(verified.email)
+      replaceSignupUrlClean(sessionId)
+      setPhase('saas_form')
+      return
+    }
+
     const emailParam = url.searchParams.get('email') ?? hashParams.get('email')
     const emailDecoded = emailParam
       ? decodeURIComponent(emailParam.replace(/\+/g, ' ')).trim()
@@ -193,7 +234,7 @@ export function SignUp() {
   }, [runEstablish])
 
   useEffect(() => {
-    if (phase !== 'verifying') {
+    if (phase !== 'verifying' || saasSessionId) {
       authListenerRef.current?.unsubscribe()
       authListenerRef.current = null
       return
@@ -207,10 +248,7 @@ export function SignUp() {
       : ''
 
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      if (
-        (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
-        session?.user
-      ) {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
         void finishWithSession(session, emailDecoded)
       }
     })
@@ -219,9 +257,9 @@ export function SignUp() {
     return () => {
       data.subscription.unsubscribe()
     }
-  }, [phase, finishWithSession])
+  }, [phase, finishWithSession, saasSessionId])
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleInviteSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (submitLock.current) return
     setError(null)
@@ -265,12 +303,78 @@ export function SignUp() {
     }
   }
 
+  const handleSaasSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (submitLock.current || !saasSessionId) return
+    setError(null)
+
+    if (password !== passwordConfirm) {
+      setError('Les mots de passe ne correspondent pas.')
+      return
+    }
+    if (password.length < 6) {
+      setError('Le mot de passe doit contenir au moins 6 caractères.')
+      return
+    }
+
+    submitLock.current = true
+    setLoading(true)
+    try {
+      const result = await completeSaasSignup({
+        sessionId: saasSessionId,
+        password,
+        agencyName: agencyName.trim() || undefined,
+      })
+      if ('error' in result) {
+        setError(result.error)
+        return
+      }
+      if (result.alreadyRegistered) {
+        setPhase('already_registered')
+        return
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: result.email,
+        password,
+      })
+      if (signInError) {
+        setError(signInError.message)
+        setPhase('already_registered')
+        return
+      }
+      navigate('/dashboard', { replace: true })
+    } finally {
+      setLoading(false)
+      submitLock.current = false
+    }
+  }
+
   if (phase === 'verifying') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
         <p className="text-sm font-body text-[var(--ink-muted)]">
-          Validation de ton invitation…
+          {saasSessionId ? 'Vérification du paiement…' : 'Validation de ton invitation…'}
         </p>
+      </div>
+    )
+  }
+
+  if (phase === 'payment_pending') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+        <Card className="w-full max-w-md text-center">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--ink)]">
+            Paiement en cours
+          </h1>
+          <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
+            Le paiement n&apos;est pas encore confirmé. Réessaie dans un instant ou reviens depuis
+            l&apos;email de confirmation.
+          </p>
+          <Link to="/tarifs">
+            <Button className="mt-6 w-full">Retour aux tarifs</Button>
+          </Link>
+        </Card>
       </div>
     )
   }
@@ -301,7 +405,9 @@ export function SignUp() {
             Compte déjà actif
           </h1>
           <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
-            Tu peux te connecter avec ton email et ton mot de passe.
+            {emailLocked
+              ? `Connecte-toi avec ${emailLocked} pour accéder à Freli.`
+              : 'Tu peux te connecter avec ton email et ton mot de passe.'}
           </p>
           <Link to="/signin">
             <Button className="mt-6 w-full">Se connecter</Button>
@@ -319,12 +425,71 @@ export function SignUp() {
             Lien invalide
           </h1>
           <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
-            Ce lien d&apos;invitation n&apos;est pas valide. Ouvre le lien depuis le dernier email
-            d&apos;invitation reçu.
+            {error ??
+              'Ce lien n’est pas valide. Ouvre le lien depuis ton email d’invitation ou finalise le paiement depuis la page tarifs.'}
           </p>
           <Link to="/signin">
             <Button className="mt-6 w-full">Aller à la connexion</Button>
           </Link>
+        </Card>
+      </div>
+    )
+  }
+
+  if (phase === 'saas_form') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+        <Card className="w-full max-w-md">
+          <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
+            Crée ton compte Freli
+          </h1>
+          <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
+            Paiement confirmé. Choisis ton mot de passe pour accéder à Freli.
+          </p>
+
+          <form className="mt-6 space-y-3" onSubmit={handleSaasSubmit}>
+            <div>
+              <label className="mb-1 block text-xs font-body text-[var(--ink-muted)]">Email</label>
+              <Input
+                type="email"
+                value={emailLocked}
+                readOnly
+                className="bg-[var(--surface-warm)]"
+                autoComplete="username"
+              />
+            </div>
+            <Input
+              type="text"
+              placeholder="Nom de l’agence (optionnel)"
+              value={agencyName}
+              onChange={(e) => setAgencyName(e.target.value)}
+              autoComplete="organization"
+            />
+            <Input
+              type="password"
+              placeholder="Mot de passe"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              autoComplete="new-password"
+            />
+            <Input
+              type="password"
+              placeholder="Confirmer le mot de passe"
+              value={passwordConfirm}
+              onChange={(e) => setPasswordConfirm(e.target.value)}
+              required
+              minLength={6}
+              autoComplete="new-password"
+            />
+
+            {error && <p className="text-sm font-body text-[var(--amber)]">{error}</p>}
+
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? 'Création…' : 'Accéder à Freli'}
+            </Button>
+          </form>
         </Card>
       </div>
     )
@@ -340,7 +505,7 @@ export function SignUp() {
           Choisis ton mot de passe pour activer ton compte.
         </p>
 
-        <form className="mt-6 space-y-3" onSubmit={handleSubmit}>
+        <form className="mt-6 space-y-3" onSubmit={handleInviteSubmit}>
           <div>
             <label className="mb-1 block text-xs font-body text-[var(--ink-muted)]">Email</label>
             <Input

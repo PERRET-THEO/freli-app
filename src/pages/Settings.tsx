@@ -8,7 +8,10 @@ import { ReminderSettingsPanel } from '../components/settings/ReminderSettingsPa
 import { AgencyLegalProfilePanel } from '../components/settings/AgencyLegalProfilePanel'
 import { AiModulesPanel, type AiModuleFlags } from '../components/settings/AiModulesPanel'
 import { TeamMembersPanel } from '../components/settings/TeamMembersPanel'
+import { AdminSubscriptionPanel } from '../components/settings/AdminSubscriptionPanel'
+import { BillingStatusPanel } from '../components/settings/BillingStatusPanel'
 import { SettingsNav } from '../components/settings/SettingsNav'
+import { FRELI_SUBSCRIPTION } from '../lib/billing/entitlements'
 import { SettingsSection } from '../components/settings/SettingsSection'
 import { SettingsSkeleton } from '../components/settings/SettingsSkeleton'
 import { useAgencySession } from '../contexts/AgencyContext'
@@ -474,7 +477,17 @@ export function Settings() {
     )
   }
 
-  const planLabel = agency?.plan?.trim() || 'Accès Freli'
+  const planLabel =
+    agency?.plan === 'freli'
+      ? FRELI_SUBSCRIPTION.name
+      : agency?.plan?.trim() || 'Accès Freli'
+
+  const inviteAdminEmails = (import.meta.env.VITE_INVITE_ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((e: string) => e.trim().toLowerCase())
+    .filter(Boolean)
+  const isInviteAdmin =
+    Boolean(accountEmail) && inviteAdminEmails.includes(accountEmail.trim().toLowerCase())
 
   return (
     <DashboardLayout title="Paramètres" subtitle="Agence, portail client et compte" maxWidth="5xl">
@@ -682,6 +695,30 @@ export function Settings() {
             </SettingsSection>
 
             <SettingsSection
+              id="settings-abonnement"
+              icon="💳"
+              title="Abonnement Freli"
+              description="Votre abonnement logiciel — distinct des paiements clients (Stripe Connect)."
+            >
+              {agency?.id ? <BillingStatusPanel agencyId={agency.id} /> : null}
+              {isInviteAdmin ? (
+                <div className="mt-6 border-t border-[var(--border)] pt-6">
+                  <h3 className="mb-3 font-display text-sm font-bold text-[var(--ink)]">
+                    Admin — liens de paiement
+                  </h3>
+                  <AdminSubscriptionPanel
+                    onFeedback={(type, text) => {
+                      showToast(text)
+                      if (type === 'error') {
+                        /* toast only */
+                      }
+                    }}
+                  />
+                </div>
+              ) : null}
+            </SettingsSection>
+
+            <SettingsSection
               id="settings-compte"
               icon="👤"
               title="Mon compte"
@@ -748,8 +785,8 @@ export function Settings() {
               description="Support, abonnement et documents légaux."
             >
               <p className="text-sm font-body leading-relaxed text-[var(--ink-muted)]">
-                Freli est une application sur invitation. Pour toute question sur votre abonnement ou
-                votre accès, contactez le support.
+                Questions sur votre abonnement Freli ou votre accès ? Contactez le support. Les
+                paiements de vos clients se configurent dans Intégrations (Stripe Connect).
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <a

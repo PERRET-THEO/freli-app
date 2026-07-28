@@ -5,6 +5,7 @@ const SECTIONS = [
   { id: 'settings-portail', label: 'Portail client' },
   { id: 'settings-relances', label: 'Relances' },
   { id: 'settings-ia', label: 'IA' },
+  { id: 'settings-abonnement', label: 'Abonnement' },
   { id: 'settings-compte', label: 'Compte' },
   { id: 'settings-aide', label: 'Aide' },
 ] as const

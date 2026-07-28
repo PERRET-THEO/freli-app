@@ -1,4 +1,5 @@
 import { Button } from '../ui'
+import { FRELI_AI_ADDON } from '../../lib/billing/entitlements'
 
 export type AiModuleFlags = {
   extraction: boolean
@@ -55,7 +56,9 @@ export function AiModulesPanel({
         <p className="mt-1.5 text-xs font-body leading-relaxed text-[var(--ink-muted)]">
           Chaque module est indépendant et activable séparément. Les traitements IA sont exécutés
           côté serveur et une validation humaine est toujours requise avant toute action visible
-          par vos clients.
+          par vos clients. Add-on : {FRELI_AI_ADDON.monthlyLabelHt} / mois (
+          {FRELI_AI_ADDON.includedCreditsPerMonth} crédits) — à choisir lors de la souscription sur
+          la page tarifs.
         </p>
       </div>
 
