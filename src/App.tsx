@@ -3,6 +3,8 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AgencySessionProvider, useAgencySession } from './contexts/AgencyContext'
 import { RequireBillingAccess } from './components/billing/RequireBillingAccess'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { MarketingPageTransition } from './components/layout/MarketingPageTransition'
+import { ScrollToTop } from './components/layout/ScrollToTop'
 import { resolveAuthCallbackPath } from './lib/authCallbackRoute'
 import { supabase } from './lib/supabase'
 import { About } from './pages/About'
@@ -145,17 +147,20 @@ function LandingEntry() {
 function App() {
   return (
     <ErrorBoundary>
+      <ScrollToTop />
       <Routes>
-      <Route path="/" element={<AppRoot />} />
-      <Route path="/demo" element={<Demo />} />
-      <Route path="/a-propos" element={<About />} />
-      <Route path="/faq" element={<Faq />} />
-      <Route path="/tarifs" element={<Pricing />} />
-      <Route path="/comparatifs" element={<ComparisonsHub />} />
-      <Route path="/vs/:slug" element={<ComparisonDetail />} />
-      <Route path="/mentions-legales" element={<LegalNotice />} />
-      <Route path="/confidentialite" element={<PrivacyPolicy />} />
-      <Route path="/conditions-utilisation" element={<TermsOfUse />} />
+      <Route element={<MarketingPageTransition />}>
+        <Route path="/" element={<AppRoot />} />
+        <Route path="/demo" element={<Demo />} />
+        <Route path="/a-propos" element={<About />} />
+        <Route path="/faq" element={<Faq />} />
+        <Route path="/tarifs" element={<Pricing />} />
+        <Route path="/comparatifs" element={<ComparisonsHub />} />
+        <Route path="/vs/:slug" element={<ComparisonDetail />} />
+        <Route path="/mentions-legales" element={<LegalNotice />} />
+        <Route path="/confidentialite" element={<PrivacyPolicy />} />
+        <Route path="/conditions-utilisation" element={<TermsOfUse />} />
+      </Route>
       <Route element={<RedirectIfAuthenticated />}>
         <Route path="/signin" element={<SignIn />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />

@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react'
+import { BillingIntervalToggle } from '../components/billing/BillingIntervalToggle'
 import { Navbar } from '../components/layout/Navbar'
 import { SeoHead } from '../components/seo/SeoHead'
 import { Button } from '../components/ui'
@@ -11,11 +13,39 @@ import {
 } from '../lib/billing/entitlements'
 import { createSaasCheckout } from '../lib/billing/saasCheckout'
 
+const EASE = [0.32, 0.72, 0, 1] as const
+
+const priceVariants: Variants = {
+  enter: (direction: number) => ({
+    opacity: 0,
+    y: direction === 0 ? 0 : 8 * direction,
+  }),
+  center: { opacity: 1, y: 0 },
+  exit: (direction: number) => ({
+    opacity: 0,
+    y: direction === 0 ? 0 : -8 * direction,
+  }),
+}
+
+const detailVariants: Variants = {
+  enter: (direction: number) => ({
+    opacity: 0,
+    y: direction === 0 ? 0 : 4 * direction,
+  }),
+  center: { opacity: 1, y: 0 },
+  exit: (direction: number) => ({
+    opacity: 0,
+    y: direction === 0 ? 0 : -4 * direction,
+  }),
+}
+
 export function Pricing() {
+  const reduceMotion = useReducedMotion()
   const [interval, setInterval] = useState<BillingInterval>('month')
   const [includeAi, setIncludeAi] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [direction, setDirection] = useState(0)
 
   const baseCents =
     interval === 'month'
@@ -32,6 +62,32 @@ export function Pricing() {
     })
     return interval === 'month' ? `${euros} € HT / mois` : `${euros} € HT / an`
   }, [interval, totalCents])
+
+  const detailKey = `${interval}-${includeAi ? 'ai' : 'base'}`
+  const monthlyEquivalent = ((totalCents / 100 / 12)).toLocaleString('fr-FR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+
+  const motionDirection = reduceMotion ? 0 : direction
+
+  const transition = reduceMotion
+    ? { duration: 0 }
+    : { duration: 0.22, ease: EASE }
+
+  const detailTransition = reduceMotion
+    ? { duration: 0 }
+    : { duration: 0.2, ease: EASE }
+
+  const handleIntervalChange = (next: BillingInterval) => {
+    setDirection(next === 'year' ? 1 : -1)
+    setInterval(next)
+  }
+
+  const handleIncludeAiChange = (checked: boolean) => {
+    setDirection(0)
+    setIncludeAi(checked)
+  }
 
   const handleSubscribe = async () => {
     setError(null)
@@ -77,30 +133,14 @@ export function Pricing() {
           paiement selon votre situation.
         </p>
 
-        <div className="mt-8 inline-flex rounded-full border border-[var(--ink-soft)] p-1">
-          <button
-            type="button"
-            onClick={() => setInterval('month')}
-            className={`rounded-full px-4 py-1.5 text-sm font-body transition ${
-              interval === 'month'
-                ? 'bg-[var(--accent)] text-[var(--white)]'
-                : 'text-[var(--surface-warm)] hover:text-[var(--white)]'
-            }`}
-          >
-            Mensuel
-          </button>
-          <button
-            type="button"
-            onClick={() => setInterval('year')}
-            className={`rounded-full px-4 py-1.5 text-sm font-body transition ${
-              interval === 'year'
-                ? 'bg-[var(--accent)] text-[var(--white)]'
-                : 'text-[var(--surface-warm)] hover:text-[var(--white)]'
-            }`}
-          >
-            Annuel (−{FRELI_SUBSCRIPTION.yearlyDiscountPercent} %)
-          </button>
-        </div>
+        <BillingIntervalToggle
+          className="mt-8"
+          value={interval}
+          onChange={handleIntervalChange}
+          yearLabel={`Annuel (−${FRELI_SUBSCRIPTION.yearlyDiscountPercent} %)`}
+          layoutId="pricing-billing-interval"
+          variant="dark"
+        />
 
         <article className="mt-6 rounded-[var(--radius-lg)] border border-[var(--accent)] bg-[rgba(91,110,245,0.12)] p-6 sm:p-8">
           <p className="text-xs font-display font-bold uppercase tracking-wide text-[var(--accent)]">
@@ -109,25 +149,52 @@ export function Pricing() {
           <h2 className="mt-2 font-display text-3xl font-extrabold">
             {FRELI_SUBSCRIPTION.name}
           </h2>
-          <p className="mt-4 font-display text-3xl font-bold">{priceLabel}</p>
-          <p className="mt-1 text-xs font-body text-[var(--surface-warm)]">
-            {interval === 'month' ? (
-              <>
-                Base {FRELI_SUBSCRIPTION.monthlyLabelHt}
-                {includeAi ? ` + IA ${FRELI_AI_ADDON.monthlyLabelHt}` : ''}
-              </>
-            ) : (
-              <>
-                Base {FRELI_SUBSCRIPTION.yearlyLabelHt}
-                {includeAi ? ` + IA ${FRELI_AI_ADDON.yearlyLabelHt}` : ''} · soit{' '}
-                {((totalCents / 100 / 12)).toLocaleString('fr-FR', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}{' '}
-                € HT / mois
-              </>
-            )}
-          </p>
+
+          <div className="relative mt-4 h-[2.25rem] overflow-hidden">
+            <AnimatePresence initial={false} custom={motionDirection}>
+              <motion.p
+                key={priceLabel}
+                custom={motionDirection}
+                variants={priceVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={transition}
+                className="absolute inset-0 font-display text-3xl font-bold"
+              >
+                {priceLabel}
+              </motion.p>
+            </AnimatePresence>
+          </div>
+
+          <div className="relative mt-1 min-h-[2.75rem] overflow-hidden">
+            <AnimatePresence initial={false} custom={motionDirection}>
+              <motion.p
+                key={detailKey}
+                custom={motionDirection}
+                variants={detailVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={detailTransition}
+                className="absolute inset-x-0 top-0 text-xs font-body text-[var(--surface-warm)]"
+              >
+                {interval === 'month' ? (
+                  <>
+                    Base {FRELI_SUBSCRIPTION.monthlyLabelHt}
+                    {includeAi ? ` + IA ${FRELI_AI_ADDON.monthlyLabelHt}` : ''}
+                  </>
+                ) : (
+                  <>
+                    Base {FRELI_SUBSCRIPTION.yearlyLabelHt}
+                    {includeAi ? ` + IA ${FRELI_AI_ADDON.yearlyLabelHt}` : ''} · soit{' '}
+                    {monthlyEquivalent} € HT / mois
+                  </>
+                )}
+              </motion.p>
+            </AnimatePresence>
+          </div>
+
           <p className="mt-2 text-xs font-body text-[var(--surface-warm)]">
             TVA calculée lors du paiement
           </p>
@@ -143,11 +210,17 @@ export function Pricing() {
             ))}
           </ul>
 
-          <label className="mt-8 flex cursor-pointer items-start gap-3 rounded-[var(--radius-md)] border border-[var(--ink-soft)] bg-[rgba(0,0,0,0.2)] p-4">
+          <label
+            className={`mt-8 flex cursor-pointer items-start gap-3 rounded-[var(--radius-md)] border p-4 transition-colors duration-200 ${
+              includeAi
+                ? 'border-[var(--accent)] bg-[rgba(91,110,245,0.28)] ring-1 ring-[var(--accent)]/40'
+                : 'border-[var(--ink-soft)] bg-[rgba(0,0,0,0.2)]'
+            }`}
+          >
             <input
               type="checkbox"
               checked={includeAi}
-              onChange={(e) => setIncludeAi(e.target.checked)}
+              onChange={(e) => handleIncludeAiChange(e.target.checked)}
               className="mt-1 h-4 w-4 rounded border-[var(--ink-soft)] accent-[var(--accent)]"
             />
             <span>

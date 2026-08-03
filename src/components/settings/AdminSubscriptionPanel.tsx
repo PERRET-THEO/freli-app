@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { BillingIntervalToggle } from '../billing/BillingIntervalToggle'
 import { Button, Input } from '../ui'
 import {
   FRELI_AI_ADDON,
@@ -96,30 +97,14 @@ export function AdminSubscriptionPanel({ onFeedback }: Props) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setInterval('month')}
-            className={`rounded-full px-3 py-1 text-xs font-body ${
-              interval === 'month'
-                ? 'bg-[var(--accent)] text-white'
-                : 'bg-[var(--surface-warm)] text-[var(--ink-soft)]'
-            }`}
-          >
-            Mensuel
-          </button>
-          <button
-            type="button"
-            onClick={() => setInterval('year')}
-            className={`rounded-full px-3 py-1 text-xs font-body ${
-              interval === 'year'
-                ? 'bg-[var(--accent)] text-white'
-                : 'bg-[var(--surface-warm)] text-[var(--ink-soft)]'
-            }`}
-          >
-            Annuel
-          </button>
-        </div>
+        <BillingIntervalToggle
+          value={interval}
+          onChange={setInterval}
+          yearLabel="Annuel"
+          layoutId="admin-billing-interval"
+          size="sm"
+          variant="light"
+        />
         <label className="flex cursor-pointer items-start gap-2 text-sm font-body text-[var(--ink-soft)]">
           <input
             type="checkbox"

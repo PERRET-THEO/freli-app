@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { AuthShell } from '../components/auth/AuthShell'
+import { Button, Input } from '../components/ui'
 import { supabase } from '../lib/supabase'
-import { Button, Card, Input } from '../components/ui'
 
 export function ForgotPassword() {
   const [email, setEmail] = useState('')
@@ -32,58 +33,62 @@ export function ForgotPassword() {
     }
   }
 
+  if (sent) {
+    return (
+      <AuthShell
+        title="Email envoyé"
+        subtitle={
+          <>
+            Si un compte existe pour <strong>{email}</strong>, tu recevras un lien pour
+            réinitialiser ton mot de passe.
+          </>
+        }
+      >
+        <Link to="/signin">
+          <Button className="w-full">Retour à la connexion</Button>
+        </Link>
+      </AuthShell>
+    )
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
-      <Card className="w-full max-w-md">
-        {sent ? (
-          <>
-            <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
-              Email envoyé
-            </h1>
-            <p className="mt-3 text-sm font-body leading-relaxed text-[var(--ink-soft)]">
-              Si un compte existe pour <strong>{email}</strong>, tu recevras un lien pour
-              réinitialiser ton mot de passe.
-            </p>
-            <Link to="/signin">
-              <Button className="mt-6 w-full">Retour à la connexion</Button>
-            </Link>
-          </>
-        ) : (
-          <>
-            <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
-              Mot de passe oublié
-            </h1>
-            <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-              Entre ton adresse email pour recevoir un lien de réinitialisation.
-            </p>
+    <AuthShell
+      title="Mot de passe oublié"
+      subtitle="Entre ton adresse email pour recevoir un lien de réinitialisation."
+      footer={
+        <Link
+          to="/signin"
+          className="block text-center text-sm font-body text-[var(--accent)] hover:underline"
+        >
+          ← Retour à la connexion
+        </Link>
+      }
+    >
+      <form className="space-y-3" onSubmit={handleSubmit}>
+        <div>
+          <label
+            htmlFor="forgot-email"
+            className="mb-1 block text-xs font-body text-[var(--ink-muted)]"
+          >
+            Email
+          </label>
+          <Input
+            id="forgot-email"
+            type="email"
+            placeholder="Email pro"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoComplete="username"
+          />
+        </div>
 
-            <form className="mt-6 space-y-3" onSubmit={handleSubmit}>
-              <Input
-                type="email"
-                placeholder="Email pro"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+        {error && <p className="text-sm font-body text-[var(--amber)]">{error}</p>}
 
-              {error && (
-                <p className="text-sm font-body text-[var(--amber)]">{error}</p>
-              )}
-
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Envoi en cours...' : 'Envoyer le lien'}
-              </Button>
-            </form>
-
-            <Link
-              to="/signin"
-              className="mt-4 block text-center text-sm font-body text-[var(--accent)] hover:underline"
-            >
-              ← Retour à la connexion
-            </Link>
-          </>
-        )}
-      </Card>
-    </div>
+        <Button type="submit" className="w-full" disabled={loading}>
+          {loading ? 'Envoi en cours...' : 'Envoyer le lien'}
+        </Button>
+      </form>
+    </AuthShell>
   )
 }

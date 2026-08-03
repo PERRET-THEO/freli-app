@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { AuthShell } from '../components/auth/AuthShell'
+import { Button, Input } from '../components/ui'
 import { resolveAuthCallbackPath } from '../lib/authCallbackRoute'
 import { establishRecoverySession } from '../lib/authRecovery'
 import { supabase } from '../lib/supabase'
-import { Button, Card, Input } from '../components/ui'
 
 type ResetPhase = 'verifying' | 'form' | 'invalid'
 
@@ -77,89 +78,87 @@ export function ResetPassword() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
-        <Card className="w-full max-w-md text-center">
-          <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
-            Mot de passe mis à jour
-          </h1>
-          <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
-            Tu peux maintenant te connecter avec ton nouveau mot de passe.
-          </p>
-          <Link to="/signin">
-            <Button className="mt-6 w-full">Se connecter</Button>
-          </Link>
-        </Card>
-      </div>
+      <AuthShell
+        title="Mot de passe mis à jour"
+        subtitle="Tu peux maintenant te connecter avec ton nouveau mot de passe."
+      >
+        <Link to="/signin">
+          <Button className="w-full">Se connecter</Button>
+        </Link>
+      </AuthShell>
     )
   }
 
   if (phase === 'verifying') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
-        <Card className="w-full max-w-md text-center">
-          <p className="text-sm font-body text-[var(--ink-muted)]">
-            Vérification du lien…
-          </p>
-        </Card>
-      </div>
+      <AuthShell title="Réinitialisation" subtitle="Vérification du lien…">
+        <p className="text-sm font-body text-[var(--ink-muted)]">Un instant…</p>
+      </AuthShell>
     )
   }
 
   if (phase === 'invalid') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
-        <Card className="w-full max-w-md text-center">
-          <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--ink)]">
-            Lien invalide
-          </h1>
-          <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
-            {linkError ?? 'Ce lien de réinitialisation ne peut pas être utilisé.'}
-          </p>
-          <Link to="/forgot-password">
-            <Button className="mt-6 w-full">Renvoyer un lien</Button>
-          </Link>
-        </Card>
-      </div>
+      <AuthShell
+        title="Lien invalide"
+        subtitle={linkError ?? 'Ce lien de réinitialisation ne peut pas être utilisé.'}
+      >
+        <Link to="/forgot-password">
+          <Button className="w-full">Renvoyer un lien</Button>
+        </Link>
+      </AuthShell>
     )
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
-      <Card className="w-full max-w-md">
-        <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
-          Nouveau mot de passe
-        </h1>
-        <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-          Choisis un nouveau mot de passe pour ton compte.
-        </p>
-
-        <form className="mt-6 space-y-3" onSubmit={handleSubmit}>
+    <AuthShell
+      title="Nouveau mot de passe"
+      subtitle="Choisis un nouveau mot de passe pour ton compte."
+    >
+      <form className="space-y-3" onSubmit={handleSubmit}>
+        <div>
+          <label
+            htmlFor="reset-password"
+            className="mb-1 block text-xs font-body text-[var(--ink-muted)]"
+          >
+            Nouveau mot de passe
+          </label>
           <Input
+            id="reset-password"
             type="password"
             placeholder="Nouveau mot de passe"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={6}
+            autoComplete="new-password"
           />
+        </div>
+        <div>
+          <label
+            htmlFor="reset-password-confirm"
+            className="mb-1 block text-xs font-body text-[var(--ink-muted)]"
+          >
+            Confirmer le mot de passe
+          </label>
           <Input
+            id="reset-password-confirm"
             type="password"
             placeholder="Confirmer le mot de passe"
             value={passwordConfirm}
             onChange={(e) => setPasswordConfirm(e.target.value)}
             required
             minLength={6}
+            autoComplete="new-password"
           />
+        </div>
 
-          {error && (
-            <p className="text-sm font-body text-[var(--amber)]">{error}</p>
-          )}
+        {error && <p className="text-sm font-body text-[var(--amber)]">{error}</p>}
 
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Mise à jour...' : 'Mettre à jour le mot de passe'}
-          </Button>
-        </form>
-      </Card>
-    </div>
+        <Button type="submit" className="w-full" disabled={loading}>
+          {loading ? 'Mise à jour...' : 'Mettre à jour le mot de passe'}
+        </Button>
+      </form>
+    </AuthShell>
   )
 }

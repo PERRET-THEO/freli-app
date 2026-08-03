@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { AuthShell } from '../components/auth/AuthShell'
+import { Button, Input } from '../components/ui'
+import { marketingUrl } from '../lib/appUrl'
 import { resolveAuthCallbackPath } from '../lib/authCallbackRoute'
 import { supabase } from '../lib/supabase'
-import { Button, Card, Input } from '../components/ui'
 
 function getErrorMessage(message: string) {
   const normalized = message.toLowerCase()
@@ -71,48 +73,68 @@ export function SignIn() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
-      <Card className="w-full max-w-md">
-        <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
-          Connexion
-        </h1>
-        <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-          Connecte-toi pour gérer tes onboardings Freli.
+    <AuthShell
+      title="Connexion"
+      subtitle="Connecte-toi pour gérer tes onboardings Freli."
+      footer={
+        <p className="text-center text-sm font-body text-[var(--ink-muted)]">
+          Pas encore de compte ?{' '}
+          <a
+            href={marketingUrl('/tarifs')}
+            className="font-medium text-[var(--accent)] hover:underline"
+          >
+            Voir les tarifs
+          </a>
         </p>
-
-        <form className="mt-6 space-y-3" onSubmit={handleSubmit}>
+      }
+    >
+      <form className="space-y-3" onSubmit={handleSubmit}>
+        <div>
+          <label htmlFor="signin-email" className="mb-1 block text-xs font-body text-[var(--ink-muted)]">
+            Email
+          </label>
           <Input
+            id="signin-email"
             type="email"
             placeholder="Email pro"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            autoComplete="username"
           />
+        </div>
+        <div>
+          <label
+            htmlFor="signin-password"
+            className="mb-1 block text-xs font-body text-[var(--ink-muted)]"
+          >
+            Mot de passe
+          </label>
           <Input
+            id="signin-password"
             type="password"
             placeholder="Mot de passe"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={6}
+            autoComplete="current-password"
           />
+        </div>
 
-          {error && (
-            <p className="text-sm font-body text-[var(--amber)]">{error}</p>
-          )}
+        {error && <p className="text-sm font-body text-[var(--amber)]">{error}</p>}
 
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Chargement...' : 'Se connecter'}
-          </Button>
-        </form>
+        <Button type="submit" className="w-full" disabled={loading}>
+          {loading ? 'Chargement...' : 'Se connecter'}
+        </Button>
+      </form>
 
-        <Link
-          to="/forgot-password"
-          className="mt-4 block text-center text-sm font-body text-[var(--accent)] hover:underline"
-        >
-          Mot de passe oublié ?
-        </Link>
-      </Card>
-    </div>
+      <Link
+        to="/forgot-password"
+        className="mt-4 block text-center text-sm font-body text-[var(--accent)] hover:underline"
+      >
+        Mot de passe oublié ?
+      </Link>
+    </AuthShell>
   )
 }
