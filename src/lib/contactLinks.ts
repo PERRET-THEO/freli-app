@@ -65,6 +65,14 @@ export function formatClientAddress(parts: ClientAddressParts): string | null {
   return line || null
 }
 
+/** True when the address is specific enough for turn-by-turn / place search. */
+export function isNavigableAddress(parts: ClientAddressParts): boolean {
+  const street = parts.street?.trim()
+  const postal = parts.postal?.trim()
+  const city = parts.city?.trim()
+  return Boolean(street) || Boolean(postal && city)
+}
+
 export function mapsAppleHref(address: string): string {
   return `https://maps.apple.com/?q=${encodeURIComponent(address)}`
 }

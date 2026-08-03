@@ -2,11 +2,10 @@ import type { ReactNode } from 'react'
 import {
   defaultMapsHref,
   formatClientAddress,
+  formatPhoneDisplay,
+  isNavigableAddress,
   mailtoHref,
-  mapsAppleHref,
-  mapsGoogleHref,
   telHref,
-  wazeHref,
   type ClientAddressParts,
 } from '../../lib/contactLinks'
 
@@ -39,6 +38,8 @@ export function ClientContactBlock({
   companyName,
 }: ClientContactBlockProps) {
   const fullAddress = address ? formatClientAddress(address) : null
+  const navigable = address ? isNavigableAddress(address) : false
+  const phoneDisplay = formatPhoneDisplay(phone)
 
   return (
     <div className="border-b border-[var(--border)] pb-5">
@@ -57,56 +58,35 @@ export function ClientContactBlock({
             {email}
           </a>
         </ContactRow>
-        {phone ? (
+        {phoneDisplay ? (
           <ContactRow label="Téléphone">
             <a
-              href={telHref(phone)}
+              href={telHref(phone ?? phoneDisplay)}
               className="text-[var(--accent)] underline-offset-2 hover:underline"
             >
-              {phone}
+              {phoneDisplay}
             </a>
           </ContactRow>
         ) : null}
         {fullAddress ? (
           <ContactRow label="Adresse">
             <div className="space-y-2">
-              <a
-                href={defaultMapsHref(fullAddress)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block break-words text-[var(--accent)] underline-offset-2 hover:underline"
-              >
-                {fullAddress}
-              </a>
-              <div className="flex flex-wrap gap-2">
-                <a
-                  href={mapsAppleHref(fullAddress)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Ouvrir ${fullAddress} dans Plans`}
-                  className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-2.5 text-xs font-body font-semibold text-[var(--ink-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                >
-                  Plans
-                </a>
-                <a
-                  href={mapsGoogleHref(fullAddress)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Ouvrir ${fullAddress} dans Google Maps`}
-                  className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-2.5 text-xs font-body font-semibold text-[var(--ink-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                >
-                  Maps
-                </a>
-                <a
-                  href={wazeHref(fullAddress)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Ouvrir ${fullAddress} dans Waze`}
-                  className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-2.5 text-xs font-body font-semibold text-[var(--ink-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                >
-                  Waze
-                </a>
-              </div>
+              {navigable ? (
+                <>
+                  <p className="break-words">{fullAddress}</p>
+                  <a
+                    href={defaultMapsHref(fullAddress)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Itinéraire vers ${fullAddress}`}
+                    className="inline-flex min-h-11 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 text-xs font-body font-semibold text-[var(--ink-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                  >
+                    Itinéraire
+                  </a>
+                </>
+              ) : (
+                <span className="break-words text-[var(--ink-muted)]">{fullAddress}</span>
+              )}
             </div>
           </ContactRow>
         ) : null}

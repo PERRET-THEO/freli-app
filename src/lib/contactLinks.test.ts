@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatClientAddress,
   formatPhoneDisplay,
+  isNavigableAddress,
   isValidContactEmail,
   mailtoHref,
   mapsAppleHref,
@@ -55,6 +56,12 @@ describe('contactLinks', () => {
       }),
     ).toBe('1 rue de Paris, 75001, Paris, France')
     expect(formatClientAddress({})).toBeNull()
+  })
+
+  it('requires street or postal+city for navigation', () => {
+    expect(isNavigableAddress({ country: 'France' })).toBe(false)
+    expect(isNavigableAddress({ street: '1 rue de Paris', country: 'France' })).toBe(true)
+    expect(isNavigableAddress({ postal: '75001', city: 'Paris' })).toBe(true)
   })
 
   it('encodes address in map urls', () => {
