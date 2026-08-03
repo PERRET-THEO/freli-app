@@ -41,6 +41,25 @@
       rel="stylesheet"
     />
     <title>Freli — Onboarding client simplifié</title>
+    <script>
+      (function () {
+        try {
+          var collapsed = document.cookie.match(/(?:^|; )freli_sidebar_collapsed=([^;]*)/);
+          var theme = document.cookie.match(/(?:^|; )freli_nav_theme=([^;]*)/);
+          document.documentElement.setAttribute(
+            'data-sidebar',
+            collapsed && decodeURIComponent(collapsed[1]) === '1' ? 'collapsed' : 'expanded'
+          );
+          document.documentElement.setAttribute(
+            'data-nav-theme',
+            theme && decodeURIComponent(theme[1]) === 'light' ? 'light' : 'dark'
+          );
+        } catch (e) {
+          document.documentElement.setAttribute('data-sidebar', 'expanded');
+          document.documentElement.setAttribute('data-nav-theme', 'dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

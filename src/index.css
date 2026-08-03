@@ -18,11 +18,72 @@
   --amber-soft: #fef3dc;
   --border: #e2e0d8;
 
+  /* Dashboard attention / status tokens (filtres, badges, bannière) */
+  --status-action: var(--accent);
+  --status-action-soft: var(--accent-soft);
+  --status-waiting: var(--amber);
+  --status-waiting-soft: var(--amber-soft);
+  --status-blocked: #c47a0a;
+  --status-blocked-soft: #fef3dc;
+  --status-blocked-border: rgba(196, 122, 10, 0.35);
+  --status-done: var(--mint);
+  --status-done-soft: var(--mint-soft);
+
   --radius-xs: 4px;
   --radius-sm: 8px;
   --radius-md: 16px;
   --radius-lg: 24px;
   --radius-xl: 32px;
+
+  /* App chrome / sidebar — dark dimmed default (Linear-style receding nav) */
+  --sidebar-width: 16rem;
+  --sidebar-width-icon: 3.25rem;
+  --sidebar-current-width: var(--sidebar-width);
+  --nav-bg: #090b10;
+  --nav-border: rgba(255, 255, 255, 0.06);
+  --nav-fg: rgba(253, 252, 250, 0.68);
+  --nav-fg-strong: #fdfcfa;
+  --nav-fg-muted: rgba(253, 252, 250, 0.42);
+  --nav-hover: rgba(255, 255, 255, 0.06);
+  --nav-active-bg: rgba(255, 255, 255, 0.09);
+  --nav-ring-offset: #090b10;
+  --nav-badge-bg: rgba(91, 110, 245, 0.22);
+  --nav-badge-fg: var(--accent-light);
+  --nav-account-bg: rgba(0, 0, 0, 0.28);
+  --nav-menu-bg: #141820;
+  --nav-item-height: 2.25rem;
+}
+
+html[data-sidebar='collapsed'] {
+  --sidebar-current-width: var(--sidebar-width-icon);
+}
+
+html[data-sidebar='expanded'] {
+  --sidebar-current-width: var(--sidebar-width);
+}
+
+/* Light chrome variant — aligned with freli.fr / content surface */
+html[data-nav-theme='light'] {
+  --nav-bg: #f8f7f3;
+  --nav-border: var(--border);
+  --nav-fg: var(--ink-muted);
+  --nav-fg-strong: var(--ink);
+  --nav-fg-muted: rgba(13, 15, 20, 0.45);
+  --nav-hover: rgba(13, 15, 20, 0.05);
+  --nav-active-bg: var(--accent-soft);
+  --nav-ring-offset: #f8f7f3;
+  --nav-badge-bg: var(--accent-soft);
+  --nav-badge-fg: var(--accent);
+  --nav-account-bg: var(--surface-warm);
+  --nav-menu-bg: var(--white);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-sidebar,
+  .nav-sidebar *,
+  .nav-filter-pill {
+    transition-duration: 0.01ms !important;
+  }
 }
 
 * {

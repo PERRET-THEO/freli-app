@@ -14,7 +14,7 @@ export function getStatusLabel({
   lastReminderSentAt,
   now,
 }: ProjectStatusInput): string {
-  if (status === 'completed') return 'Complété'
+  if (status === 'completed') return 'Terminé'
   if (status === 'in_progress') return 'En cours côté client'
   if (status === 'pending') {
     const reminderFresh =
@@ -29,7 +29,7 @@ export function getStatusLabel({
 /** Compact labels for tight mobile badges; keep full label in `title`. */
 export function getShortStatusLabel(input: ProjectStatusInput): string {
   const full = getStatusLabel(input)
-  if (input.status === 'completed') return 'Complété'
+  if (input.status === 'completed') return 'Terminé'
   if (input.status === 'in_progress') return 'En cours'
   if (full.startsWith('Relancé')) return 'Relancé'
   return 'En attente'

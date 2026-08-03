@@ -22,6 +22,7 @@ import {
   formatBottleneckLabel,
   isBottleneckStale,
 } from '../lib/projectBottleneck'
+import { pushRecentProject } from '../lib/recentProjects'
 import { fetchProjectSignatureProofs, type SignatureProof } from '../lib/signatureProof'
 import { supabase } from '../lib/supabase'
 
@@ -140,7 +141,9 @@ export function ProjectDetail() {
       .order('sent_at', { ascending: false })
       .limit(10)
 
-    setProject(projectData as ProjectRecord)
+    const record = projectData as ProjectRecord
+    setProject(record)
+    pushRecentProject(record.id, record.client_name)
     setItems((checklistData ?? []) as ChecklistItemRecord[])
     setReminderLogs((logsData ?? []) as ReminderLog[])
     setSignatureProofs(await fetchProjectSignatureProofs(projectData.id))

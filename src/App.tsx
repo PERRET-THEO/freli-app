@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AgencySessionProvider, useAgencySession } from './contexts/AgencyContext'
+import { AppChromeProvider } from './components/app-shell/AppChromeProvider'
 import { RequireBillingAccess } from './components/billing/RequireBillingAccess'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { MarketingPageTransition } from './components/layout/MarketingPageTransition'
@@ -171,7 +172,13 @@ function App() {
       <Route path="/auth" element={<Navigate to="/signin" replace />} />
       <Route element={<RequireAuth />}>
         <Route element={<AgencySessionProvider><Outlet /></AgencySessionProvider>}>
-        <Route element={<BillingGateOutlet />}>
+        <Route
+          element={
+            <AppChromeProvider>
+              <BillingGateOutlet />
+            </AppChromeProvider>
+          }
+        >
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/dashboard/new" element={<NewProject />} />
         <Route path="/dashboard/project/:id" element={<ProjectDetail />} />

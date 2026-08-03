@@ -16,8 +16,11 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.0",
+    "cmdk": "^1.1.1",
     "libphonenumber-js": "^1.13.10",
+    "lucide-react": "^1.28.0",
     "motion": "^12.42.2",
+    "nuqs": "^2.9.4",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.2.4",

@@ -9,14 +9,14 @@ type BadgeProps = {
 }
 
 const badgeStyles: Record<BadgeVariant, string> = {
-  in_progress: 'bg-[var(--accent-soft)] text-[var(--accent)]',
-  completed: 'bg-[var(--mint-soft)] text-[var(--mint)]',
-  pending: 'bg-[var(--amber-soft)] text-[var(--amber)]',
+  in_progress: 'bg-[var(--status-action-soft)] text-[var(--status-action)]',
+  completed: 'bg-[var(--status-done-soft)] text-[var(--status-done)]',
+  pending: 'bg-[var(--status-waiting-soft)] text-[var(--status-waiting)]',
 }
 
 const fallbackLabel: Record<BadgeVariant, string> = {
   in_progress: 'En cours',
-  completed: 'Complété',
+  completed: 'Terminé',
   pending: 'En attente',
 }
 

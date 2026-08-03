@@ -24,7 +24,7 @@ export function ActivityBanner({
 
   if (draftReminderCount > 0) {
     return (
-      <section className="rounded-[var(--radius-md)] border border-[var(--amber)]/30 bg-[var(--amber-soft)]/60 px-4 py-3">
+      <section className="rounded-[var(--radius-md)] border border-[var(--status-waiting)]/30 bg-[var(--status-waiting-soft)]/60 px-4 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <span
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--white)] text-base shadow-sm"
@@ -49,7 +49,7 @@ export function ActivityBanner({
   if (urgentProjects.length > 0) {
     const first = urgentProjects[0]
     return (
-      <section className="rounded-[var(--radius-md)] border border-[var(--amber)]/30 bg-[var(--amber-soft)]/60 px-4 py-3">
+      <section className="rounded-[var(--radius-md)] border border-[var(--status-waiting)]/30 bg-[var(--status-waiting-soft)]/60 px-4 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <span
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--white)] text-base shadow-sm"

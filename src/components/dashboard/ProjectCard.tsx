@@ -99,12 +99,12 @@ export function ProjectCard({
   const statusBadge =
     project.status === 'in_progress' ? (
       <span
-        className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-[var(--accent-soft)] px-2 py-[3px] font-display text-[10px] font-extrabold uppercase tracking-wide text-[var(--accent)]"
+        className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-[var(--status-action-soft)] px-2 py-[3px] font-display text-[10px] font-extrabold uppercase tracking-wide text-[var(--status-action)]"
         title={statusLabel}
       >
         <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden>
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-75" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--status-action)] opacity-75" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--status-action)]" />
         </span>
         <span className="truncate">
           <span className="sm:hidden">{shortStatusLabel}</span>
@@ -212,7 +212,7 @@ export function ProjectCard({
                 owner: project.blockingOwner,
                 since: project.blockingSince,
               }, now)
-                ? 'font-semibold text-[var(--amber)]'
+                ? 'font-semibold text-[var(--status-blocked)]'
                 : 'text-[var(--ink-muted)]'
             }`}
           >
@@ -258,22 +258,22 @@ export function ProjectCard({
 
         <div className="relative z-[1] mt-4 flex flex-wrap items-center gap-2">
           {secondary.type === 'relancer' && (
-            <span className="inline-flex items-center rounded-full bg-[var(--amber-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--amber)]">
+            <span className="inline-flex items-center rounded-full bg-[var(--status-action-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--status-action)]">
               {secondary.label}
             </span>
           )}
           {secondary.type === 'extraction' && (
-            <span className="inline-flex items-center rounded-full bg-[var(--accent-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--accent)]">
+            <span className="inline-flex items-center rounded-full bg-[var(--status-action-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--status-action)]">
               {secondary.label}
             </span>
           )}
           {paymentState === 'paid' && (
-            <span className="inline-flex items-center rounded-full bg-[var(--mint-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--mint)]">
+            <span className="inline-flex items-center rounded-full bg-[var(--status-done-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--status-done)]">
               Payé
             </span>
           )}
           {paymentState === 'pending' && project.status === 'completed' && (
-            <span className="inline-flex items-center rounded-full bg-[var(--amber-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--amber)]">
+            <span className="inline-flex items-center rounded-full bg-[var(--status-waiting-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--status-waiting)]">
               Paiement en attente
             </span>
           )}

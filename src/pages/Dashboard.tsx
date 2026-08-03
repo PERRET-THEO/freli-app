@@ -1,18 +1,31 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQueryStates } from 'nuqs'
 import { ActivityBanner } from '../components/dashboard/ActivityBanner'
 import { DashboardSkeleton } from '../components/dashboard/DashboardSkeleton'
+import { FilterEmptyState } from '../components/dashboard/FilterEmptyState'
 import { KpiGrid } from '../components/dashboard/KpiGrid'
 import { ProjectCard } from '../components/dashboard/ProjectCard'
 import { StatusFilterBar } from '../components/dashboard/StatusFilterBar'
 import { useDashboardData } from '../components/dashboard/useDashboardData'
-import type { ProjectCardData, StatusFilter } from '../components/dashboard/types'
+import type { ProjectCardData } from '../components/dashboard/types'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { useAgencySession } from '../contexts/AgencyContext'
 import { usePWAInstall } from '../hooks/usePWAInstall'
+import { dashboardSearchParams } from '../lib/dashboardSearchParams'
+import {
+  DASHBOARD_SORT_LABELS,
+  matchesAttentionView,
+  matchesSearchQuery,
+  needsAgencyFollowUp,
+  sortProjects,
+  type AttentionView,
+} from '../lib/projectAttention'
 import { isBottleneckStale } from '../lib/projectBottleneck'
 import { supabase } from '../lib/supabase'
-import { Button, Card } from '../components/ui'
+import { Button, Card, Input } from '../components/ui'
+
+const RESULTS_ID = 'dashboard-project-results'
 
 export function Dashboard() {
   const { displayName } = useAgencySession()
@@ -25,12 +38,22 @@ export function Dashboard() {
     draftReminderCount,
   } = useDashboardData()
 
-  const [filter, setFilter] = useState<StatusFilter>('all')
+  const [{ view, sort, q }, setSearchParams] = useQueryStates(dashboardSearchParams, {
+    history: 'push',
+  })
+
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [deletingProject, setDeletingProject] = useState<ProjectCardData | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const { canInstall, isStandalone, promptInstall, dismissBanner } = usePWAInstall()
+
+  const setView = useCallback(
+    (next: AttentionView) => {
+      void setSearchParams({ view: next })
+    },
+    [setSearchParams],
+  )
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -54,15 +77,14 @@ export function Dashboard() {
     showToast('Projet supprimé')
   }
 
-  const filteredProjects = useMemo(() => {
-    const byFilter =
-      filter === 'all' ? projects : projects.filter((project) => project.status === filter)
-    return [...byFilter].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    )
-  }, [projects, filter])
+  const [now] = useState(() => Date.now())
 
-  const now = Date.now()
+  const filteredProjects = useMemo(() => {
+    const byView = projects.filter((project) => matchesAttentionView(project, view, now))
+    const bySearch = byView.filter((project) => matchesSearchQuery(project, q))
+    return sortProjects(bySearch, sort)
+  }, [projects, view, q, sort, now])
+
   const activeProjects = projects.filter((project) => project.status === 'in_progress').length
   const pendingProjects = projects.filter((project) => project.status === 'pending').length
   const averageCompletion = projects.length
@@ -84,18 +106,7 @@ export function Dashboard() {
   const hoursSavedThisMonth =
     completedThisMonth * 3 + Math.round((remindersThisMonth * 10) / 60)
 
-  const urgentProjects = projects.filter((p) => {
-    const reminderFreshness = p.lastReminderSentAt
-      ? now - new Date(p.lastReminderSentAt).getTime()
-      : Infinity
-    const reminderSentRecently = reminderFreshness < 72 * 60 * 60 * 1000
-    const ageMs = now - new Date(p.createdAt).getTime()
-    return (
-      p.status !== 'completed' &&
-      ageMs > 48 * 60 * 60 * 1000 &&
-      !reminderSentRecently
-    )
-  })
+  const urgentProjects = projects.filter((p) => needsAgencyFollowUp(p, now))
 
   const staleBottleneckProjects = projects.filter(
     (p) =>
@@ -103,11 +114,14 @@ export function Dashboard() {
       p.blockingStepLabel &&
       p.blockingOwner &&
       p.blockingSince &&
-      isBottleneckStale({
-        label: p.blockingStepLabel,
-        owner: p.blockingOwner,
-        since: p.blockingSince,
-      }, now),
+      isBottleneckStale(
+        {
+          label: p.blockingStepLabel,
+          owner: p.blockingOwner,
+          since: p.blockingSince,
+        },
+        now,
+      ),
   )
 
   const recentAutoReminder =
@@ -137,6 +151,8 @@ export function Dashboard() {
     }
     return 'Tout est à jour. Belle journée ✨'
   })()
+
+  const resultsLabel = `${filteredProjects.length} projet${filteredProjects.length !== 1 ? 's' : ''}`
 
   return (
     <DashboardLayout loading={loading} skeleton={<DashboardSkeleton />}>
@@ -175,7 +191,7 @@ export function Dashboard() {
           {urgentNeedsAction > 0 ? (
             <button
               type="button"
-              onClick={() => setFilter('pending')}
+              onClick={() => setView('action')}
               className="text-sm font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
             >
               Voir les {urgentNeedsAction} projet{urgentNeedsAction > 1 ? 's' : ''}
@@ -192,16 +208,23 @@ export function Dashboard() {
       </header>
 
       {staleBottleneckProjects.length > 0 ? (
-        <div className="mt-4 rounded-[var(--radius-sm)] border border-[rgba(245,158,11,0.25)] bg-[var(--amber-soft)] px-4 py-3">
-          <p className="font-body text-sm text-[var(--amber)]">
+        <button
+          type="button"
+          onClick={() => setView('blocked')}
+          className="mt-4 w-full rounded-[var(--radius-sm)] border border-[var(--status-blocked-border)] bg-[var(--status-blocked-soft)] px-4 py-3 text-left transition hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
+        >
+          <p className="font-body text-sm text-[var(--status-blocked)]">
             {staleBottleneckProjects.length} projet
             {staleBottleneckProjects.length > 1 ? 's bloqués' : ' bloqué'} depuis plus de 48 h
             {staleBottleneckProjects[0]?.blockingStepLabel
               ? ` — ex. « ${staleBottleneckProjects[0].blockingStepLabel} »`
               : ''}
             .
+            <span className="ml-2 font-semibold underline-offset-2 hover:underline">
+              Voir les bloqués
+            </span>
           </p>
-        </div>
+        </button>
       ) : null}
 
       <div className="mt-6">
@@ -214,53 +237,89 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="mt-6">
-        <StatusFilterBar filter={filter} onFilterChange={setFilter} projects={projects} />
+      <div className="mt-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="shrink-0 font-display text-lg font-semibold text-[var(--ink)]">Projets</h2>
+        <StatusFilterBar
+          view={view}
+          onViewChange={setView}
+          projects={projects}
+          now={now}
+          resultsId={RESULTS_ID}
+        />
       </div>
 
-      {filteredProjects.length === 0 ? (
-        <Card className="mt-6 flex flex-col items-center justify-center py-14 text-center">
-          <div
-            className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--accent-soft)] text-2xl"
-            aria-hidden
+      <div className="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+        <label className="sr-only" htmlFor="dashboard-project-search">
+          Rechercher un client ou un projet
+        </label>
+        <Input
+          id="dashboard-project-search"
+          value={q}
+          onChange={(event) => {
+            void setSearchParams({ q: event.target.value })
+          }}
+          placeholder="Rechercher un client…"
+          className="sm:max-w-xs"
+        />
+        <label className="flex items-center gap-2 text-sm font-body text-[var(--ink-muted)]">
+          <span className="shrink-0">Tri</span>
+          <select
+            value={sort}
+            onChange={(event) => {
+              void setSearchParams({
+                sort: event.target.value as 'newest' | 'stale_first',
+              })
+            }}
+            className="h-10 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 text-sm font-body text-[var(--ink)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
-            📂
-          </div>
-          <h2 className="mt-4 font-display text-2xl font-semibold text-[var(--ink)]">
-            {projects.length === 0 ? 'Créez votre premier onboarding' : 'Aucun projet dans cette vue'}
-          </h2>
-          <p className="mt-2 max-w-md text-sm font-body text-[var(--ink-muted)]">
-            {projects.length === 0
-              ? 'En 2 minutes : un lien à envoyer, des relances automatiques, et vous voilà débarrassé de 3h de travail.'
-              : 'Changez de filtre pour voir les autres projets.'}
-          </p>
-          {projects.length === 0 && (
-            <Link to="/dashboard/new" className="mt-5 inline-block">
-              <Button>+ Créer mon premier projet</Button>
-            </Link>
-          )}
-        </Card>
-      ) : (
-        <section className="mt-4 grid min-w-0 gap-4 [&>*]:min-w-0 md:grid-cols-1 lg:grid-cols-2">
-          {filteredProjects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              now={now}
-              pendingExtraction={pendingExtractionProjects.has(project.id)}
-              menuOpen={menuOpenId === project.id}
-              onMenuToggle={() =>
-                setMenuOpenId(menuOpenId === project.id ? null : project.id)
-              }
-              onCopyLink={handleCopyLink}
-              onDelete={() => {
-                setMenuOpenId(null)
-                setDeletingProject(project)
-              }}
-            />
-          ))}
-        </section>
-      )}
+            {(Object.keys(DASHBOARD_SORT_LABELS) as Array<keyof typeof DASHBOARD_SORT_LABELS>).map(
+              (key) => (
+                <option key={key} value={key}>
+                  {DASHBOARD_SORT_LABELS[key]}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+      </div>
+
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {resultsLabel}
+      </p>
+
+      <div id={RESULTS_ID}>
+        {filteredProjects.length === 0 ? (
+          <FilterEmptyState
+            view={view}
+            hasAnyProjects={projects.length > 0}
+            hasSearch={q.trim().length > 0}
+            onViewChange={setView}
+            onClearSearch={() => {
+              void setSearchParams({ q: '' })
+            }}
+          />
+        ) : (
+          <section className="mt-4 grid min-w-0 gap-4 [&>*]:min-w-0 md:grid-cols-1 lg:grid-cols-2">
+            {filteredProjects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                now={now}
+                pendingExtraction={pendingExtractionProjects.has(project.id)}
+                menuOpen={menuOpenId === project.id}
+                onMenuToggle={() =>
+                  setMenuOpenId(menuOpenId === project.id ? null : project.id)
+                }
+                onCopyLink={handleCopyLink}
+                onDelete={() => {
+                  setMenuOpenId(null)
+                  setDeletingProject(project)
+                }}
+              />
+            ))}
+          </section>
+        )}
+      </div>
 
       <KpiGrid
         activeProjects={activeProjects}
