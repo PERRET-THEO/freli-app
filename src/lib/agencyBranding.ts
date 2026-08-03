@@ -18,6 +18,12 @@ export type AgencyBranding = {
   tagline: string | null
   contact_email: string | null
   contact_phone: string | null
+  portal_help_title: string | null
+  portal_help_text: string | null
+  portal_availability: string | null
+  portfolio_url: string | null
+  portfolio_label: string | null
+  portal_locale: string | null
   auto_reminders_enabled: boolean | null
   auto_reminders_delay_hours: number | null
   ai_extraction_enabled: boolean | null
@@ -47,6 +53,11 @@ export type PortalPreviewData = {
   welcomeMessage: string
   contactEmail: string
   contactPhone: string
+  helpTitle: string
+  helpText: string
+  availability: string
+  portfolioUrl: string
+  portfolioLabel: string
 }
 
 export const PORTAL_PREVIEW_STORAGE_KEY = 'freli-portal-preview'

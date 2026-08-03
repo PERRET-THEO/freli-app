@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { BrandColorPicker } from '../components/settings/BrandColorPicker'
@@ -22,6 +22,21 @@ import {
 } from '../lib/agencyBranding'
 import { getOrCreateAgency } from '../lib/agency'
 import { AGENCY_SELECT_BASE, mergeAgencyWithAiFlags } from '../lib/agencyQueries'
+import {
+  isValidContactEmail,
+  normalizeContactPhone,
+  parseAgencyPhone,
+} from '../lib/contactLinks'
+import {
+  isValidPortfolioUrl,
+  normalizePortfolioUrl,
+} from '../lib/portfolioUrl'
+import {
+  DEFAULT_PORTAL_HELP_TITLE,
+  DEFAULT_PORTAL_WELCOME,
+  insertWelcomeVariable,
+  PORTAL_WELCOME_VARIABLES,
+} from '../lib/portalWelcomeTemplate'
 import { normalizeReminderDelayHours } from '../lib/reminderSettings'
 import {
   normalizeSmartReminderMax,
@@ -67,6 +82,12 @@ export function Settings() {
   const [welcomeMessage, setWelcomeMessage] = useState('')
   const [contactEmail, setContactEmail] = useState('')
   const [contactPhone, setContactPhone] = useState('')
+  const [helpTitle, setHelpTitle] = useState(DEFAULT_PORTAL_HELP_TITLE)
+  const [helpText, setHelpText] = useState('')
+  const [availability, setAvailability] = useState('')
+  const [portfolioUrl, setPortfolioUrl] = useState('')
+  const [portfolioLabel, setPortfolioLabel] = useState('')
+  const welcomeTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [legalForm, setLegalForm] = useState('')
   const [addressStreet, setAddressStreet] = useState('')
   const [addressPostalCode, setAddressPostalCode] = useState('')
@@ -131,6 +152,11 @@ export function Settings() {
     setWelcomeMessage(row.portal_welcome_message ?? '')
     setContactEmail(row.contact_email ?? '')
     setContactPhone(row.contact_phone ?? '')
+    setHelpTitle(row.portal_help_title?.trim() || DEFAULT_PORTAL_HELP_TITLE)
+    setHelpText(row.portal_help_text ?? '')
+    setAvailability(row.portal_availability ?? '')
+    setPortfolioUrl(row.portfolio_url ?? '')
+    setPortfolioLabel(row.portfolio_label ?? '')
     setLegalForm(row.legal_form ?? '')
     setAddressStreet(row.address_street ?? '')
     setAddressPostalCode(row.address_postal_code ?? '')
@@ -199,14 +225,24 @@ export function Settings() {
       welcomeMessage: welcomeMessage.trim(),
       contactEmail: contactEmail.trim(),
       contactPhone: contactPhone.trim(),
+      helpTitle: helpTitle.trim() || DEFAULT_PORTAL_HELP_TITLE,
+      helpText: helpText.trim(),
+      availability: availability.trim(),
+      portfolioUrl: portfolioUrl.trim(),
+      portfolioLabel: portfolioLabel.trim(),
     }),
     [
       agency?.logo_url,
       agencyName,
+      availability,
       brandColor,
       contactEmail,
       contactPhone,
+      helpText,
+      helpTitle,
       logoPreviewUrl,
+      portfolioLabel,
+      portfolioUrl,
       tagline,
       welcomeMessage,
     ],
@@ -215,11 +251,14 @@ export function Settings() {
   const uploadLogo = async (agencyId: string, currentLogoUrl: string | null): Promise<string | null> => {
     if (!logoFile) return currentLogoUrl
 
-    const fileExt = logoFile.name.split('.').pop() || 'png'
-    const filePath = `${agencyId}/logo-${Date.now()}.${fileExt}`
-    const { error: uploadError } = await supabase.storage
-      .from('logos')
-      .upload(filePath, logoFile, { upsert: true })
+  const fileExt = logoFile.name.split('.').pop()?.toLowerCase() || 'png'
+  const contentType =
+    logoFile.type ||
+    (fileExt === 'svg' ? 'image/svg+xml' : fileExt === 'jpg' ? 'image/jpeg' : `image/${fileExt}`)
+  const filePath = `${agencyId}/logo-${Date.now()}.${fileExt === 'jpeg' ? 'jpg' : fileExt}`
+  const { error: uploadError } = await supabase.storage
+    .from('logos')
+    .upload(filePath, logoFile, { upsert: true, contentType })
     if (uploadError) throw new Error("Impossible d'uploader le logo.")
     const { data } = supabase.storage.from('logos').getPublicUrl(filePath)
     return data.publicUrl
@@ -241,13 +280,41 @@ export function Settings() {
       return
     }
 
+    const trimmedEmail = contactEmail.trim()
+    if (trimmedEmail && !isValidContactEmail(trimmedEmail)) {
+      setAgencyFeedback({ type: 'error', text: 'Email de contact invalide.' })
+      return
+    }
+
+    const trimmedPhone = contactPhone.trim()
+    if (trimmedPhone && !parseAgencyPhone(trimmedPhone)) {
+      setAgencyFeedback({
+        type: 'error',
+        text: 'Téléphone invalide. Exemple : 06 12 34 56 78 ou +33612345678.',
+      })
+      return
+    }
+
+    if (!isValidPortfolioUrl(portfolioUrl)) {
+      setAgencyFeedback({
+        type: 'error',
+        text: 'URL portfolio invalide. Utilisez une adresse https://…',
+      })
+      return
+    }
+
     const payload = {
       name: trimmedName,
       tagline: tagline.trim() || null,
       brand_color: normalizeBrandColor(brandColor),
       portal_welcome_message: welcomeMessage.trim() || null,
-      contact_email: contactEmail.trim() || null,
-      contact_phone: contactPhone.trim() || null,
+      contact_email: trimmedEmail || null,
+      contact_phone: normalizeContactPhone(trimmedPhone),
+      portal_help_title: helpTitle.trim() || DEFAULT_PORTAL_HELP_TITLE,
+      portal_help_text: helpText.trim() || null,
+      portal_availability: availability.trim() || null,
+      portfolio_url: normalizePortfolioUrl(portfolioUrl),
+      portfolio_label: portfolioLabel.trim() || null,
     }
 
     setAgencySaving(true)
@@ -262,6 +329,35 @@ export function Settings() {
           .single()
 
         if (updateError) {
+          // Colonnes portail absentes (migration non appliquée) : retry sans extras.
+          if (/portal_help|portfolio_|portal_locale/i.test(updateError.message)) {
+            const {
+              portal_help_title: _a,
+              portal_help_text: _b,
+              portal_availability: _c,
+              portfolio_url: _d,
+              portfolio_label: _e,
+              ...legacyPayload
+            } = payload
+            const { data: legacyUpdated, error: legacyError } = await supabase
+              .from('agencies')
+              .update({ ...legacyPayload, logo_url: logoUrl })
+              .eq('id', agency.id)
+              .select(AGENCY_SELECT)
+              .single()
+            if (legacyError) {
+              setAgencyFeedback({ type: 'error', text: legacyError.message })
+              return
+            }
+            loadAgencyFields(await mergeAgencyWithAiFlags(legacyUpdated as AgencyBranding))
+            setLogoFile(null)
+            setAgencyFeedback({
+              type: 'success',
+              text: 'Paramètres enregistrés (appliquez la migration portail pour aide / portfolio).',
+            })
+            showToast('Paramètres enregistrés.')
+            return
+          }
           setAgencyFeedback({ type: 'error', text: updateError.message })
           return
         }
@@ -289,22 +385,19 @@ export function Settings() {
         .select(AGENCY_SELECT)
         .single()
 
-      if (updateNameError || !created) {
-        setAgencyFeedback({
-          type: 'error',
-          text: updateNameError?.message ?? 'Impossible de créer votre agence.',
-        })
+      if (updateNameError) {
+        setAgencyFeedback({ type: 'error', text: updateNameError.message })
         return
       }
 
       loadAgencyFields(await mergeAgencyWithAiFlags(created as AgencyBranding))
       setLogoFile(null)
-      setAgencyFeedback({ type: 'success', text: 'Agence créée et enregistrée.' })
+      setAgencyFeedback({ type: 'success', text: 'Agence créée.' })
       showToast('Agence créée.')
-    } catch (reason) {
+    } catch (err) {
       setAgencyFeedback({
         type: 'error',
-        text: reason instanceof Error ? reason.message : 'Erreur lors de l’enregistrement.',
+        text: err instanceof Error ? err.message : 'Erreur lors de l’enregistrement.',
       })
     } finally {
       setAgencySaving(false)
@@ -613,22 +706,69 @@ export function Settings() {
               description="Personnalisez l'expérience de vos clients pendant l'onboarding."
             >
               <div className="space-y-4">
+                <LogoUpload
+                  currentUrl={agency?.logo_url ?? null}
+                  file={logoFile}
+                  onFileChange={setLogoFile}
+                  onError={setLogoError}
+                />
+                {logoError ? (
+                  <p className="text-sm font-body text-[var(--amber)]">{logoError}</p>
+                ) : null}
                 <Input
                   placeholder="Sous-titre (ex. Studio créatif à Paris)"
                   value={tagline}
                   onChange={(event) => setTagline(event.target.value)}
                 />
                 <div>
-                  <label className="mb-1.5 block text-sm font-body font-medium text-[var(--ink-soft)]">
-                    Message d&apos;accueil
-                  </label>
+                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-sm font-body font-medium text-[var(--ink-soft)]">
+                      Message d&apos;accueil
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs font-body text-[var(--ink-muted)]">
+                      Insérer
+                      <select
+                        className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                        defaultValue=""
+                        onChange={(event) => {
+                          const token = event.target.value
+                          if (!token) return
+                          const el = welcomeTextareaRef.current
+                          const cursor = el?.selectionStart ?? welcomeMessage.length
+                          setWelcomeMessage(insertWelcomeVariable(welcomeMessage, token, cursor))
+                          event.target.value = ''
+                          requestAnimationFrame(() => {
+                            if (!el) return
+                            const next = cursor + token.length
+                            el.focus()
+                            el.setSelectionRange(next, next)
+                          })
+                        }}
+                        aria-label="Insérer une variable"
+                      >
+                        <option value="" disabled>
+                          Variable…
+                        </option>
+                        {PORTAL_WELCOME_VARIABLES.map((v) => (
+                          <option key={v.key} value={v.token}>
+                            {v.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                   <textarea
+                    ref={welcomeTextareaRef}
                     value={welcomeMessage}
                     onChange={(event) => setWelcomeMessage(event.target.value)}
-                    placeholder="Complétez les étapes ci-dessous pour démarrer votre projet. Cela prend environ 10 minutes."
+                    placeholder={DEFAULT_PORTAL_WELCOME}
                     rows={3}
                     className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] outline-none transition focus:border-[var(--accent)]"
                   />
+                  <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
+                    Variables : {'{{client.prenom}}'}, {'{{client.entreprise}}'}, {'{{projet.nom}}'},{' '}
+                    {'{{agence.nom}}'}
+                  </p>
                 </div>
                 <BrandColorPicker value={brandColor} onChange={setBrandColor} />
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -643,6 +783,41 @@ export function Settings() {
                     placeholder="Téléphone (optionnel)"
                     value={contactPhone}
                     onChange={(event) => setContactPhone(event.target.value)}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input
+                    type="url"
+                    placeholder="Portfolio https://… (optionnel)"
+                    value={portfolioUrl}
+                    onChange={(event) => setPortfolioUrl(event.target.value)}
+                  />
+                  <Input
+                    placeholder="Libellé du bouton portfolio"
+                    value={portfolioLabel}
+                    onChange={(event) => setPortfolioLabel(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-3 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-warm)] p-4">
+                  <p className="text-sm font-body font-medium text-[var(--ink-soft)]">
+                    Bloc « Besoin d&apos;aide ? »
+                  </p>
+                  <Input
+                    placeholder="Titre"
+                    value={helpTitle}
+                    onChange={(event) => setHelpTitle(event.target.value)}
+                  />
+                  <textarea
+                    value={helpText}
+                    onChange={(event) => setHelpText(event.target.value)}
+                    placeholder="Texte d'accompagnement (optionnel)"
+                    rows={2}
+                    className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] outline-none transition focus:border-[var(--accent)]"
+                  />
+                  <Input
+                    placeholder="Horaires (ex. Lun–Ven 9h–18h)"
+                    value={availability}
+                    onChange={(event) => setAvailability(event.target.value)}
                   />
                 </div>
                 <PortalPreviewLink data={previewData} />

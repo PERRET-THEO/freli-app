@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.0",
+    "libphonenumber-js": "^1.13.10",
     "motion": "^12.42.2",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",

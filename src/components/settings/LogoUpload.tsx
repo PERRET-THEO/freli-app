@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const MAX_BYTES = 2 * 1024 * 1024
-const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const MAX_RASTER_BYTES = 2 * 1024 * 1024
+const MAX_SVG_BYTES = 512 * 1024
+const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']
+const SVG_DANGER_RE = /<script|onload\s*=|onerror\s*=|javascript:/i
 
 type LogoUploadProps = {
   currentUrl: string | null
   file: File | null
   onFileChange: (file: File | null) => void
   onError: (message: string | null) => void
+}
+
+async function assertSvgSafe(file: File): Promise<string | null> {
+  const text = await file.text()
+  if (SVG_DANGER_RE.test(text)) {
+    return 'Ce SVG contient des éléments non autorisés.'
+  }
+  return null
 }
 
 export function LogoUpload({ currentUrl, file, onFileChange, onError }: LogoUploadProps) {
@@ -32,11 +42,32 @@ export function LogoUpload({ currentUrl, file, onFileChange, onError }: LogoUplo
         onError(null)
         return
       }
-      if (!ACCEPTED_TYPES.includes(next.type)) {
-        onError('Format accepté : PNG, JPG ou WebP.')
+
+      const isSvg =
+        next.type === 'image/svg+xml' || next.name.toLowerCase().endsWith('.svg')
+
+      if (!ACCEPTED_TYPES.includes(next.type) && !isSvg) {
+        onError('Format accepté : PNG, JPG, WebP ou SVG.')
         return
       }
-      if (next.size > MAX_BYTES) {
+
+      if (isSvg) {
+        if (next.size > MAX_SVG_BYTES) {
+          onError('SVG trop volumineux (max 512 Ko).')
+          return
+        }
+        void assertSvgSafe(next).then((err) => {
+          if (err) {
+            onError(err)
+            return
+          }
+          onError(null)
+          onFileChange(next)
+        })
+        return
+      }
+
+      if (next.size > MAX_RASTER_BYTES) {
         onError('Logo trop volumineux (max 2 Mo).')
         return
       }
@@ -78,7 +109,7 @@ export function LogoUpload({ currentUrl, file, onFileChange, onError }: LogoUplo
           <img
             src={displayUrl}
             alt="Aperçu du logo"
-            className="h-20 w-20 rounded-[var(--radius-sm)] border border-[var(--border)] object-cover"
+            className="h-20 w-20 rounded-[var(--radius-sm)] border border-[var(--border)] object-contain bg-[var(--white)] p-1"
           />
         ) : (
           <div className="flex h-20 w-20 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--white)] text-3xl">
@@ -88,12 +119,15 @@ export function LogoUpload({ currentUrl, file, onFileChange, onError }: LogoUplo
         <p className="mt-3 text-sm font-body font-medium text-[var(--ink)]">
           {file ? file.name : 'Glissez une image ou cliquez pour parcourir'}
         </p>
-        <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">PNG, JPG, WebP — max 2 Mo</p>
+        <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
+          SVG recommandé pour un logo net sur tous les écrans ; PNG/WebP aussi acceptés (max 2 Mo /
+          512 Ko SVG).
+        </p>
       </div>
       <input
         ref={inputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp"
+        accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
         className="sr-only"
         onChange={(e) => validateAndSet(e.target.files?.[0] ?? null)}
       />

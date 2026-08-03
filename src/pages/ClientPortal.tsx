@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { ScheduleBookingStep } from '../components/onboarding/ScheduleBookingStep'
 import { SignatureModal } from '../components/onboarding/SignatureModal'
+import { PortalContactLinks } from '../components/portal/PortalContactLinks'
+import { PortalPortfolioLink } from '../components/portal/PortalPortfolioLink'
 import { Button } from '../components/ui'
 import { triggerIntegrations } from '../lib/integrations/triggerIntegrations'
 import type { IntegrationResults } from '../lib/integrations/triggerIntegrations'
@@ -9,6 +11,11 @@ import { getPortalTemplatePdfUrl } from '../lib/contractStorage'
 import { sendProjectCompletedEmail } from '../lib/resend'
 import { getPaymentState, formatPriceEur } from '../lib/payments'
 import { normalizeBrandColor, DEFAULT_BRAND_COLOR } from '../lib/agencyBranding'
+import { agencyInitials, portalThemeStyle } from '../lib/portalTheme'
+import {
+  DEFAULT_PORTAL_HELP_TITLE,
+  renderPortalWelcome,
+} from '../lib/portalWelcomeTemplate'
 import { getVisibleItems } from '../lib/checklistConditions'
 import { isOnboardingSettled, isRejected, type ReviewStatus } from '../lib/checklistReview'
 import type { ChecklistItemType } from '../lib/checklist'
@@ -31,6 +38,21 @@ import {
 } from '../lib/portalDrafts'
 import { supabase } from '../lib/supabase'
 
+type AgencyPortalRelation = {
+  logo_url: string | null
+  name?: string
+  brand_color?: string | null
+  portal_welcome_message?: string | null
+  tagline?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
+  portal_help_title?: string | null
+  portal_help_text?: string | null
+  portal_availability?: string | null
+  portfolio_url?: string | null
+  portfolio_label?: string | null
+}
+
 type ProjectRecord = {
   id: string
   client_name: string
@@ -41,23 +63,7 @@ type ProjectRecord = {
   price?: number | null
   payment_status?: string | null
   stripe_checkout_url?: string | null
-  agencies?: {
-    logo_url: string | null
-    name?: string
-    brand_color?: string | null
-    portal_welcome_message?: string | null
-    tagline?: string | null
-    contact_email?: string | null
-    contact_phone?: string | null
-  } | {
-    logo_url: string | null
-    name?: string
-    brand_color?: string | null
-    portal_welcome_message?: string | null
-    tagline?: string | null
-    contact_email?: string | null
-    contact_phone?: string | null
-  }[] | null
+  agencies?: AgencyPortalRelation | AgencyPortalRelation[] | null
 }
 
 type ChecklistItemRecord = {
@@ -217,17 +223,32 @@ export function ClientPortal() {
 
   const brandColor = normalizeBrandColor(agencyRelation?.brand_color ?? DEFAULT_BRAND_COLOR)
 
-  const portalWelcomeMessage =
-    agencyRelation?.portal_welcome_message?.trim() ||
-    'Complétez les étapes ci-dessous pour démarrer votre projet. Cela prend environ 10 minutes.'
+  const clientFirstName = (project?.client_name ?? '').trim().split(/\s+/)[0] || ''
+  const portalWelcomeMessage = renderPortalWelcome(agencyRelation?.portal_welcome_message, {
+    'client.prenom': clientFirstName,
+    'client.entreprise': '',
+    'projet.nom': project?.client_name?.trim() || 'votre projet',
+    'agence.nom': agencyRelation?.name ?? 'votre agence',
+  })
 
   const agencyTagline = agencyRelation?.tagline?.trim() ?? ''
 
   const agencyContactEmail = agencyRelation?.contact_email?.trim() ?? ''
   const agencyContactPhone = agencyRelation?.contact_phone?.trim() ?? ''
+  const portalHelpTitle =
+    agencyRelation?.portal_help_title?.trim() || DEFAULT_PORTAL_HELP_TITLE
+  const portalHelpText = agencyRelation?.portal_help_text?.trim() ?? ''
+  const portalAvailability = agencyRelation?.portal_availability?.trim() ?? ''
+  const portfolioUrl = agencyRelation?.portfolio_url ?? null
+  const portfolioLabel = agencyRelation?.portfolio_label ?? null
+  const showHelpBlock =
+    Boolean(agencyContactEmail) ||
+    Boolean(agencyContactPhone) ||
+    Boolean(portalHelpText) ||
+    Boolean(portalAvailability)
 
   const portalStyle = useMemo(
-    () => ({ ['--accent' as string]: brandColor, ['--portal-accent' as string]: brandColor }),
+    () => portalThemeStyle(brandColor) as CSSProperties,
     [brandColor],
   )
 
@@ -323,22 +344,34 @@ export function ClientPortal() {
 
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
-        .select('id, client_name, client_email, status, token, agency_id, price, payment_status, stripe_checkout_url, agencies(logo_url, name, brand_color, portal_welcome_message, tagline, contact_email, contact_phone)')
+        .select('id, client_name, client_email, status, token, agency_id, price, payment_status, stripe_checkout_url, agencies(logo_url, name, brand_color, portal_welcome_message, tagline, contact_email, contact_phone, portal_help_title, portal_help_text, portal_availability, portfolio_url, portfolio_label)')
         .eq('token', token)
         .maybeSingle()
 
+      let loadedProject: ProjectRecord
       if (projectError || !projectData) {
-        setError('Projet introuvable pour ce lien.')
-        setLoading(false)
-        return
+        const fallback = await supabase
+          .from('projects')
+          .select('id, client_name, client_email, status, token, agency_id, price, payment_status, stripe_checkout_url, agencies(logo_url, name, brand_color, portal_welcome_message, tagline, contact_email, contact_phone)')
+          .eq('token', token)
+          .maybeSingle()
+        if (fallback.error || !fallback.data) {
+          setError('Projet introuvable pour ce lien.')
+          setLoading(false)
+          return
+        }
+        loadedProject = fallback.data as ProjectRecord
+      } else {
+        loadedProject = projectData as ProjectRecord
       }
+      setProject(loadedProject)
 
       const { data: checklistData, error: checklistError } = await supabase
         .from('checklist_items')
         .select(
           'id, label, type, completed, value, order_index, review_status, review_note, config',
         )
-        .eq('project_id', projectData.id)
+        .eq('project_id', loadedProject.id)
         .order('order_index', { ascending: true })
 
       if (checklistError) {
@@ -712,9 +745,17 @@ export function ClientPortal() {
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             {agencyLogoUrl ? (
-              <img src={agencyLogoUrl} alt="" className="h-8 w-auto rounded-[var(--radius-xs)]" />
+              <img src={agencyLogoUrl} alt="" className="h-8 w-auto rounded-[var(--radius-xs)] object-contain" />
             ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] font-display text-xs font-extrabold text-white">Fr</div>
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-lg font-display text-xs font-extrabold"
+                style={{
+                  backgroundColor: 'var(--portal-accent)',
+                  color: 'var(--portal-accent-fg)',
+                }}
+              >
+                {agencyInitials(agencyName)}
+              </div>
             )}
             <span className="hidden font-display text-sm font-bold text-[var(--ink)] sm:block">
               {project.client_name}
@@ -723,7 +764,7 @@ export function ClientPortal() {
           <div className="flex items-center gap-3">
             <span className="font-body text-xs font-medium text-[var(--ink-muted)]">{progressPercent}%</span>
             <div className="h-2 w-24 overflow-hidden rounded-full bg-[var(--surface-warm)] sm:w-32">
-              <div className="h-full rounded-full bg-[var(--accent)] transition-all duration-500 ease-out" style={{ width: `${progressPercent}%` }} />
+              <div className="h-full rounded-full bg-[var(--portal-accent,var(--accent))] transition-all duration-500 ease-out motion-reduce:transition-none" style={{ width: `${progressPercent}%` }} />
             </div>
           </div>
         </div>
@@ -774,7 +815,12 @@ export function ClientPortal() {
               <p className="mt-1 font-body text-sm text-[var(--ink-muted)]">{agencyTagline}</p>
             ) : null}
             <p className="mt-2 font-body text-sm text-[var(--ink-muted)]">{portalWelcomeMessage}</p>
-            <Button className="mt-5 w-full sm:w-auto" onClick={scrollToFirstIncomplete}>Commencer →</Button>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <Button className="w-full sm:w-auto" onClick={scrollToFirstIncomplete}>
+                Commencer →
+              </Button>
+              <PortalPortfolioLink url={portfolioUrl} label={portfolioLabel} />
+            </div>
           </div>
         )}
 
@@ -1070,12 +1116,25 @@ export function ClientPortal() {
       </main>
 
       <footer className="pb-8 text-center">
-        {(agencyContactEmail || agencyContactPhone) && (
-          <div className="mb-3 font-body text-xs text-[var(--ink-muted)]">
-            {agencyContactEmail ? <p>{agencyContactEmail}</p> : null}
-            {agencyContactPhone ? <p className="mt-0.5">{agencyContactPhone}</p> : null}
+        {showHelpBlock ? (
+          <div className="mb-4 px-4">
+            <p className="font-display text-sm font-semibold text-[var(--ink)]">{portalHelpTitle}</p>
+            {portalHelpText ? (
+              <p className="mx-auto mt-1 max-w-md font-body text-xs text-[var(--ink-muted)]">
+                {portalHelpText}
+              </p>
+            ) : null}
+            {portalAvailability ? (
+              <p className="mt-1 font-body text-xs text-[var(--ink-muted)]">{portalAvailability}</p>
+            ) : null}
+            <PortalContactLinks
+              email={agencyContactEmail}
+              phone={agencyContactPhone}
+              projectName={project.client_name}
+              className="mt-2"
+            />
           </div>
-        )}
+        ) : null}
         <p className="font-body text-xs text-[var(--ink-muted)]">
           Propulsé par{' '}<span className="font-display font-bold text-[var(--ink)]">Freli</span>
         </p>

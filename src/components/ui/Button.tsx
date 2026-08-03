@@ -9,9 +9,9 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'bg-[var(--accent)] text-[var(--white)] shadow-[0_4px_14px_rgba(91,110,245,0.35)] hover:brightness-95 hover:-translate-y-0.5',
+    'bg-[var(--accent)] text-[var(--portal-accent-fg,var(--white))] shadow-[0_4px_14px_rgba(91,110,245,0.35)] hover:brightness-95 motion-safe:hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
   secondary:
-    'bg-[var(--white)] text-[var(--ink)] border border-[var(--border)] hover:border-[var(--accent)]',
+    'bg-[var(--white)] text-[var(--ink)] border border-[var(--border)] hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
 }
 
 export function Button({

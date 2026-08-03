@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatClientAddress,
+  formatPhoneDisplay,
+  isValidContactEmail,
   mailtoHref,
   mapsAppleHref,
   mapsGoogleHref,
+  normalizeContactPhone,
+  parseAgencyPhone,
   telHref,
   wazeHref,
 } from './contactLinks'
@@ -13,9 +17,32 @@ describe('contactLinks', () => {
     expect(mailtoHref('client@example.com')).toBe('mailto:client@example.com')
   })
 
-  it('normalizes phone for tel href', () => {
+  it('builds mailto href with encoded subject', () => {
+    expect(mailtoHref('a@b.co', 'Projet Site vitrine')).toBe(
+      'mailto:a@b.co?subject=Projet%20Site%20vitrine',
+    )
+  })
+
+  it('validates contact emails', () => {
+    expect(isValidContactEmail('ok@freli.fr')).toBe(true)
+    expect(isValidContactEmail('bad')).toBe(false)
+    expect(isValidContactEmail('')).toBe(false)
+  })
+
+  it('parses and formats French phones to E.164', () => {
+    expect(parseAgencyPhone('06 12 34 56 78')).toEqual({
+      e164: '+33612345678',
+      display: '06 12 34 56 78',
+    })
+    expect(normalizeContactPhone('06.12.34.56.78')).toBe('+33612345678')
     expect(telHref('+33 6 12 34 56 78')).toBe('tel:+33612345678')
-    expect(telHref('06.12.34.56.78')).toBe('tel:0612345678')
+    expect(telHref('06.12.34.56.78')).toBe('tel:+33612345678')
+    expect(formatPhoneDisplay('+33612345678')).toBe('06 12 34 56 78')
+  })
+
+  it('rejects invalid phones', () => {
+    expect(parseAgencyPhone('123')).toBeNull()
+    expect(normalizeContactPhone('abc')).toBeNull()
   })
 
   it('formats client address', () => {

@@ -1,4 +1,5 @@
 import { BRAND_COLOR_PRESETS, DEFAULT_BRAND_COLOR } from '../../lib/agencyBranding'
+import { derivePortalTokens } from '../../lib/portalTheme'
 
 type BrandColorPickerProps = {
   value: string
@@ -7,6 +8,7 @@ type BrandColorPickerProps = {
 
 export function BrandColorPicker({ value, onChange }: BrandColorPickerProps) {
   const normalized = value || DEFAULT_BRAND_COLOR
+  const tokens = derivePortalTokens(normalized)
 
   return (
     <div className="space-y-3">
@@ -38,8 +40,27 @@ export function BrandColorPicker({ value, onChange }: BrandColorPickerProps) {
           />
         </label>
       </div>
+      <div className="flex items-center gap-3">
+        <span
+          className="inline-flex min-h-9 items-center rounded-full px-3 text-xs font-body font-medium"
+          style={{ backgroundColor: tokens.accent, color: tokens.accentFg }}
+        >
+          Aperçu bouton
+        </span>
+        <span className="font-body text-xs text-[var(--ink-muted)]">
+          Contraste {tokens.buttonContrast.toFixed(1)}:1
+        </span>
+      </div>
+      {!tokens.passesOnWhiteUi ? (
+        <p className="rounded-[var(--radius-sm)] bg-[var(--amber-soft)] px-3 py-2 text-xs font-body text-[var(--ink)]">
+          Cette couleur est peu contrastée sur fond clair (ratio{' '}
+          {tokens.onWhiteContrast.toFixed(1)}:1). Les liens et accents peuvent être difficiles à
+          lire — ce n&apos;est pas bloquant.
+        </p>
+      ) : null}
       <p className="text-xs font-body text-[var(--ink-muted)]">
-        Appliquée aux boutons et à la barre de progression du portail client.
+        Appliquée aux boutons et à la barre de progression du portail client. Le texte du bouton
+        s&apos;adapte automatiquement (noir ou blanc).
       </p>
     </div>
   )

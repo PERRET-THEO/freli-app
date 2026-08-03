@@ -34,7 +34,7 @@ export const FRELI_AI_ADDON = {
 export const FRELI_PLAN_FEATURES = [
   'Portail client + formulaire + upload + signature native',
   'Autofill SIREN / SIRET',
-  'White-label complet (logo, couleurs, tagline, message d’accueil)',
+  'Branding portail (logo, couleur d’accent, tagline, message d’accueil, portfolio)',
   'Paiements clients via Stripe Connect (argent sur votre compte — 0 % Freli)',
   'Relances automatiques',
   'Synchronisation Google Drive',
