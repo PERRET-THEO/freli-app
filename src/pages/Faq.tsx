@@ -1,13 +1,23 @@
 import { Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { SeoHead } from '../components/seo/SeoHead'
+import { answerBlocks } from '../lib/seo/answerBlocks'
 import { faqEntries } from '../lib/seo/faqContent'
-import { faqPageJsonLd, jsonLdGraph } from '../lib/seo/jsonLd'
+import { breadcrumbJsonLd, faqPageJsonLd, jsonLdGraph } from '../lib/seo/jsonLd'
 
 export function Faq() {
   return (
     <div className="min-h-screen bg-[var(--ink)] text-[var(--white)]">
-      <SeoHead path="/faq" jsonLd={jsonLdGraph(faqPageJsonLd(faqEntries))} />
+      <SeoHead
+        path="/faq"
+        jsonLd={jsonLdGraph(
+          breadcrumbJsonLd([
+            { name: 'Accueil', path: '/' },
+            { name: 'FAQ', path: '/faq' },
+          ]),
+          faqPageJsonLd(faqEntries),
+        )}
+      />
       <Navbar />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <Link
@@ -21,8 +31,10 @@ export function Faq() {
           Questions fréquentes
         </h1>
         <p className="mt-3 text-sm font-body leading-relaxed text-[var(--surface-warm)]">
-          Tout ce qu&apos;il faut savoir sur Freli : fonctionnement, accès, signature, paiements et
-          données. Une autre question ?{' '}
+          {answerBlocks.faq}
+        </p>
+        <p className="mt-3 text-sm font-body leading-relaxed text-[var(--surface-warm)]">
+          Une autre question ?{' '}
           <Link to="/demo" className="text-[var(--accent)] hover:underline">
             Réservez une démo
           </Link>

@@ -2,18 +2,53 @@ import { Link, useParams } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { SeoHead } from '../components/seo/SeoHead'
 import { Button } from '../components/ui'
+import { answerBlocks } from '../lib/seo/answerBlocks'
 import {
   comparisonPages,
   getComparisonBySlug,
   type ComparisonPage,
 } from '../lib/seo/comparisons'
+import {
+  breadcrumbJsonLd,
+  faqPageJsonLd,
+  jsonLdGraph,
+  webPageJsonLd,
+} from '../lib/seo/jsonLd'
+import { routesMeta, canonicalUrl } from '../lib/seo/siteConfig'
+
+const CONTENT_DATE = '2026-08-03'
+
+function comparisonJsonLd(page: ComparisonPage) {
+  return jsonLdGraph(
+    breadcrumbJsonLd([
+      { name: 'Accueil', path: '/' },
+      { name: 'Comparatifs', path: '/comparatifs' },
+      { name: page.title, path: page.path },
+    ]),
+    webPageJsonLd({
+      path: page.path,
+      name: page.metaTitle,
+      description: page.metaDescription,
+      dateModified: CONTENT_DATE,
+    }),
+    faqPageJsonLd(page.faqs),
+  )
+}
 
 function ComparisonArticle({ page }: { page: ComparisonPage }) {
   return (
     <>
-      <SeoHead path={page.path} title={page.metaTitle} description={page.metaDescription} />
+      <SeoHead
+        path={page.path}
+        title={page.metaTitle}
+        description={page.metaDescription}
+        jsonLd={comparisonJsonLd(page)}
+      />
       <h1 className="mt-8 font-display text-4xl font-extrabold tracking-tight">{page.title}</h1>
       <p className="mt-4 text-sm font-body leading-relaxed text-[var(--surface-warm)]">
+        {page.answerBlock}
+      </p>
+      <p className="mt-3 text-sm font-body leading-relaxed text-[var(--surface-warm)]">
         {page.intro}
       </p>
 
@@ -44,6 +79,28 @@ function ComparisonArticle({ page }: { page: ComparisonPage }) {
         {page.verdict}
       </p>
 
+      <section className="mt-10 space-y-4" aria-labelledby="vs-faq-heading">
+        <h2 id="vs-faq-heading" className="font-display text-xl font-bold text-[var(--white)]">
+          Questions fréquentes
+        </h2>
+        {page.faqs.map((entry) => (
+          <details
+            key={entry.question}
+            className="group rounded-[var(--radius-md)] border border-[var(--ink-soft)] bg-[rgba(255,255,255,0.02)] px-5 py-4"
+          >
+            <summary className="cursor-pointer list-none font-display text-base font-bold text-[var(--white)] marker:content-none">
+              <span className="mr-2 inline-block text-[var(--accent)] transition-transform group-open:rotate-90">
+                ›
+              </span>
+              {entry.question}
+            </summary>
+            <p className="mt-3 text-sm font-body leading-relaxed text-[var(--surface-warm)]">
+              {entry.answer}
+            </p>
+          </details>
+        ))}
+      </section>
+
       <div className="mt-8 flex flex-wrap gap-3">
         <Link to="/demo">
           <Button>Demander une démo</Button>
@@ -60,13 +117,33 @@ function ComparisonArticle({ page }: { page: ComparisonPage }) {
 }
 
 export function ComparisonsHub() {
+  const hubMeta = routesMeta['/comparatifs']
+  const hubJsonLd = jsonLdGraph(
+    breadcrumbJsonLd([
+      { name: 'Accueil', path: '/' },
+      { name: 'Comparatifs', path: '/comparatifs' },
+    ]),
+    webPageJsonLd({
+      path: '/comparatifs',
+      name: hubMeta.title,
+      description: hubMeta.description,
+      dateModified: CONTENT_DATE,
+    }),
+    {
+      '@type': 'ItemList',
+      name: 'Comparatifs Freli',
+      itemListElement: comparisonPages.map((page, index) => ({
+        '@type': 'ListItem',
+        position: index + 1,
+        name: page.title,
+        url: canonicalUrl(page.path),
+      })),
+    },
+  )
+
   return (
     <div className="min-h-screen bg-[var(--ink)] text-[var(--white)]">
-      <SeoHead
-        path="/comparatifs"
-        title="Comparatifs Freli — onboarding client"
-        description="Comparez Freli à Content Snare, Clustdoc et à la stack emails + Forms + DocuSign pour l’onboarding client des freelances et agences."
-      />
+      <SeoHead path="/comparatifs" jsonLd={hubJsonLd} />
       <Navbar />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <Link
@@ -78,9 +155,8 @@ export function ComparisonsHub() {
         <h1 className="mt-8 font-display text-4xl font-extrabold tracking-tight">
           Comparatifs Freli
         </h1>
-        <p className="mt-4 text-sm font-body text-[var(--surface-warm)]">
-          Freli se compare aux outils d&apos;intake / onboarding client métier — pas aux
-          plateformes d&apos;adoption produit.
+        <p className="mt-4 text-sm font-body leading-relaxed text-[var(--surface-warm)]">
+          {answerBlocks.comparatifs}
         </p>
         <ul className="mt-8 space-y-3">
           {comparisonPages.map((page) => (

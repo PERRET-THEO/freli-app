@@ -1,10 +1,11 @@
 # Freli
 
-> Freli est une plateforme SaaS française qui automatise l'onboarding client des freelances et agences : portail unique de collecte (formulaire, documents, signature électronique), paiement Stripe Connect en fin d'onboarding, synchronisation Google Drive, relances automatiques et préremplissage des données entreprise via l'API Recherche d'Entreprises (data.gouv, SIREN/SIRET).
+> Freli est une plateforme SaaS française qui automatise l'onboarding client des freelances et agences : portail unique de collecte (formulaire, documents, signature électronique), paiement Stripe Connect en fin d'onboarding (0 % de commission Freli), synchronisation Google Drive, relances automatiques et préremplissage des données entreprise via l'API Recherche d'Entreprises (data.gouv, SIREN/SIRET).
 
 Freli remplace les chaînes d'emails, les Google Forms et les relances manuelles par un lien
-d'onboarding unique envoyé au client. L'accès se fait sur invitation ; une démo de 30 minutes
-peut être réservée en ligne.
+d'onboarding unique envoyé au client. Abonnement unique à 59 € HT / mois ou 590 € HT / an ;
+add-on Modules IA optionnel à 29 € HT / mois. Souscription en ligne sur freli.fr/tarifs ;
+démo de 30 minutes disponible sur freli.fr/demo.
 
 Ne pas confondre avec d'autres entités nommées « Freli » (ex. toponymes ou campings) :
 ici, Freli désigne le produit d'onboarding client édité sur freli.fr.
@@ -14,8 +15,8 @@ ici, Freli désigne le produit d'onboarding client édité sur freli.fr.
 - [Accueil](https://www.freli.fr/) : présentation du produit, fonctionnalités et intégrations
 - [Démo](https://www.freli.fr/demo) : réservation d'une démonstration de 30 minutes
 - [À propos](https://www.freli.fr/a-propos) : présentation de l'éditeur et du produit
-- [FAQ](https://www.freli.fr/faq) : questions fréquentes (fonctionnement, accès, RGPD)
-- [Tarifs](https://www.freli.fr/tarifs) : offres Solo et Agence
+- [FAQ](https://www.freli.fr/faq) : questions fréquentes (fonctionnement, tarifs, RGPD)
+- [Tarifs](https://www.freli.fr/tarifs) : abonnement unique 59 € HT/mois ou 590 € HT/an + add-on IA
 - [Comparatifs](https://www.freli.fr/comparatifs) : Freli vs Content Snare, Clustdoc, stack manuelle
 - [Politique de confidentialité](https://www.freli.fr/confidentialite)
 - [Conditions d'utilisation](https://www.freli.fr/conditions-utilisation)
@@ -24,11 +25,11 @@ ici, Freli désigne le produit d'onboarding client édité sur freli.fr.
 
 - Cible : freelances et agences francophones (web, design, marketing, conseil)
 - Fonctionnalités : portail d'onboarding white-label, signature électronique intégrée,
-  paiement Stripe, sync Google Drive, relances automatiques, webhooks (Zapier, Make, n8n),
+  paiement Stripe Connect, sync Google Drive, relances automatiques, webhooks (Zapier, Make, n8n),
   modules IA optionnels (extraction de documents, relances intelligentes)
-- Application : https://app.freli.fr (réservée aux utilisateurs invités)
+- Application : https://app.freli.fr (espace connecté)
 
 ## Contact
 
 - Support : support@freli.fr
-- Démo : https://calendly.com/freli/demo
+- Démo : https://calendly.com/freliapp/demo

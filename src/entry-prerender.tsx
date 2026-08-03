@@ -8,27 +8,39 @@ import { renderToString } from 'react-dom/server'
 import { Route, Routes } from 'react-router-dom'
 import { StaticRouter } from 'react-router-dom/server'
 import { About } from './pages/About'
+import { ComparisonDetail, ComparisonsHub } from './pages/Comparisons'
 import { Demo } from './pages/Demo'
 import { Faq } from './pages/Faq'
 import { Landing } from './pages/Landing'
 import { LegalNotice } from './pages/LegalNotice'
+import { Pricing } from './pages/Pricing'
 import { PrivacyPolicy } from './pages/PrivacyPolicy'
 import { TermsOfUse } from './pages/TermsOfUse'
+import { comparisonPages, getComparisonBySlug } from './lib/seo/comparisons'
 import { faqEntries } from './lib/seo/faqContent'
 import {
+  breadcrumbJsonLd,
   faqPageJsonLd,
   jsonLdGraph,
   organizationJsonLd,
   softwareApplicationJsonLd,
+  webPageJsonLd,
   websiteJsonLd,
 } from './lib/seo/jsonLd'
 import { canonicalUrl, routesMeta, siteConfig } from './lib/seo/siteConfig'
+
+const CONTENT_DATE = '2026-08-03'
 
 export const prerenderPaths = [
   '/',
   '/demo',
   '/a-propos',
   '/faq',
+  '/tarifs',
+  '/comparatifs',
+  '/vs/content-snare',
+  '/vs/clustdoc',
+  '/vs/emails-forms-docusign',
   '/mentions-legales',
   '/confidentialite',
   '/conditions-utilisation',
@@ -45,6 +57,9 @@ export function renderBody(path: string): string {
           <Route path="/demo" element={<Demo />} />
           <Route path="/a-propos" element={<About />} />
           <Route path="/faq" element={<Faq />} />
+          <Route path="/tarifs" element={<Pricing />} />
+          <Route path="/comparatifs" element={<ComparisonsHub />} />
+          <Route path="/vs/:slug" element={<ComparisonDetail />} />
           <Route path="/mentions-legales" element={<LegalNotice />} />
           <Route path="/confidentialite" element={<PrivacyPolicy />} />
           <Route path="/conditions-utilisation" element={<TermsOfUse />} />
@@ -63,11 +78,86 @@ function jsonLdForPath(path: string): string | null {
     case '/':
       return jsonLdGraph(organizationJsonLd(), websiteJsonLd(), softwareApplicationJsonLd())
     case '/a-propos':
-      return jsonLdGraph(organizationJsonLd())
+      return jsonLdGraph(
+        organizationJsonLd(),
+        breadcrumbJsonLd([
+          { name: 'Accueil', path: '/' },
+          { name: 'À propos', path: '/a-propos' },
+        ]),
+        webPageJsonLd({
+          path: '/a-propos',
+          name: routesMeta['/a-propos'].title,
+          description: routesMeta['/a-propos'].description,
+          dateModified: CONTENT_DATE,
+        }),
+      )
     case '/faq':
-      return jsonLdGraph(faqPageJsonLd(faqEntries))
-    default:
+      return jsonLdGraph(
+        breadcrumbJsonLd([
+          { name: 'Accueil', path: '/' },
+          { name: 'FAQ', path: '/faq' },
+        ]),
+        faqPageJsonLd(faqEntries),
+      )
+    case '/tarifs':
+      return jsonLdGraph(
+        breadcrumbJsonLd([
+          { name: 'Accueil', path: '/' },
+          { name: 'Tarifs', path: '/tarifs' },
+        ]),
+        webPageJsonLd({
+          path: '/tarifs',
+          name: routesMeta['/tarifs'].title,
+          description: routesMeta['/tarifs'].description,
+          dateModified: CONTENT_DATE,
+        }),
+        softwareApplicationJsonLd(),
+      )
+    case '/comparatifs':
+      return jsonLdGraph(
+        breadcrumbJsonLd([
+          { name: 'Accueil', path: '/' },
+          { name: 'Comparatifs', path: '/comparatifs' },
+        ]),
+        webPageJsonLd({
+          path: '/comparatifs',
+          name: routesMeta['/comparatifs'].title,
+          description: routesMeta['/comparatifs'].description,
+          dateModified: CONTENT_DATE,
+        }),
+        {
+          '@type': 'ItemList',
+          name: 'Comparatifs Freli',
+          itemListElement: comparisonPages.map((page, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            name: page.title,
+            url: canonicalUrl(page.path),
+          })),
+        },
+      )
+    default: {
+      if (path.startsWith('/vs/')) {
+        const slug = path.slice('/vs/'.length)
+        const page = getComparisonBySlug(slug)
+        if (!page) return null
+        return jsonLdGraph(
+          breadcrumbJsonLd([
+            { name: 'Accueil', path: '/' },
+            { name: 'Comparatifs', path: '/comparatifs' },
+            { name: page.title, path: page.path },
+          ]),
+          webPageJsonLd({
+            path: page.path,
+            name: page.metaTitle,
+            description: page.metaDescription,
+            dateModified: CONTENT_DATE,
+          }),
+          faqPageJsonLd(page.faqs),
+        )
+      }
       return null
+    }
   }
 }
 

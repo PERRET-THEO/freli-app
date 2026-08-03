@@ -1,4 +1,8 @@
 import type { FaqEntry } from './jsonLd'
+import {
+  FRELI_AI_ADDON,
+  FRELI_SUBSCRIPTION,
+} from '../billing/entitlements'
 
 export const faqEntries: FaqEntry[] = [
   {
@@ -14,7 +18,7 @@ export const faqEntries: FaqEntry[] = [
   {
     question: 'Comment obtenir un accès à Freli ?',
     answer:
-      "L'accès à Freli se fait sur invitation. Réservez une démo de 30 minutes sur freli.fr/demo : c'est la première étape pour obtenir un compte. La mise en route prend environ 5 minutes, sans formation nécessaire.",
+      "Vous pouvez vous abonner directement sur freli.fr/tarifs (paiement Stripe, puis création de compte). Une démo de 30 minutes reste disponible sur freli.fr/demo pour voir le produit avant de souscrire. La mise en route prend environ 5 minutes, sans formation nécessaire.",
   },
   {
     question: 'Quelle différence avec des emails ou un Google Form ?',
@@ -69,6 +73,6 @@ export const faqEntries: FaqEntry[] = [
   {
     question: 'Combien coûte Freli ?',
     answer:
-      "Freli propose deux offres, Solo et Agence (détails sur freli.fr/tarifs). L'accès se fait sur invitation : les conditions tarifaires exactes sont confirmées lors de la démo de 30 minutes.",
+      `Freli propose un abonnement unique à ${FRELI_SUBSCRIPTION.monthlyLabelHt} / mois ou ${FRELI_SUBSCRIPTION.yearlyLabelHt} / an (−${FRELI_SUBSCRIPTION.yearlyDiscountPercent} %). Un add-on Modules IA est optionnel à ${FRELI_AI_ADDON.monthlyLabelHt} / mois (ou ${FRELI_AI_ADDON.yearlyLabelHt} / an), avec ${FRELI_AI_ADDON.includedCreditsPerMonth} crédits inclus. Les prix sont HT ; la TVA est calculée au paiement. Détails sur freli.fr/tarifs.`,
   },
 ]

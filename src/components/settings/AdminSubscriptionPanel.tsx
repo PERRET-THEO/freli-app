@@ -17,6 +17,8 @@ type Props = {
   onFeedback?: (type: 'success' | 'error', text: string) => void
 }
 
+const VISIBLE_LEADS = 3
+
 export function AdminSubscriptionPanel({ onFeedback }: Props) {
   const [email, setEmail] = useState('')
   const [interval, setInterval] = useState<BillingInterval>('month')
@@ -25,6 +27,7 @@ export function AdminSubscriptionPanel({ onFeedback }: Props) {
   const [leads, setLeads] = useState<SubscriptionLead[]>([])
   const [loading, setLoading] = useState(false)
   const [listLoading, setListLoading] = useState(true)
+  const [showHistory, setShowHistory] = useState(false)
 
   const refresh = useCallback(async () => {
     setListLoading(true)
@@ -82,6 +85,9 @@ export function AdminSubscriptionPanel({ onFeedback }: Props) {
     onFeedback?.('success', `Invitation renvoyée à ${lead.email}`)
     await refresh()
   }
+
+  const visibleLeads = showHistory ? leads : leads.slice(0, VISIBLE_LEADS)
+  const hiddenCount = Math.max(0, leads.length - VISIBLE_LEADS)
 
   return (
     <div className="space-y-6">
@@ -144,34 +150,54 @@ export function AdminSubscriptionPanel({ onFeedback }: Props) {
             Actualiser
           </button>
         </div>
+        <p className="mb-2 text-xs font-body text-[var(--ink-muted)]">
+          L’invitation de compte part après paiement (automatique). « Renvoyer » n’apparaît que pour
+          les leads déjà payés.
+        </p>
         {listLoading ? (
           <p className="text-sm font-body text-[var(--ink-muted)]">Chargement…</p>
         ) : leads.length === 0 ? (
           <p className="text-sm font-body text-[var(--ink-muted)]">Aucun lead pour le moment.</p>
         ) : (
-          <ul className="divide-y divide-[var(--border)] rounded-[var(--radius-sm)] border border-[var(--border)]">
-            {leads.map((lead) => (
-              <li key={lead.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-body text-[var(--ink)]">{lead.email}</p>
-                  <p className="text-xs font-body text-[var(--ink-muted)]">
-                    {lead.source} · {lead.billing_interval} · {lead.status}
-                  </p>
-                </div>
-                {lead.status !== 'account_linked' && !lead.email.endsWith('@freli.local') ? (
-                  <button
-                    type="button"
-                    className="text-xs font-body font-medium text-[var(--accent)]"
-                    onClick={() => void handleResend(lead)}
-                  >
-                    Renvoyer l’invitation
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="divide-y divide-[var(--border)] rounded-[var(--radius-sm)] border border-[var(--border)]">
+              {visibleLeads.map((lead) => (
+                <li key={lead.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-body text-[var(--ink)]">{lead.email}</p>
+                    <p className="text-xs font-body text-[var(--ink-muted)]">
+                      {lead.source} · {lead.billing_interval} · {lead.status}
+                    </p>
+                  </div>
+                  {(lead.status === 'paid' || lead.status === 'invite_sent') &&
+                  !lead.email.endsWith('@freli.local') ? (
+                    <button
+                      type="button"
+                      className="text-xs font-body font-medium text-[var(--accent)]"
+                      onClick={() => void handleResend(lead)}
+                    >
+                      Renvoyer l’invitation
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            {hiddenCount > 0 ? (
+              <div className="mt-2 text-center">
+                <button
+                  type="button"
+                  className="text-xs font-body text-[var(--accent)]"
+                  aria-expanded={showHistory}
+                  onClick={() => setShowHistory((v) => !v)}
+                >
+                  {showHistory ? 'Réduire' : `Voir l’historique (${hiddenCount})`}
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </div>
   )
 }
+

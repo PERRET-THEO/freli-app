@@ -1,3 +1,4 @@
+# Index des pages pour agents LLM : https://www.freli.fr/llms.txt
 User-agent: *
 Allow: /
 Disallow: /dashboard
@@ -8,5 +9,18 @@ Disallow: /reset-password
 Disallow: /confirm
 Disallow: /p/
 Disallow: /portal-preview
+
+# Bots IA courants — explicite (Allow: / déjà couvre tout le site marketing)
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
 
 Sitemap: https://www.freli.fr/sitemap.xml

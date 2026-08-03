@@ -17,7 +17,20 @@ async function invokeJson<T>(
 ): Promise<{ data: T | null; error: string | null }> {
   const { data, error } = await supabase.functions.invoke(name, { body })
   if (error) {
-    return { data: null, error: error.message }
+    let contextMsg: string | null = null
+    try {
+      const ctx = (error as { context?: Response }).context
+      if (ctx && typeof ctx.json === 'function') {
+        const bodyJson = await ctx.clone().json()
+        contextMsg =
+          bodyJson && typeof bodyJson === 'object' && 'error' in bodyJson
+            ? String((bodyJson as { error: unknown }).error)
+            : null
+      }
+    } catch {
+      contextMsg = null
+    }
+    return { data: null, error: contextMsg || error.message }
   }
   if (data && typeof data === 'object' && 'error' in data && data.error) {
     return { data: null, error: String((data as { error: unknown }).error) }

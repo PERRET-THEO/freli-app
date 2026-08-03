@@ -1,3 +1,8 @@
+import {
+  FRELI_AI_ADDON,
+  FRELI_CURRENCY,
+  FRELI_SUBSCRIPTION,
+} from '../billing/entitlements'
 import { canonicalUrl, siteConfig } from './siteConfig'
 
 type JsonLd = Record<string, unknown>
@@ -36,7 +41,12 @@ export function websiteJsonLd(): JsonLd {
   }
 }
 
+function eurosFromCents(cents: number): string {
+  return (cents / 100).toFixed(0)
+}
+
 export function softwareApplicationJsonLd(): JsonLd {
+  const currency = FRELI_CURRENCY.toUpperCase()
   return {
     '@type': 'SoftwareApplication',
     '@id': `${siteConfig.siteUrl}/#software`,
@@ -46,12 +56,49 @@ export function softwareApplicationJsonLd(): JsonLd {
     url: siteConfig.siteUrl,
     description: siteConfig.description,
     inLanguage: siteConfig.language,
-    offers: {
-      '@type': 'Offer',
-      price: '0',
-      priceCurrency: 'EUR',
-      description: 'Accès sur invitation — démo gratuite sur rendez-vous.',
-    },
+    offers: [
+      {
+        '@type': 'Offer',
+        '@id': `${siteConfig.siteUrl}/tarifs#offer-monthly`,
+        name: `${FRELI_SUBSCRIPTION.name} — mensuel`,
+        url: canonicalUrl('/tarifs'),
+        price: eurosFromCents(FRELI_SUBSCRIPTION.monthlyAmountCents),
+        priceCurrency: currency,
+        priceSpecification: {
+          '@type': 'UnitPriceSpecification',
+          price: eurosFromCents(FRELI_SUBSCRIPTION.monthlyAmountCents),
+          priceCurrency: currency,
+          billingDuration: 'P1M',
+          valueAddedTaxIncluded: false,
+        },
+        description: `${FRELI_SUBSCRIPTION.monthlyLabelHt} / mois. TVA calculée au paiement.`,
+      },
+      {
+        '@type': 'Offer',
+        '@id': `${siteConfig.siteUrl}/tarifs#offer-yearly`,
+        name: `${FRELI_SUBSCRIPTION.name} — annuel`,
+        url: canonicalUrl('/tarifs'),
+        price: eurosFromCents(FRELI_SUBSCRIPTION.yearlyAmountCents),
+        priceCurrency: currency,
+        priceSpecification: {
+          '@type': 'UnitPriceSpecification',
+          price: eurosFromCents(FRELI_SUBSCRIPTION.yearlyAmountCents),
+          priceCurrency: currency,
+          billingDuration: 'P1Y',
+          valueAddedTaxIncluded: false,
+        },
+        description: `${FRELI_SUBSCRIPTION.yearlyLabelHt} / an (−${FRELI_SUBSCRIPTION.yearlyDiscountPercent} %). TVA calculée au paiement.`,
+      },
+      {
+        '@type': 'Offer',
+        '@id': `${siteConfig.siteUrl}/tarifs#offer-ai-monthly`,
+        name: `${FRELI_AI_ADDON.name} — mensuel`,
+        url: canonicalUrl('/tarifs'),
+        price: eurosFromCents(FRELI_AI_ADDON.monthlyAmountCents),
+        priceCurrency: currency,
+        description: `Add-on optionnel ${FRELI_AI_ADDON.monthlyLabelHt} / mois (${FRELI_AI_ADDON.includedCreditsPerMonth} crédits).`,
+      },
+    ],
     featureList: [
       "Portail d'onboarding client unique",
       'Signature électronique intégrée',
@@ -64,6 +111,25 @@ export function softwareApplicationJsonLd(): JsonLd {
     ],
     provider: { '@id': `${siteConfig.siteUrl}/#organization` },
   }
+}
+
+export function webPageJsonLd(opts: {
+  path: string
+  name: string
+  description: string
+  dateModified?: string
+}): JsonLd {
+  return compact({
+    '@type': 'WebPage',
+    '@id': `${canonicalUrl(opts.path)}#webpage`,
+    url: canonicalUrl(opts.path),
+    name: opts.name,
+    description: opts.description,
+    inLanguage: siteConfig.language,
+    isPartOf: { '@id': `${siteConfig.siteUrl}/#website` },
+    about: { '@id': `${siteConfig.siteUrl}/#software` },
+    dateModified: opts.dateModified,
+  })
 }
 
 export interface FaqEntry {

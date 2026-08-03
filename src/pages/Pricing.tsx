@@ -12,6 +12,14 @@ import {
   type BillingInterval,
 } from '../lib/billing/entitlements'
 import { createSaasCheckout } from '../lib/billing/saasCheckout'
+import { answerBlocks } from '../lib/seo/answerBlocks'
+import {
+  breadcrumbJsonLd,
+  jsonLdGraph,
+  softwareApplicationJsonLd,
+  webPageJsonLd,
+} from '../lib/seo/jsonLd'
+import { routesMeta } from '../lib/seo/siteConfig'
 
 const EASE = [0.32, 0.72, 0, 1] as const
 
@@ -108,13 +116,24 @@ export function Pricing() {
     }
   }
 
+  const tarifsMeta = routesMeta['/tarifs']
+  const tarifsJsonLd = jsonLdGraph(
+    breadcrumbJsonLd([
+      { name: 'Accueil', path: '/' },
+      { name: 'Tarifs', path: '/tarifs' },
+    ]),
+    webPageJsonLd({
+      path: '/tarifs',
+      name: tarifsMeta.title,
+      description: tarifsMeta.description,
+      dateModified: '2026-08-03',
+    }),
+    softwareApplicationJsonLd(),
+  )
+
   return (
     <div className="min-h-screen bg-[var(--ink)] text-[var(--white)]">
-      <SeoHead
-        path="/tarifs"
-        title="Tarifs Freli — Abonnement unique"
-        description="Abonnement Freli à 59 € HT / mois ou 590 € HT / an. Add-on IA optionnel. TVA calculée au paiement."
-      />
+      <SeoHead path="/tarifs" jsonLd={tarifsJsonLd} />
       <Navbar />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <Link
@@ -128,9 +147,11 @@ export function Pricing() {
           Tarifs Freli
         </h1>
         <p className="mt-4 max-w-2xl text-sm font-body leading-relaxed text-[var(--surface-warm)]">
-          Un abonnement unique pour freelances et agences. Prix affichés{' '}
-          <strong className="text-[var(--white)]">HT</strong> — la TVA est calculée lors du
-          paiement selon votre situation.
+          {answerBlocks.tarifs}
+        </p>
+        <p className="mt-3 max-w-2xl text-sm font-body leading-relaxed text-[var(--surface-warm)]">
+          Prix affichés <strong className="text-[var(--white)]">HT</strong> — la TVA est calculée
+          lors du paiement selon votre situation.
         </p>
 
         <BillingIntervalToggle
@@ -245,15 +266,18 @@ export function Pricing() {
               disabled={loading}
               onClick={() => void handleSubscribe()}
             >
-              {loading ? 'Redirection…' : 'S’abonner'}
+              {loading ? 'Redirection…' : 'Démarrer mon abonnement'}
             </Button>
             <Link
               to="/demo"
               className="text-center text-sm font-body text-[var(--surface-warm)] underline-offset-2 hover:text-[var(--white)] hover:underline sm:text-left"
             >
-              Parler à l’équipe
+              Voir une démo (30 min)
             </Link>
           </div>
+          <p className="mt-3 text-xs font-body leading-relaxed text-[var(--surface-warm)]">
+            Paiement sécurisé Stripe · accès immédiat après règlement · résiliable à tout moment
+          </p>
           {error ? (
             <p className="mt-3 text-sm font-body text-[var(--amber)]">{error}</p>
           ) : null}

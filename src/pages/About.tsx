@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { SeoHead } from '../components/seo/SeoHead'
-import { jsonLdGraph, organizationJsonLd } from '../lib/seo/jsonLd'
-import { siteConfig } from '../lib/seo/siteConfig'
+import { answerBlocks } from '../lib/seo/answerBlocks'
+import { breadcrumbJsonLd, jsonLdGraph, organizationJsonLd, webPageJsonLd } from '../lib/seo/jsonLd'
+import { routesMeta, siteConfig } from '../lib/seo/siteConfig'
 
 const COMPARISON_ROWS = [
   {
@@ -33,9 +34,25 @@ const COMPARISON_ROWS = [
 ]
 
 export function About() {
+  const aboutMeta = routesMeta['/a-propos']
   return (
     <div className="min-h-screen bg-[var(--ink)] text-[var(--white)]">
-      <SeoHead path="/a-propos" jsonLd={jsonLdGraph(organizationJsonLd())} />
+      <SeoHead
+        path="/a-propos"
+        jsonLd={jsonLdGraph(
+          organizationJsonLd(),
+          breadcrumbJsonLd([
+            { name: 'Accueil', path: '/' },
+            { name: 'À propos', path: '/a-propos' },
+          ]),
+          webPageJsonLd({
+            path: '/a-propos',
+            name: aboutMeta.title,
+            description: aboutMeta.description,
+            dateModified: '2026-08-03',
+          }),
+        )}
+      />
       <Navbar />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <Link
@@ -48,6 +65,9 @@ export function About() {
         <h1 className="mt-8 font-display text-4xl font-extrabold tracking-tight">
           À propos de Freli
         </h1>
+        <p className="mt-4 text-sm font-body leading-relaxed text-[var(--surface-warm)]">
+          {answerBlocks.about}
+        </p>
 
         <div className="mt-8 space-y-10 text-sm font-body leading-relaxed text-[var(--surface-warm)]">
           <section>

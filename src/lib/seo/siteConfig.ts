@@ -1,3 +1,4 @@
+import { FRELI_AI_ADDON, FRELI_SUBSCRIPTION } from '../billing/entitlements'
 import { SUPPORT_EMAIL } from '../support'
 
 /**
@@ -63,7 +64,7 @@ export const routesMeta: Record<string, RouteMeta> = {
   '/faq': {
     title: 'FAQ Freli — Questions fréquentes',
     description:
-      "Réponses aux questions fréquentes sur Freli : fonctionnement, accès sur invitation, signature électronique, paiements Stripe, données et RGPD.",
+      'Réponses aux questions fréquentes sur Freli : fonctionnement, abonnement, signature électronique, paiements Stripe, données et RGPD.',
     type: 'website',
   },
   '/mentions-legales': {
@@ -84,9 +85,8 @@ export const routesMeta: Record<string, RouteMeta> = {
     type: 'website',
   },
   '/tarifs': {
-    title: 'Tarifs Freli — Solo et Agence',
-    description:
-      'Offres Freli Solo et Agence pour automatiser l’onboarding client. Accès sur invitation — détails tarifaires en démo.',
+    title: 'Tarifs Freli — Abonnement unique',
+    description: `Abonnement Freli à ${FRELI_SUBSCRIPTION.monthlyLabelHt} / mois ou ${FRELI_SUBSCRIPTION.yearlyLabelHt} / an. Add-on IA optionnel à ${FRELI_AI_ADDON.monthlyLabelHt} / mois. TVA calculée au paiement.`,
     type: 'website',
   },
   '/comparatifs': {

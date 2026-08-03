@@ -37,6 +37,18 @@ serve(async (req) => {
       if (email.endsWith('@freli.local')) {
         return jsonResponse({ error: 'Lead email not yet known (checkout incomplete)' }, 400)
       }
+      if (lead.status === 'checkout_created') {
+        return jsonResponse(
+          {
+            error:
+              'Le prospect n’a pas encore payé. Envoyez le lien Checkout ; l’invitation part après paiement.',
+          },
+          400,
+        )
+      }
+      if (lead.status === 'account_linked') {
+        return jsonResponse({ error: 'Ce compte est déjà créé.' }, 400)
+      }
     }
 
     if (!email || !email.includes('@')) {

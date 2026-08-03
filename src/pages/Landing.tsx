@@ -7,6 +7,7 @@ import { Reveal, RevealStagger, RevealStaggerItem } from '../components/landing/
 import { SeoHead } from '../components/seo/SeoHead'
 import { Button, Card } from '../components/ui'
 import { appSignInUrl } from '../lib/appUrl'
+import { answerBlocks } from '../lib/seo/answerBlocks'
 import {
   jsonLdGraph,
   organizationJsonLd,
@@ -236,8 +237,7 @@ export function Landing() {
           </Reveal>
           <Reveal immediate delay={0.14}>
             <p className="mx-auto mt-4 max-w-2xl text-base font-body leading-relaxed text-[var(--surface-warm)]">
-              Freli remplace les emails, les Google Forms et les relances manuelles par un portail unique.
-              Signature, paiement Stripe, sync Drive et données légales préremplies — tout au même endroit.
+              {answerBlocks.home}
             </p>
           </Reveal>
           <Reveal immediate delay={0.2}>
