@@ -14,6 +14,7 @@ import {
 function project(overrides: Partial<ProjectCardData> = {}): ProjectCardData {
   return {
     id: '1',
+    clientId: 'client-1',
     clientName: 'Alice Martin',
     clientEmail: 'alice@example.com',
     clientPhone: null,

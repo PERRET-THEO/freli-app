@@ -108,6 +108,7 @@ export function useNavAttention(): NavAttentionCounts {
           )
           const card: ProjectCardData = {
             id: row.id,
+            clientId: null,
             clientName: '',
             clientEmail: '',
             clientPhone: null,

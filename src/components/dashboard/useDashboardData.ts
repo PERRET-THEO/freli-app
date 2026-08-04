@@ -10,6 +10,7 @@ import type { ProjectCardData } from './types'
 
 type ProjectRecord = {
   id: string
+  client_id: string | null
   client_name: string
   client_email: string
   status: 'pending' | 'in_progress' | 'completed'
@@ -54,7 +55,7 @@ export function useDashboardData() {
     const { data: projectRows, error: projectsError } = await supabase
       .from('projects')
       .select(
-        'id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, clients(company_name, phone)',
+        'id, client_id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, clients(company_name, phone)',
       )
       .eq('agency_id', agencyId)
       .order('created_at', { ascending: false })
@@ -138,6 +139,7 @@ export function useDashboardData() {
           : findProjectBottleneck(itemsByProject.get(project.id) ?? [], project.created_at)
       return {
         id: project.id,
+        clientId: project.client_id,
         clientName: project.client_name,
         clientEmail: project.client_email,
         clientPhone: clientJoin?.phone ?? null,

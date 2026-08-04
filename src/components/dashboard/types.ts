@@ -12,6 +12,7 @@ export type StatusFilter = 'all' | ProjectStatus
 
 export type ProjectCardData = {
   id: string
+  clientId: string | null
   clientName: string
   clientEmail: string
   clientPhone: string | null

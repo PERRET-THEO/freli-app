@@ -6,7 +6,7 @@ import {
   formatBottleneckLabel,
   isBottleneckStale,
 } from '../../lib/projectBottleneck'
-import { Badge } from '../ui'
+import { Badge, PersonAvatar } from '../ui'
 import {
   getActivityLabel,
   getSecondaryIndicator,
@@ -14,28 +14,6 @@ import {
   getStatusLabel,
 } from './projectStatus'
 import type { ProjectCardData } from './types'
-
-const AVATAR_PALETTE = [
-  'bg-[var(--accent)]',
-  'bg-[var(--mint)]',
-  'bg-[var(--amber)]',
-  'bg-[#F472B6]',
-  'bg-[#60A5FA]',
-  'bg-[#A78BFA]',
-]
-
-function avatarColor(seed: string): string {
-  let hash = 0
-  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) | 0
-  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length]
-}
-
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (!parts.length) return '··'
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-}
 
 type ProjectCardProps = {
   project: ProjectCardData
@@ -142,12 +120,12 @@ export function ProjectCard({
         />
 
         <div className="relative z-[1] flex items-start gap-3">
-          <div
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${avatarColor(project.id)} font-display text-sm font-extrabold text-[var(--white)]`}
-            aria-hidden
-          >
-            {getInitials(project.clientName)}
-          </div>
+          <PersonAvatar
+            seed={project.clientId ?? project.id}
+            name={project.clientName}
+            size="lg"
+            shape="rounded"
+          />
 
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">

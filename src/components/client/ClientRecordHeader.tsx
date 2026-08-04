@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom'
 import { MoreHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { formatPersonInitials, formatPersonName } from '../../lib/formatPersonName'
+import { formatPersonName } from '../../lib/formatPersonName'
 import { mailtoHref } from '../../lib/contactLinks'
 import type { ClientRecord } from '../../lib/clientRecord'
-import { Button } from '../ui'
+import { Button, PersonAvatar } from '../ui'
 
 type ClientRecordHeaderProps = {
   client: ClientRecord
@@ -22,7 +22,6 @@ export function ClientRecordHeader({
   onDelete,
 }: ClientRecordHeaderProps) {
   const displayName = formatPersonName(client.first_name, client.last_name)
-  const initials = formatPersonInitials(client.first_name, client.last_name)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -58,12 +57,12 @@ export function ClientRecordHeader({
         </nav>
 
         <div className="flex min-w-0 items-start gap-3">
-          <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--status-action)] font-display text-sm font-bold text-[var(--white)]"
-            aria-hidden
-          >
-            {initials}
-          </div>
+          <PersonAvatar
+            seed={client.id}
+            firstName={client.first_name}
+            lastName={client.last_name}
+            size="lg"
+          />
           <div className="min-w-0">
             <h1 className="truncate font-display text-xl font-bold tracking-tight text-[var(--ink)] sm:text-2xl">
               {displayName}

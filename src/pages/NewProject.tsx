@@ -27,6 +27,7 @@ import {
   type DraftChecklistItem,
 } from '../lib/checklist'
 import { syncChecklistToProject, syncProjectPrice } from '../lib/checklistSync'
+import { isValidContactEmail } from '../lib/contactLinks'
 import {
   fetchProjectGeneratedDocuments,
   generateContractDraft,
@@ -253,6 +254,10 @@ export function NewProject() {
       setError('Le prénom, le nom et l\u2019email du client sont obligatoires.')
       return
     }
+    if (!isValidContactEmail(clientEmail)) {
+      setError('L\u2019email du client est invalide (ex. nom@domaine.fr).')
+      return
+    }
     setStep(2)
   }
 
@@ -296,6 +301,9 @@ export function NewProject() {
 
     const fullName = clientFullName
     const email = clientEmail.trim()
+    if (!isValidContactEmail(email)) {
+      throw new Error('L\u2019email du client est invalide (ex. nom@domaine.fr).')
+    }
 
     let clientId: string | null = null
 
@@ -331,15 +339,15 @@ export function NewProject() {
         console.warn('Client update failed:', clientUpdateError.message)
       }
     } else {
-      const { data: existingClient } = await supabase
+      const { data: existingClients } = await supabase
         .from('clients')
         .select('id')
         .eq('agency_id', resolvedAgencyId)
-        .eq('email', email)
-        .maybeSingle()
+        .ilike('email', email)
+        .limit(1)
 
-      if (existingClient?.id) {
-        clientId = existingClient.id
+      if (existingClients?.[0]?.id) {
+        clientId = existingClients[0].id
       } else {
         const clientPayload: Record<string, unknown> = {
           agency_id: resolvedAgencyId,
