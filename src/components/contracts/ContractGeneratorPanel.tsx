@@ -11,11 +11,13 @@ import {
 type ContractGeneratorPanelProps = {
   projectId: string
   aiContractsEnabled: boolean
+  checklistContext?: string[]
 }
 
 export function ContractGeneratorPanel({
   projectId,
   aiContractsEnabled,
+  checklistContext = [],
 }: ContractGeneratorPanelProps) {
   const [documents, setDocuments] = useState<GeneratedDocumentRecord[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -46,7 +48,7 @@ export function ContractGeneratorPanel({
     setGenerating(true)
     setErrorMsg(null)
     try {
-      await generateContractDraft(projectId, brief.trim())
+      await generateContractDraft(projectId, brief.trim(), checklistContext)
       setBrief('')
       await load()
     } catch (reason) {
@@ -72,9 +74,9 @@ export function ContractGeneratorPanel({
         📝 Générer un contrat
       </h2>
       <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">
-        Décrivez la prestation en langage naturel : l&apos;IA rédige une première version basée sur
-        vos modèles de référence, toujours éditable avant signature. Jamais d&apos;envoi automatique
-        au client.
+        Décrivez la prestation en langage naturel : l&apos;IA rédige une première version en
+        s&apos;appuyant sur votre bibliothèque de clauses, vos modèles et la checklist du projet.
+        Toujours éditable avant signature. Jamais d&apos;envoi automatique au client.
       </p>
 
       {aiContractsEnabled ? (

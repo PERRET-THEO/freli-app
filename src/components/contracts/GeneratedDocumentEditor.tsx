@@ -22,6 +22,7 @@ type GeneratedDocumentEditorProps = {
 const ORIGIN_LABELS: Record<string, string> = {
   brief: 'Issu du brief',
   model: 'Issu de vos modèles',
+  library: 'Bibliothèque de clauses',
   ai_generated: 'Rédigé par l’IA',
 }
 

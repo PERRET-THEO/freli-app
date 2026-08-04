@@ -28,6 +28,8 @@ type AgencySettings = {
   ai_reminders_enabled: boolean | null
   auto_reminders_delay_hours: number | null
   ai_reminder_max_per_project: number | null
+  ai_reminder_send_hour_start: number | null
+  ai_reminder_send_hour_end: number | null
 }
 
 type ProjectRow = {
@@ -58,6 +60,28 @@ function maxRemindersFor(project: ProjectRow): number {
   return DEFAULT_MAX_PER_PROJECT
 }
 
+/** Plage horaire Europe/Paris — hors plage = skip (réessai au prochain cron). */
+function isWithinSendWindow(project: ProjectRow, now: Date): boolean {
+  const settings = settingsFor(project)
+  const start = typeof settings?.ai_reminder_send_hour_start === 'number'
+    ? settings.ai_reminder_send_hour_start
+    : 9
+  const end = typeof settings?.ai_reminder_send_hour_end === 'number'
+    ? settings.ai_reminder_send_hour_end
+    : 19
+  const parisHour = Number(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Paris',
+      hour: 'numeric',
+      hour12: false,
+    }).format(now),
+  )
+  if (start === end) return true
+  if (start < end) return parisHour >= start && parisHour < end
+  // fenêtre traversant minuit
+  return parisHour >= start || parisHour < end
+}
+
 /** Délai écoulé depuis la dernière activité connue (création, relance, visite). */
 function isDelayElapsed(project: ProjectRow, nowMs: number): boolean {
   const delayMs = delayHoursFor(project) * 60 * 60 * 1000
@@ -85,11 +109,12 @@ serve(async (req) => {
     }
 
     const nowMs = Date.now()
+    const now = new Date(nowMs)
 
     const { data: projects, error } = await supabase
       .from('projects')
       .select(
-        'id, created_at, status, last_reminder_sent_at, last_portal_visit_at, agency_id, agencies(ai_reminders_enabled, auto_reminders_delay_hours, ai_reminder_max_per_project)',
+        'id, created_at, status, last_reminder_sent_at, last_portal_visit_at, agency_id, agencies(ai_reminders_enabled, auto_reminders_delay_hours, ai_reminder_max_per_project, ai_reminder_send_hour_start, ai_reminder_send_hour_end)',
       )
       .neq('status', 'completed')
     if (error) throw new Error(error.message)
@@ -97,11 +122,29 @@ serve(async (req) => {
     let generated = 0
     let skipped = 0
     let failed = 0
-    const candidates = ((projects ?? []) as ProjectRow[]).filter(
-      (project) => settingsFor(project)?.ai_reminders_enabled === true,
+
+    const agencyIds = [
+      ...new Set(((projects ?? []) as ProjectRow[]).map((p) => p.agency_id).filter(Boolean)),
+    ]
+    const { data: billingRows } = await supabase
+      .from('billing_accounts')
+      .select('agency_id, ai_addon_active')
+      .in('agency_id', agencyIds.length > 0 ? agencyIds : ['00000000-0000-0000-0000-000000000000'])
+    const addonByAgency = new Map(
+      (billingRows ?? []).map((row) => [row.agency_id as string, row.ai_addon_active === true]),
     )
 
+    const candidates = ((projects ?? []) as ProjectRow[]).filter((project) => {
+      if (settingsFor(project)?.ai_reminders_enabled !== true) return false
+      return addonByAgency.get(project.agency_id) === true
+    })
+
     for (const project of candidates) {
+      if (!isWithinSendWindow(project, now)) {
+        skipped += 1
+        continue
+      }
+
       if (!isDelayElapsed(project, nowMs)) {
         skipped += 1
         continue

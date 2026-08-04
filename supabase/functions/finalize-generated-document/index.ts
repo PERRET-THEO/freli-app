@@ -17,8 +17,9 @@ import {
   HTML_SIGNATURE_X,
   HTML_SIGNATURE_Y,
 } from '../_shared/contractDocument.ts'
-import { corsHeaders, getAuthenticatedUser, jsonResponse } from '../_shared/functionAuth.ts'
+import { corsHeaders, getAuthenticatedUser, assertUserIsAgencyMember, jsonResponse } from '../_shared/functionAuth.ts'
 import { renderContractToPdf } from '../_shared/pdfService.ts'
+import { assertAiAddonActive } from '../_shared/aiEntitlements.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -46,9 +47,9 @@ serve(async (req) => {
       .select(
         `id, project_id, agency_id, current_version, status,
         agencies(
-          user_id, name, logo_url, brand_color, contact_email, contact_phone,
+          name, logo_url, brand_color, contact_email, contact_phone,
           legal_form, address_street, address_postal_code, address_city,
-          siret, share_capital, vat_number, rcs_city
+          siret, share_capital, vat_number, rcs_city, ai_contracts_enabled
         ),
         projects(
           client_name, client_email,
@@ -59,9 +60,21 @@ serve(async (req) => {
       .single()
     if (documentError || !document) return jsonResponse({ error: 'Document introuvable' }, 404)
 
+    const memberDenied = await assertUserIsAgencyMember(supabase, user.id, document.agency_id)
+    if (memberDenied) return jsonResponse({ error: memberDenied.error }, memberDenied.status)
+
     const agencyRel = document.agencies as AgencyRow | AgencyRow[] | null
     const agencyRow = Array.isArray(agencyRel) ? agencyRel[0] : agencyRel
-    if (agencyRow?.user_id !== user.id) return jsonResponse({ error: 'Forbidden' }, 403)
+
+    const agencyFlags = agencyRow as AgencyRow & { ai_contracts_enabled?: boolean }
+    if (agencyFlags?.ai_contracts_enabled !== true) {
+      return jsonResponse({ error: 'Module génération de contrats désactivé' }, 403)
+    }
+
+    const addonDenied = await assertAiAddonActive(supabase, document.agency_id)
+    if (addonDenied) {
+      return jsonResponse({ error: addonDenied.error, code: addonDenied.code }, addonDenied.status)
+    }
 
     if (document.status === 'finalized') {
       return jsonResponse({ error: 'Document déjà finalisé' }, 409)

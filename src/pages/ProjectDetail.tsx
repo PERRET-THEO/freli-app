@@ -525,6 +525,9 @@ export function ProjectDetail() {
           <ContractGeneratorPanel
             projectId={project.id}
             aiContractsEnabled={aiContractsEnabled}
+            checklistContext={items
+              .map((item) => item.label?.trim())
+              .filter((label): label is string => Boolean(label))}
           />
         </div>
       ) : null}

@@ -6,11 +6,13 @@ import {
   getAgencyUserId,
 } from '../_shared/outgoingWebhooks.ts'
 import {
+  applyAiAddonState,
   isSaasCheckoutSession,
   parseInterval,
   sendSaasInviteIfNeeded,
   sessionCustomerEmail,
   sessionIsPaid,
+  subscriptionHasAiAddon,
   upsertLeadPaid,
   type BillingInterval,
 } from '../_shared/saasBilling.ts'
@@ -127,17 +129,32 @@ async function syncSubscriptionStatus(subscription: Record<string, unknown>): Pr
       : null
   const interval = parseInterval(meta.freli_interval)
 
-  const { error } = await supabaseAdmin
+  const aiAddonActive =
+    status === 'active' || status === 'past_due'
+      ? await subscriptionHasAiAddon(subscription)
+      : false
+
+  const { data: account, error } = await supabaseAdmin
     .from('billing_accounts')
     .update({
       status,
       current_period_end: periodEnd,
+      ai_addon_active: aiAddonActive,
       ...(interval ? { billing_interval: interval } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscriptionId)
+    .select('agency_id')
+    .maybeSingle()
 
-  if (error) console.error('syncSubscriptionStatus:', error.message)
+  if (error) {
+    console.error('syncSubscriptionStatus:', error.message)
+    return
+  }
+
+  if (account?.agency_id) {
+    await applyAiAddonState(supabaseAdmin, account.agency_id, aiAddonActive)
+  }
 }
 
 serve(async (req) => {

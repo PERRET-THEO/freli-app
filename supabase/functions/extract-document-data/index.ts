@@ -23,6 +23,14 @@ import {
   DOCUMENT_FIELD_LISTS,
   EXTRACTION_JSON_SCHEMAS,
 } from '../_shared/documentSchemas.ts'
+import { assertAiAddonActive, consumeAiCredit } from '../_shared/aiEntitlements.ts'
+import {
+  EXTRACTION_PROMPT_VERSION,
+  heuristicFieldConfidence,
+  parseExtractionFields,
+} from '../_shared/aiValidation.ts'
+import { isValidSiren, isValidSiret } from '../_shared/frenchIds.ts'
+import { isValidIban } from '../_shared/iban.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -55,7 +63,6 @@ const EXTENSION_MEDIA_TYPES: Record<string, string> = {
   gif: 'image/gif',
 }
 
-import { isValidIban } from '../_shared/iban.ts'
 type ExtractionPayload = {
   document_type?: string
   fields?: Record<string, unknown>
@@ -105,12 +112,19 @@ async function extractFieldsFromOcr(options: {
     inputTokens: result.inputTokens,
     outputTokens: result.outputTokens,
     durationMs: result.durationMs,
+    promptVersion: EXTRACTION_PROMPT_VERSION,
   })
 
-  const fields = normalizeToSchema(
-    result.parsed.fields ?? {},
-    DOCUMENT_SCHEMAS[options.documentType],
+  const parsed = parseExtractionFields(
+    options.documentType,
+    result.parsed.fields ?? normalizeToSchema(
+      result.parsed.fields ?? {},
+      DOCUMENT_SCHEMAS[options.documentType],
+    ),
   )
+  const fields = parsed.ok
+    ? parsed.fields
+    : normalizeToSchema(result.parsed.fields ?? {}, DOCUMENT_SCHEMAS[options.documentType])
 
   return {
     fields,
@@ -154,6 +168,27 @@ serve(async (req) => {
       return jsonResponse({ skipped: true, reason: 'Module extraction désactivé' })
     }
 
+    const addonDenied = await assertAiAddonActive(supabase, project.agency_id)
+    if (addonDenied) {
+      return jsonResponse({
+        skipped: true,
+        reason: addonDenied.error,
+        code: addonDenied.code,
+      })
+    }
+
+    const credit = await consumeAiCredit(supabase, {
+      agencyId: project.agency_id,
+      feature: 'extraction',
+    })
+    if (!credit.ok) {
+      return jsonResponse({
+        skipped: true,
+        reason: credit.message,
+        code: credit.code,
+      })
+    }
+
     const extension = storagePath.split('.').pop()?.toLowerCase() ?? ''
     const mediaType = EXTENSION_MEDIA_TYPES[extension]
     if (!mediaType) {
@@ -195,6 +230,8 @@ serve(async (req) => {
       operation: 'ocr',
       model: ocrResult.model,
       durationMs: ocrResult.durationMs,
+      promptVersion: EXTRACTION_PROMPT_VERSION,
+      creditsConsumed: 1,
     })
 
     let documentType = 'unknown'
@@ -257,6 +294,18 @@ serve(async (req) => {
       fields.iban = isValidIban(cleaned) ? cleaned : null
     }
 
+    if (documentType === 'kbis') {
+      if (fields.siren) {
+        const cleaned = fields.siren.replace(/\s+/g, '')
+        fields.siren = isValidSiren(cleaned) ? cleaned : null
+      }
+      if (fields.siret) {
+        const cleaned = fields.siret.replace(/\s+/g, '')
+        fields.siret = isValidSiret(cleaned) ? cleaned : null
+      }
+    }
+
+    const fieldConfidence = heuristicFieldConfidence(fields)
     const hasAnyValue = Object.values(fields).some((value) => value !== null)
     const status = hasAnyValue ? 'pending_review' : 'failed'
 
@@ -265,12 +314,14 @@ serve(async (req) => {
       .update({
         document_type: documentType,
         extracted_fields: fields,
+        field_confidence: fieldConfidence,
+        prompt_version: EXTRACTION_PROMPT_VERSION,
         status,
-        error_message: hasAnyValue ? null : 'Document illisible : aucun champ détecté.',
         model_used: model,
+        extraction_pipeline: pipeline,
         ocr_markdown: ocrResult.markdown || null,
         ocr_pages: ocrResult.pages.length > 0 ? ocrResult.pages : null,
-        extraction_pipeline: pipeline,
+        error_message: hasAnyValue ? null : 'Aucun champ exploitable extrait',
       })
       .eq('id', extractionId)
 

@@ -7,11 +7,14 @@ import { PortalPreviewLink } from '../components/settings/PortalPreviewLink'
 import { ReminderSettingsPanel } from '../components/settings/ReminderSettingsPanel'
 import { AgencyLegalProfilePanel } from '../components/settings/AgencyLegalProfilePanel'
 import { AiModulesPanel, type AiModuleFlags } from '../components/settings/AiModulesPanel'
+import { ClauseLibraryPanel } from '../components/settings/ClauseLibraryPanel'
+import { AiUsagePanel } from '../components/settings/AiUsagePanel'
 import { TeamMembersPanel } from '../components/settings/TeamMembersPanel'
 import { AdminSubscriptionPanel } from '../components/settings/AdminSubscriptionPanel'
 import { BillingStatusPanel } from '../components/settings/BillingStatusPanel'
 import { SettingsNav } from '../components/settings/SettingsNav'
 import { FRELI_SUBSCRIPTION } from '../lib/billing/entitlements'
+import { fetchBillingAccount } from '../lib/billing/saasCheckout'
 import { SettingsSection } from '../components/settings/SettingsSection'
 import { SettingsSkeleton } from '../components/settings/SettingsSkeleton'
 import { useAgencySession } from '../contexts/AgencyContext'
@@ -127,6 +130,11 @@ export function Settings() {
   const [aiReminderTone, setAiReminderTone] = useState<SmartReminderTone>('professional')
   const [aiReminderAutoSend, setAiReminderAutoSend] = useState(false)
   const [aiReminderMax, setAiReminderMax] = useState(3)
+  const [aiReminderSendHourStart, setAiReminderSendHourStart] = useState(9)
+  const [aiReminderSendHourEnd, setAiReminderSendHourEnd] = useState(19)
+  const [aiAddonActive, setAiAddonActive] = useState(false)
+  const [aiCreditsBalance, setAiCreditsBalance] = useState<number | null>(null)
+  const [aiCreditsLoading, setAiCreditsLoading] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
   const showToast = useCallback((msg: string) => {
@@ -178,7 +186,30 @@ export function Settings() {
     setAiReminderTone(normalizeSmartReminderTone(row.ai_reminder_tone))
     setAiReminderAutoSend(row.ai_reminder_auto_send === true)
     setAiReminderMax(normalizeSmartReminderMax(row.ai_reminder_max_per_project))
+    setAiReminderSendHourStart(
+      typeof row.ai_reminder_send_hour_start === 'number' ? row.ai_reminder_send_hour_start : 9,
+    )
+    setAiReminderSendHourEnd(
+      typeof row.ai_reminder_send_hour_end === 'number' ? row.ai_reminder_send_hour_end : 19,
+    )
   }
+
+  const loadAiBilling = useCallback(async (agencyId: string) => {
+    setAiCreditsLoading(true)
+    const billing = await fetchBillingAccount(agencyId)
+    setAiAddonActive(billing?.ai_addon_active === true)
+    if (billing?.ai_addon_active) {
+      const { data } = await supabase
+        .from('ai_credit_balances')
+        .select('balance')
+        .eq('agency_id', agencyId)
+        .maybeSingle()
+      setAiCreditsBalance(typeof data?.balance === 'number' ? data.balance : null)
+    } else {
+      setAiCreditsBalance(null)
+    }
+    setAiCreditsLoading(false)
+  }, [])
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -198,13 +229,16 @@ export function Settings() {
           .eq('id', resolved.id)
           .maybeSingle()
 
-        if (agencyData) loadAgencyFields(await mergeAgencyWithAiFlags(agencyData as AgencyBranding))
+        if (agencyData) {
+          loadAgencyFields(await mergeAgencyWithAiFlags(agencyData as AgencyBranding))
+          await loadAiBilling(resolved.id)
+        }
       }
       setPageLoading(false)
     }
 
-    loadSettings()
-  }, [])
+    void loadSettings()
+  }, [loadAiBilling])
 
   useEffect(() => {
     if (pageLoading) return
@@ -332,13 +366,18 @@ export function Settings() {
           // Colonnes portail absentes (migration non appliquée) : retry sans extras.
           if (/portal_help|portfolio_|portal_locale/i.test(updateError.message)) {
             const {
-              portal_help_title: _a,
-              portal_help_text: _b,
-              portal_availability: _c,
-              portfolio_url: _d,
-              portfolio_label: _e,
+              portal_help_title,
+              portal_help_text,
+              portal_availability,
+              portfolio_url,
+              portfolio_label,
               ...legacyPayload
             } = payload
+            void portal_help_title
+            void portal_help_text
+            void portal_availability
+            void portfolio_url
+            void portfolio_label
             const { data: legacyUpdated, error: legacyError } = await supabase
               .from('agencies')
               .update({ ...legacyPayload, logo_url: logoUrl })
@@ -452,6 +491,8 @@ export function Settings() {
         ai_reminder_tone: aiReminderTone,
         ai_reminder_auto_send: aiReminderAutoSend,
         ai_reminder_max_per_project: normalizeSmartReminderMax(aiReminderMax),
+        ai_reminder_send_hour_start: aiReminderSendHourStart,
+        ai_reminder_send_hour_end: aiReminderSendHourEnd,
       })
       .eq('id', agency.id)
       .select(AGENCY_SELECT)
@@ -532,6 +573,13 @@ export function Settings() {
       })
       return
     }
+    if (!aiAddonActive) {
+      setAiFeedback({
+        type: 'error',
+        text: 'Souscrivez l’add-on Modules IA pour activer ces fonctionnalités.',
+      })
+      return
+    }
 
     setAiSaving(true)
     const { data: updated, error } = await supabase
@@ -553,6 +601,7 @@ export function Settings() {
     }
 
     loadAgencyFields(await mergeAgencyWithAiFlags(updated as AgencyBranding))
+    await loadAiBilling(agency.id)
     setAiFeedback({ type: 'success', text: 'Modules IA enregistrés.' })
     showToast('Modules IA enregistrés.')
   }
@@ -847,9 +896,13 @@ export function Settings() {
                 aiTone={aiReminderTone}
                 aiAutoSend={aiReminderAutoSend}
                 aiMaxPerProject={aiReminderMax}
+                aiSendHourStart={aiReminderSendHourStart}
+                aiSendHourEnd={aiReminderSendHourEnd}
                 onAiToneChange={setAiReminderTone}
                 onAiAutoSendChange={setAiReminderAutoSend}
                 onAiMaxChange={setAiReminderMax}
+                onAiSendHourStartChange={setAiReminderSendHourStart}
+                onAiSendHourEndChange={setAiReminderSendHourEnd}
               />
             </SettingsSection>
 
@@ -866,7 +919,15 @@ export function Settings() {
                 onSave={handleSaveAi}
                 saving={aiSaving}
                 feedback={aiFeedback}
+                aiAddonActive={aiAddonActive}
+                creditsBalance={aiCreditsBalance}
+                creditsLoading={aiCreditsLoading}
               />
+              <ClauseLibraryPanel
+                agencyId={agency?.id ?? null}
+                enabled={aiAddonActive && aiFlags.contracts}
+              />
+              <AiUsagePanel agencyId={agency?.id ?? null} enabled={aiAddonActive} />
             </SettingsSection>
 
             <SettingsSection

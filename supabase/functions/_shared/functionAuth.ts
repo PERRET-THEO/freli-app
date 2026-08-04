@@ -35,6 +35,31 @@ export async function getAuthenticatedUser(
   return { id: user.id, email: user.email }
 }
 
+export async function assertUserIsAgencyMember(
+  supabaseAdmin: SupabaseClient,
+  userId: string,
+  agencyId: string,
+): Promise<{ error: string; status: number } | null> {
+  const { data: owned } = await supabaseAdmin
+    .from('agencies')
+    .select('id')
+    .eq('id', agencyId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (owned?.id) return null
+
+  const { data: membership } = await supabaseAdmin
+    .from('agency_members')
+    .select('agency_id')
+    .eq('agency_id', agencyId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (membership?.agency_id) return null
+
+  return { error: 'Forbidden', status: 403 }
+}
+
+/** Owner ou membre d'agence (aligné sur RLS user_agency_ids). */
 export async function assertUserOwnsProject(
   supabaseAdmin: SupabaseClient,
   userId: string,
@@ -42,15 +67,11 @@ export async function assertUserOwnsProject(
 ): Promise<{ error: string; status: number } | null> {
   const { data: project, error } = await supabaseAdmin
     .from('projects')
-    .select('id, agencies(user_id)')
+    .select('id, agency_id')
     .eq('id', projectId)
     .single()
   if (error || !project) return { error: 'Project not found', status: 404 }
-
-  const agenciesRel = project.agencies as { user_id?: string } | { user_id?: string }[] | null
-  const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
-  if (agencyRow?.user_id !== userId) return { error: 'Forbidden', status: 403 }
-  return null
+  return assertUserIsAgencyMember(supabaseAdmin, userId, project.agency_id)
 }
 
 export async function assertProjectToken(

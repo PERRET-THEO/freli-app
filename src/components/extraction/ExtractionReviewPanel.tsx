@@ -106,6 +106,11 @@ function ExtractionCard({
               <div key={field} className="grid gap-1 sm:grid-cols-[160px_1fr] sm:items-center">
                 <label className="text-xs font-body font-medium text-[var(--ink-soft)]">
                   {EXTRACTION_FIELD_LABELS[field] ?? field}
+                  {typeof extraction.field_confidence?.[field] === 'number' ? (
+                    <span className="ml-1 font-normal text-[var(--ink-muted)]">
+                      ({Math.round((extraction.field_confidence[field] ?? 0) * 100)} %)
+                    </span>
+                  ) : null}
                 </label>
                 <input
                   type="text"
@@ -150,10 +155,18 @@ function ExtractionCard({
 export function ExtractionReviewPanel({ projectId }: ExtractionReviewPanelProps) {
   const [extractions, setExtractions] = useState<ExtractionRecord[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [failedNotice, setFailedNotice] = useState<string | null>(null)
 
   const load = async () => {
     try {
-      setExtractions(await fetchProjectExtractions(projectId))
+      const rows = await fetchProjectExtractions(projectId)
+      setExtractions(rows)
+      const failed = rows.find((row) => row.status === 'failed')
+      if (failed?.error_message) {
+        setFailedNotice(`Extraction échouée : ${failed.error_message}`)
+      } else {
+        setFailedNotice(null)
+      }
     } catch {
       // table absente ou erreur réseau : la section reste simplement vide
     } finally {
@@ -165,6 +178,16 @@ export function ExtractionReviewPanel({ projectId }: ExtractionReviewPanelProps)
     void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
+
+  useEffect(() => {
+    const hasProcessing = extractions.some((row) => row.status === 'processing')
+    if (!hasProcessing) return
+    const timer = window.setInterval(() => {
+      void load()
+    }, 4000)
+    return () => window.clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, extractions])
 
   if (!loaded || extractions.length === 0) return null
 
@@ -182,8 +205,14 @@ export function ExtractionReviewPanel({ projectId }: ExtractionReviewPanelProps)
       </div>
       <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">
         Champs détectés par l&apos;IA dans les documents uploadés. Vérifiez et corrigez avant
-        validation : rien n&apos;est écrit dans la fiche client sans votre accord.
+        validation : rien n&apos;est écrit dans la fiche client sans votre accord. Le pourcentage
+        indique la confiance estimée par champ.
       </p>
+      {failedNotice ? (
+        <p className="mt-2 rounded-[var(--radius-sm)] border border-[#EF4444]/30 bg-[#FEF2F2] px-3 py-2 text-xs font-body text-[#EF4444]">
+          {failedNotice}
+        </p>
+      ) : null}
       <div className="mt-4 space-y-3">
         {extractions.map((extraction) => (
           <ExtractionCard key={extraction.id} extraction={extraction} onProcessed={load} />

@@ -183,7 +183,7 @@ serve(async (req) => {
     if (!linkRes.ok) {
       const msg = stripeErrorMessage(link)
       const stale =
-        /no such account|does not exist|similar object exists in test mode|similar object exists in live mode/i.test(
+        /no such account|does not exist|does not have access|application access may have been revoked|similar object exists in test mode|similar object exists in live mode/i.test(
           msg,
         )
       if (stale) {

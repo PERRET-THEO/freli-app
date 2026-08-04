@@ -15,6 +15,11 @@ import {
 import { chatJsonSchema, logAiUsage, MODEL_LARGE } from '../_shared/ai-provider.ts'
 import { agencyLegalContextBlock, type AgencyLegalProfile } from '../_shared/agencyLegal.ts'
 import { CONTRACT_DRAFT_JSON_SCHEMA } from '../_shared/documentSchemas.ts'
+import { assertAiAddonActive, consumeAiCredit } from '../_shared/aiEntitlements.ts'
+import {
+  CONTRACT_PROMPT_VERSION,
+  parseContractDraft,
+} from '../_shared/aiValidation.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -24,7 +29,7 @@ type Section = {
   id: string
   heading: string
   content: string
-  origin: 'brief' | 'model' | 'ai_generated'
+  origin: 'brief' | 'model' | 'ai_generated' | 'library'
   needs_legal_review: boolean
 }
 
@@ -38,8 +43,9 @@ Règles impératives :
   4. Modalités de paiement
   5. Clauses juridiques (confidentialité, propriété intellectuelle, résiliation, etc.)
 - Chaque section a un titre clair et un contenu structuré en paragraphes.
-- "origin" indique la provenance du contenu : "brief" (information donnée par l'agence dans le brief ou les données projet), "model" (clause reprise d'un modèle de référence fourni), "ai_generated" (contenu que tu as rédigé sans source).
-- Toute clause JURIDIQUE dont le contenu ne provient ni du brief ni d'un modèle fourni DOIT avoir "origin": "ai_generated" et "needs_legal_review": true. Ne présente jamais une clause inventée comme sûre.
+- "origin" indique la provenance du contenu : "brief" (information donnée par l'agence dans le brief ou les données projet), "model" (clause reprise d'un modèle de référence fourni), "library" (clause issue de la bibliothèque de clauses validées de l'agence), "ai_generated" (contenu que tu as rédigé sans source).
+- Préfère TOUJOURS les clauses de la bibliothèque ("library") lorsqu'elles sont fournies, sans les réécrire sauf adaptation mineure de forme.
+- Toute clause JURIDIQUE dont le contenu ne provient ni du brief, ni d'un modèle, ni de la bibliothèque DOIT avoir "origin": "ai_generated" et "needs_legal_review": true. Ne présente jamais une clause inventée comme sûre.
 - Reprends le ton et la structure des modèles de référence quand ils sont fournis.
 - N'invente aucune donnée chiffrée (montant, durée, date) absente du brief ou des données projet : écris plutôt "[à compléter]" uniquement si la donnée n'est pas fournie.
 - Texte brut dans "content" (pas de markdown), paragraphes séparés par une ligne vide.
@@ -47,6 +53,7 @@ Règles impératives :
 - Utilise la numérotation "1." "2." pour les listes numérotées, un élément par ligne.
 - Pour les blocs DE (prestataire) et POUR (client), mets chaque information sur une ligne séparée.
 - Si le profil légal du prestataire est fourni, recopie ces valeurs sans placeholder.`
+
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -87,6 +94,19 @@ serve(async (req) => {
       return jsonResponse({ error: 'Module génération de contrats désactivé' }, 403)
     }
 
+    const addonDenied = await assertAiAddonActive(supabase, project.agency_id)
+    if (addonDenied) {
+      return jsonResponse({ error: addonDenied.error, code: addonDenied.code }, addonDenied.status)
+    }
+
+    const credit = await consumeAiCredit(supabase, {
+      agencyId: project.agency_id,
+      feature: 'contracts',
+    })
+    if (!credit.ok) {
+      return jsonResponse({ error: credit.message, code: credit.code }, credit.status)
+    }
+
     const agencyProfile: AgencyLegalProfile = {
       name: agency?.name?.trim() || 'Agence',
       legal_form: agency?.legal_form ?? null,
@@ -108,6 +128,14 @@ serve(async (req) => {
       .not('structure_summary', 'is', null)
       .order('created_at', { ascending: false })
       .limit(3)
+
+    const { data: libraryClauses } = await supabase
+      .from('ai_clause_library')
+      .select('title, content, category')
+      .eq('agency_id', project.agency_id)
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(20)
 
     const clientRel = project.clients as Record<string, unknown> | Record<string, unknown>[] | null
     const client = (Array.isArray(clientRel) ? clientRel[0] : clientRel) ?? null
@@ -138,7 +166,17 @@ serve(async (req) => {
                 `Modèle de référence ${i + 1} (« ${m.name} ») :\n${JSON.stringify(m.structure_summary)}`,
             )
             .join('\n\n')
-        : 'Aucun modèle de référence fourni : marque toutes les clauses juridiques comme "ai_generated" avec "needs_legal_review": true.'
+        : 'Aucun modèle de référence fourni.'
+
+    const libraryBlock =
+      libraryClauses && libraryClauses.length > 0
+        ? libraryClauses
+            .map(
+              (c, i) =>
+                `Clause bibliothèque ${i + 1} [${c.category}] « ${c.title} » :\n${c.content}`,
+            )
+            .join('\n\n')
+        : 'Aucune clause en bibliothèque : les clauses juridiques inventées doivent être ai_generated + needs_legal_review.'
 
     const checklistBlock =
       Array.isArray(checklistContext) && checklistContext.length > 0
@@ -151,6 +189,7 @@ serve(async (req) => {
       `DONNÉES PROJET CONNUES :\n${projectContext.join('\n')}`,
       agencyLegalContextBlock(agencyProfile),
       `MODÈLES DE RÉFÉRENCE DE L'AGENCE :\n${modelsBlock}`,
+      `BIBLIOTHÈQUE DE CLAUSES VALIDÉES :\n${libraryBlock}`,
     ]
       .filter(Boolean)
       .join('\n\n---\n\n')
@@ -177,26 +216,24 @@ serve(async (req) => {
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       durationMs: result.durationMs,
+      promptVersion: CONTRACT_PROMPT_VERSION,
+      creditsConsumed: 1,
     })
 
-    const parsed = result.parsed
-
-    if (!parsed.title || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
-      throw new Error('Réponse IA invalide : titre ou sections manquants')
+    const validated = parseContractDraft(result.parsed)
+    if (!validated.ok) {
+      throw new Error(`Réponse IA invalide : ${validated.error}`)
     }
 
-    const sections: Section[] = parsed.sections.map((section, index) => ({
+    const sections: Section[] = validated.sections.map((section) => ({
+      ...section,
       id: crypto.randomUUID(),
-      heading: section.heading?.trim() || `Section ${index + 1}`,
-      content: section.content?.trim() ?? '',
-      origin:
-        section.origin === 'brief' || section.origin === 'model' ? section.origin : 'ai_generated',
       needs_legal_review:
-        section.needs_legal_review === true ||
-        (section.origin !== 'brief' && section.origin !== 'model'),
+        section.needs_legal_review ||
+        section.origin === 'ai_generated',
     }))
 
-    const version = { title: parsed.title.trim(), sections }
+    const version = { title: validated.title, sections }
 
     const { data: document, error: insertError } = await supabase
       .from('generated_documents')

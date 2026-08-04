@@ -92,6 +92,68 @@ export function parseSource(raw: unknown): CheckoutSource | null {
   return null
 }
 
+/** Détecte la présence d'une price AI Freli dans les items d'abonnement Stripe. */
+export async function subscriptionHasAiAddon(
+  subscription: Record<string, unknown>,
+): Promise<boolean> {
+  const meta = (subscription.metadata ?? {}) as Record<string, unknown>
+  if (meta.freli_ai === '1' || meta.freli_ai === 1) return true
+
+  const itemsObj = subscription.items as { data?: Array<Record<string, unknown>> } | undefined
+  const items = itemsObj?.data ?? []
+  if (items.length === 0) return false
+
+  const aiPriceIds = new Set<string>()
+  for (const interval of ['month', 'year'] as const) {
+    const id = await resolveAiPriceId(interval)
+    if (id) aiPriceIds.add(id)
+  }
+
+  for (const item of items) {
+    const price = item.price as { id?: string; lookup_key?: string | null } | string | undefined
+    if (!price) continue
+    if (typeof price === 'string') {
+      if (aiPriceIds.has(price)) return true
+      continue
+    }
+    if (typeof price.id === 'string' && aiPriceIds.has(price.id)) return true
+    const lookup = price.lookup_key ?? ''
+    if (lookup === 'freli_ai_month' || lookup === 'freli_ai_year') return true
+  }
+  return false
+}
+
+export async function applyAiAddonState(
+  supabase: SupabaseClient,
+  agencyId: string,
+  aiAddonActive: boolean,
+): Promise<void> {
+  await supabase
+    .from('billing_accounts')
+    .update({
+      ai_addon_active: aiAddonActive,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('agency_id', agencyId)
+
+  if (aiAddonActive) {
+    const { error } = await supabase.rpc('ensure_ai_monthly_credits', {
+      p_agency_id: agencyId,
+      p_credits: 50,
+    })
+    if (error) console.warn('ensure_ai_monthly_credits:', error.message)
+  } else {
+    await supabase
+      .from('agencies')
+      .update({
+        ai_extraction_enabled: false,
+        ai_reminders_enabled: false,
+        ai_contracts_enabled: false,
+      })
+      .eq('id', agencyId)
+  }
+}
+
 export function isInviteAdminEmail(email: string | undefined | null): boolean {
   const adminEmails = (Deno.env.get('INVITE_ADMIN_EMAILS') ?? '')
     .split(',')
@@ -307,6 +369,11 @@ export async function linkBillingToAgency(
         ai_contracts_enabled: true,
       })
       .eq('id', args.agencyId)
+    const { error: creditError } = await supabase.rpc('ensure_ai_monthly_credits', {
+      p_agency_id: args.agencyId,
+      p_credits: 50,
+    })
+    if (creditError) console.warn('ensure_ai_monthly_credits:', creditError.message)
   }
 
   const leadUpdate = {

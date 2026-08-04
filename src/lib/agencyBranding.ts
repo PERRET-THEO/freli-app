@@ -32,6 +32,8 @@ export type AgencyBranding = {
   ai_reminder_tone: string | null
   ai_reminder_auto_send: boolean | null
   ai_reminder_max_per_project: number | null
+  ai_reminder_send_hour_start: number | null
+  ai_reminder_send_hour_end: number | null
   legal_form: string | null
   address_street: string | null
   address_postal_code: string | null

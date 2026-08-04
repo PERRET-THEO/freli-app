@@ -13,6 +13,8 @@ import {
 } from '../../lib/smartReminders'
 import { supabase } from '../../lib/supabase'
 
+const VISIBLE_RECENT_LOGS = 3
+
 type ReminderSettingsPanelProps = {
   agencyId: string | null
   enabled: boolean
@@ -26,9 +28,13 @@ type ReminderSettingsPanelProps = {
   aiTone: SmartReminderTone
   aiAutoSend: boolean
   aiMaxPerProject: number
+  aiSendHourStart: number
+  aiSendHourEnd: number
   onAiToneChange: (tone: SmartReminderTone) => void
   onAiAutoSendChange: (value: boolean) => void
   onAiMaxChange: (value: number) => void
+  onAiSendHourStartChange: (value: number) => void
+  onAiSendHourEndChange: (value: number) => void
 }
 
 function clientNameFromLog(log: ReminderLogRow): string {
@@ -51,12 +57,17 @@ export function ReminderSettingsPanel({
   aiTone,
   aiAutoSend,
   aiMaxPerProject,
+  aiSendHourStart,
+  aiSendHourEnd,
   onAiToneChange,
   onAiAutoSendChange,
   onAiMaxChange,
+  onAiSendHourStartChange,
+  onAiSendHourEndChange,
 }: ReminderSettingsPanelProps) {
   const [autoCountMonth, setAutoCountMonth] = useState(0)
   const [recentLogs, setRecentLogs] = useState<ReminderLogRow[]>([])
+  const [showAllLogs, setShowAllLogs] = useState(false)
 
   useEffect(() => {
     if (!agencyId) return
@@ -85,6 +96,9 @@ export function ReminderSettingsPanel({
     }
     void load()
   }, [agencyId, feedback])
+
+  const visibleLogs = showAllLogs ? recentLogs : recentLogs.slice(0, VISIBLE_RECENT_LOGS)
+  const hiddenLogsCount = Math.max(0, recentLogs.length - VISIBLE_RECENT_LOGS)
 
   return (
     <div className="space-y-4">
@@ -159,9 +173,9 @@ export function ReminderSettingsPanel({
           </span>
         </div>
         <p className="mt-1 text-xs font-body leading-relaxed text-[var(--ink-muted)]">
-          Le contenu des relances s&apos;adapte au comportement du client (email non ouvert, portail
-          non visité, étape bloquante). Le déclenchement reste basé sur le délai ci-dessus et sur des
-          règles vérifiables — l&apos;IA ne rédige que le contenu.
+          Le contenu des relances s&apos;adapte au comportement email du client (non ouvert, ouvert
+          sans clic vers le portail, étape bloquante). Le déclenchement reste basé sur le délai
+          ci-dessus et sur des règles vérifiables — l&apos;IA ne rédige que le contenu.
           {!aiEnabled ? ' Activez le module dans la section « Intelligence artificielle ».' : ''}
         </p>
 
@@ -229,15 +243,51 @@ export function ReminderSettingsPanel({
             />
             <span>
               <span className="block text-xs font-body font-medium text-[var(--ink)]">
-                Envoi automatique des relances générées
+                Envoi automatique des relances générées (après le 1er envoi)
               </span>
               <span className="mt-0.5 block text-xs font-body text-[var(--ink-muted)]">
                 {aiAutoSend
-                  ? 'Les relances partent sans validation. Vous gardez l’historique dans chaque fiche projet.'
+                  ? 'Attention : la première relance d’un projet reste toujours en brouillon à valider. Les suivantes partent sans relecture. Vous gardez l’historique dans chaque fiche projet.'
                   : 'Chaque relance est proposée en brouillon dans la fiche projet, à valider avant envoi.'}
               </span>
             </span>
           </label>
+
+          <div>
+            <p className="text-xs font-body font-medium text-[var(--ink-soft)]">
+              Plage d’envoi (heure de Paris)
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-body text-[var(--ink-soft)]">
+              <label className="flex items-center gap-1.5">
+                De
+                <select
+                  value={aiSendHourStart}
+                  onChange={(e) => onAiSendHourStartChange(Number(e.target.value))}
+                  className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1"
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {String(h).padStart(2, '0')}h
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-1.5">
+                à
+                <select
+                  value={aiSendHourEnd}
+                  onChange={(e) => onAiSendHourEndChange(Number(e.target.value))}
+                  className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1"
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h + 1} value={h + 1}>
+                      {String(h + 1).padStart(2, '0')}h
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -259,7 +309,7 @@ export function ReminderSettingsPanel({
         <div>
           <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Dernières relances</p>
           <ul className="mt-2 space-y-2">
-            {recentLogs.map((log) => (
+            {visibleLogs.map((log) => (
               <li key={log.id}>
                 {log.project_id ? (
                   <Link
@@ -282,6 +332,18 @@ export function ReminderSettingsPanel({
               </li>
             ))}
           </ul>
+          {hiddenLogsCount > 0 ? (
+            <div className="mt-2 text-center">
+              <button
+                type="button"
+                className="text-xs font-body text-[var(--accent)]"
+                aria-expanded={showAllLogs}
+                onClick={() => setShowAllLogs((v) => !v)}
+              >
+                {showAllLogs ? 'Réduire' : `Voir l’historique (${hiddenLogsCount})`}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

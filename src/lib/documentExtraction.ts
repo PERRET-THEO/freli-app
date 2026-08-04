@@ -11,6 +11,7 @@ export type ExtractionRecord = {
   document_type: ExtractionDocumentType
   extracted_fields: Record<string, string | null> | null
   reviewed_fields: Record<string, string | null> | null
+  field_confidence: Record<string, number> | null
   status: ExtractionStatus
   error_message: string | null
   created_at: string
@@ -50,7 +51,7 @@ export const EXTRACTION_FIELD_LABELS: Record<string, string> = {
 }
 
 export const EXTRACTION_SELECT =
-  'id, project_id, checklist_item_id, storage_path, document_type, extracted_fields, reviewed_fields, status, error_message, created_at, reviewed_at'
+  'id, project_id, checklist_item_id, storage_path, document_type, extracted_fields, reviewed_fields, field_confidence, status, error_message, created_at, reviewed_at'
 
 export async function fetchProjectExtractions(projectId: string): Promise<ExtractionRecord[]> {
   const { data, error } = await supabase

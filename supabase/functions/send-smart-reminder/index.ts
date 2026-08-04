@@ -9,7 +9,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'npm:resend'
 import { getResendFrom, assertResendOk, isDevMode } from '../_shared/email.ts'
 import { buildSmartReminderEmail } from '../_shared/clientEmailHtml.ts'
-import { corsHeaders, getAuthenticatedUser, jsonResponse } from '../_shared/functionAuth.ts'
+import { corsHeaders, getAuthenticatedUser, assertUserIsAgencyMember, jsonResponse } from '../_shared/functionAuth.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -40,18 +40,20 @@ serve(async (req) => {
     const { data: reminder, error: reminderError } = await supabase
       .from('smart_reminders')
       .select(
-        'id, project_id, agency_id, subject, body, status, agencies(user_id, name), projects(token, client_name, client_email)',
+        'id, project_id, agency_id, subject, body, status, agencies(name), projects(token, client_name, client_email)',
       )
       .eq('id', requestBody.reminderId)
       .single()
     if (reminderError || !reminder) return jsonResponse({ error: 'Relance introuvable' }, 404)
 
+    const memberDenied = await assertUserIsAgencyMember(supabase, user.id, reminder.agency_id)
+    if (memberDenied) return jsonResponse({ error: memberDenied.error }, memberDenied.status)
+
     const agencyRel = reminder.agencies as
-      | { user_id?: string; name?: string }
-      | { user_id?: string; name?: string }[]
+      | { name?: string }
+      | { name?: string }[]
       | null
     const agency = Array.isArray(agencyRel) ? agencyRel[0] : agencyRel
-    if (agency?.user_id !== user.id) return jsonResponse({ error: 'Forbidden' }, 403)
 
     if (reminder.status !== 'draft') {
       return jsonResponse({ error: `Relance déjà traitée (statut : ${reminder.status})` }, 409)

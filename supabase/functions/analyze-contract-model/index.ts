@@ -7,7 +7,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildLayoutProfileFromSummary } from '../_shared/contractDocument.ts'
-import { corsHeaders, getAuthenticatedUser, jsonResponse } from '../_shared/functionAuth.ts'
+import { corsHeaders, getAuthenticatedUser, assertUserIsAgencyMember, jsonResponse } from '../_shared/functionAuth.ts'
 import {
   arrayBufferToBase64,
   chatJsonSchema,
@@ -16,6 +16,8 @@ import {
   runOcr,
 } from '../_shared/ai-provider.ts'
 import { STRUCTURE_SUMMARY_JSON_SCHEMA } from '../_shared/documentSchemas.ts'
+import { assertAiAddonActive, consumeAiCredit } from '../_shared/aiEntitlements.ts'
+import { CONTRACT_PROMPT_VERSION } from '../_shared/aiValidation.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -44,19 +46,35 @@ serve(async (req) => {
 
     const { data: model, error: modelError } = await supabase
       .from('agency_document_models')
-      .select('id, agency_id, storage_path, agencies(user_id, ai_contracts_enabled)')
+      .select('id, agency_id, storage_path, agencies(ai_contracts_enabled)')
       .eq('id', modelId)
       .single()
     if (modelError || !model) return jsonResponse({ error: 'Modèle introuvable' }, 404)
 
+    const memberDenied = await assertUserIsAgencyMember(supabase, user.id, model.agency_id)
+    if (memberDenied) return jsonResponse({ error: memberDenied.error }, memberDenied.status)
+
     const agencyRel = model.agencies as
-      | { user_id?: string; ai_contracts_enabled?: boolean }
-      | { user_id?: string; ai_contracts_enabled?: boolean }[]
+      | { ai_contracts_enabled?: boolean }
+      | { ai_contracts_enabled?: boolean }[]
       | null
     const agency = Array.isArray(agencyRel) ? agencyRel[0] : agencyRel
-    if (agency?.user_id !== user.id) return jsonResponse({ error: 'Forbidden' }, 403)
     if (agency?.ai_contracts_enabled !== true) {
       return jsonResponse({ error: 'Module génération de contrats désactivé' }, 403)
+    }
+
+    const addonDenied = await assertAiAddonActive(supabase, model.agency_id)
+    if (addonDenied) {
+      return jsonResponse({ error: addonDenied.error, code: addonDenied.code }, addonDenied.status)
+    }
+
+    const credit = await consumeAiCredit(supabase, {
+      agencyId: model.agency_id,
+      feature: 'contracts',
+      reasonOverride: 'consume_analyze_model',
+    })
+    if (!credit.ok) {
+      return jsonResponse({ error: credit.message, code: credit.code }, credit.status)
     }
 
     const { data: file, error: downloadError } = await supabase.storage
@@ -83,6 +101,8 @@ serve(async (req) => {
       operation: 'ocr',
       model: ocrResult.model,
       durationMs: ocrResult.durationMs,
+      promptVersion: CONTRACT_PROMPT_VERSION,
+      creditsConsumed: 1,
     })
 
     const ocrHeaders = ocrResult.pages.map((p) => p.header).filter(Boolean).join('\n')
@@ -120,6 +140,7 @@ serve(async (req) => {
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       durationMs: result.durationMs,
+      promptVersion: CONTRACT_PROMPT_VERSION,
     })
 
     const summary = result.parsed

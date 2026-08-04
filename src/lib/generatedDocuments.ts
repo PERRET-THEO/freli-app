@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 
-export type DocumentSectionOrigin = 'brief' | 'model' | 'ai_generated'
+export type DocumentSectionOrigin = 'brief' | 'model' | 'library' | 'ai_generated'
 
 export type DocumentSection = {
   id: string

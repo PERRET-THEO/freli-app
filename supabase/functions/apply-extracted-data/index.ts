@@ -9,7 +9,7 @@
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { corsHeaders, getAuthenticatedUser, jsonResponse } from '../_shared/functionAuth.ts'
+import { corsHeaders, getAuthenticatedUser, assertUserIsAgencyMember, jsonResponse } from '../_shared/functionAuth.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -56,14 +56,13 @@ serve(async (req) => {
 
     const { data: extraction, error: extractionError } = await supabase
       .from('extracted_document_data')
-      .select('id, project_id, agency_id, document_type, extracted_fields, status, agencies(user_id)')
+      .select('id, project_id, agency_id, document_type, extracted_fields, status')
       .eq('id', body.extractionId)
       .single()
     if (extractionError || !extraction) return jsonResponse({ error: 'Extraction introuvable' }, 404)
 
-    const agencyRel = extraction.agencies as { user_id?: string } | { user_id?: string }[] | null
-    const agencyRow = Array.isArray(agencyRel) ? agencyRel[0] : agencyRel
-    if (agencyRow?.user_id !== user.id) return jsonResponse({ error: 'Forbidden' }, 403)
+    const memberDenied = await assertUserIsAgencyMember(supabase, user.id, extraction.agency_id)
+    if (memberDenied) return jsonResponse({ error: memberDenied.error }, memberDenied.status)
 
     if (extraction.status !== 'pending_review') {
       return jsonResponse({ error: `Extraction déjà traitée (statut : ${extraction.status})` }, 409)

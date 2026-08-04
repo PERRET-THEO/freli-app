@@ -12,7 +12,7 @@ export const AGENCY_SELECT_PORTAL_EXTRA =
 
 /** Colonnes ajoutées par les migrations IA — requête séparée pour tolérer leur absence. */
 export const AGENCY_SELECT_AI =
-  'ai_extraction_enabled, ai_reminders_enabled, ai_contracts_enabled, ai_reminder_tone, ai_reminder_auto_send, ai_reminder_max_per_project'
+  'ai_extraction_enabled, ai_reminders_enabled, ai_contracts_enabled, ai_reminder_tone, ai_reminder_auto_send, ai_reminder_max_per_project, ai_reminder_send_hour_start, ai_reminder_send_hour_end'
 
 export type AgencyAiFlags = Pick<
   AgencyBranding,
@@ -22,6 +22,8 @@ export type AgencyAiFlags = Pick<
   | 'ai_reminder_tone'
   | 'ai_reminder_auto_send'
   | 'ai_reminder_max_per_project'
+  | 'ai_reminder_send_hour_start'
+  | 'ai_reminder_send_hour_end'
 >
 
 export type AgencyPortalExtras = Pick<
@@ -41,6 +43,8 @@ const AI_DEFAULTS: AgencyAiFlags = {
   ai_reminder_tone: 'professional',
   ai_reminder_auto_send: false,
   ai_reminder_max_per_project: 3,
+  ai_reminder_send_hour_start: 9,
+  ai_reminder_send_hour_end: 19,
 }
 
 const PORTAL_EXTRA_DEFAULTS: AgencyPortalExtras = {

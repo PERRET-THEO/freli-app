@@ -14,6 +14,12 @@ const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') ?? ''
 
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
 
+function isStaleConnectAccountError(message: string): boolean {
+  return /no such account|does not exist|does not have access|application access may have been revoked|similar object exists in test mode|similar object exists in live mode/i.test(
+    message,
+  )
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { status: 200, headers: corsHeaders })
@@ -51,7 +57,7 @@ serve(async (req) => {
   try {
     const { data: row, error: fetchError } = await supabaseAdmin
       .from('integrations')
-      .select('config')
+      .select('id, config')
       .eq('user_id', user.id)
       .eq('provider', 'stripe')
       .maybeSingle()
@@ -63,10 +69,16 @@ serve(async (req) => {
       typeof cfg.stripe_connect_account_id === 'string' ? cfg.stripe_connect_account_id : ''
 
     if (!accountId.startsWith('acct_')) {
-      return new Response(JSON.stringify({ error: 'Compte Stripe non connecté' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({
+          error: 'Compte Stripe non connecté. Reliez Stripe dans Intégrations.',
+          code: 'stripe_reconnect_required',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const linkRes = await fetch(`https://api.stripe.com/v1/accounts/${accountId}/login_links`, {
@@ -80,7 +92,34 @@ serve(async (req) => {
 
     const link = await linkRes.json()
     if (!linkRes.ok) {
-      throw new Error(link.error?.message ?? JSON.stringify(link))
+      const stripeMessage = String(link.error?.message ?? JSON.stringify(link))
+      console.error('stripe-connect-dashboard login_links:', stripeMessage)
+
+      if (isStaleConnectAccountError(stripeMessage) && row?.id) {
+        // Marque le lien orphelin pour forcer un vrai reconnect côté Intégrations.
+        const nextConfig = {
+          ...cfg,
+          stripe_connect_account_id: null,
+          charges_enabled: false,
+          details_submitted: false,
+          stale_connect_cleared_at: new Date().toISOString(),
+        }
+        await supabaseAdmin.from('integrations').update({ config: nextConfig }).eq('id', row.id)
+
+        return new Response(
+          JSON.stringify({
+            error:
+              'Compte Stripe inaccessible (accès révoqué ou compte orphelin). Reconnectez Stripe dans Intégrations.',
+            code: 'stripe_reconnect_required',
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
+      }
+
+      throw new Error(stripeMessage)
     }
 
     const url = link.url as string | undefined

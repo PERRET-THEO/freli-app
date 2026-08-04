@@ -17,7 +17,10 @@ import {
   jsonResponse,
 } from '../_shared/functionAuth.ts'
 import { chatJsonSchema, logAiUsage, MODEL_SMALL } from '../_shared/ai-provider.ts'
+import { getPendingVisibleItems } from '../_shared/checklistVisibility.ts'
 import { REMINDER_JSON_SCHEMA } from '../_shared/documentSchemas.ts'
+import { assertAiAddonActive, consumeAiCredit } from '../_shared/aiEntitlements.ts'
+import { parseReminderPayload, REMINDER_PROMPT_VERSION } from '../_shared/aiValidation.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -43,9 +46,9 @@ const TONE_INSTRUCTIONS: Record<string, string> = {
 
 const BEHAVIOR_INSTRUCTIONS: Record<BehaviorCategory, string> = {
   not_opened:
-    "Le client n'a pas ouvert les emails précédents. Rédige un OBJET très différent des objets habituels de rappel (pas de mot « rappel »), qui attire l'attention. Le corps doit être court et direct.",
+    "Le client n'a pas ouvert les emails précédents (signal Resend). Rédige un OBJET très différent des objets habituels de rappel (pas de mot « rappel »), qui attire l'attention. Le corps doit être court et direct.",
   opened_not_clicked:
-    "Le client a ouvert les emails mais n'a pas visité son espace d'onboarding. Mets en avant un bénéfice concret (gain de temps, projet qui démarre plus vite) et lève une objection probable (« cela ne prend que quelques minutes », lien direct, aucune création de compte).",
+    "Le client a ouvert les emails mais n'a pas cliqué vers son espace d'onboarding (ou ne l'a pas visité). Mets en avant un bénéfice concret (gain de temps, projet qui démarre plus vite) et rassure (« cela ne prend que quelques minutes », lien direct, aucune création de compte).",
   stuck_on_step:
     "Le client a commencé son parcours mais est bloqué sur une étape précise. Cible UNIQUEMENT cette étape : dis-lui explicitement qu'il ne lui reste que cette action et rassure sur sa simplicité.",
 }
@@ -95,6 +98,19 @@ serve(async (req) => {
     const agency = (Array.isArray(agencyRel) ? agencyRel[0] : agencyRel) ?? {}
     if (agency.ai_reminders_enabled !== true) {
       return jsonResponse({ skipped: true, reason: 'Module relances IA désactivé' })
+    }
+
+    const addonDenied = await assertAiAddonActive(supabase, project.agency_id)
+    if (addonDenied) {
+      return jsonResponse({ skipped: true, reason: addonDenied.error, code: addonDenied.code })
+    }
+
+    const credit = await consumeAiCredit(supabase, {
+      agencyId: project.agency_id,
+      feature: 'reminders',
+    })
+    if (!credit.ok) {
+      return jsonResponse({ skipped: true, reason: credit.message, code: credit.code })
     }
 
     const agencyName = typeof agency.name === 'string' && agency.name ? agency.name : 'Votre agence'
@@ -163,13 +179,25 @@ serve(async (req) => {
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       durationMs: result.durationMs,
+      promptVersion: REMINDER_PROMPT_VERSION,
+      creditsConsumed: 1,
     })
 
-    const subject = result.parsed.subject?.trim()
-    const bodyText = result.parsed.body?.trim()
-    if (!subject || !bodyText) {
-      throw new Error('Réponse IA incomplète (subject/body manquant)')
+    const parsed = parseReminderPayload(result.parsed)
+    if (!parsed.ok) {
+      throw new Error(`Réponse IA invalide: ${parsed.error}`)
     }
+    const subject = parsed.subject
+    const bodyText = parsed.body
+
+    // Première relance du projet : toujours brouillon (preview humain obligatoire).
+    const { count: priorSent } = await supabase
+      .from('smart_reminders')
+      .select('id', { count: 'exact', head: true })
+      .eq('project_id', project.id)
+      .eq('status', 'sent')
+    const requirePreview = (priorSent ?? 0) === 0
+    const willAutoSend = autoSend && !requirePreview
 
     const { data: reminder, error: insertError } = await supabase
       .from('smart_reminders')
@@ -188,8 +216,12 @@ serve(async (req) => {
       .single()
     if (insertError || !reminder) throw new Error(insertError?.message ?? 'Insert failed')
 
-    if (!autoSend) {
-      return jsonResponse({ reminderId: reminder.id, status: 'draft' })
+    if (!willAutoSend) {
+      return jsonResponse({
+        reminderId: reminder.id,
+        status: 'draft',
+        previewRequired: requirePreview,
+      })
     }
 
     const portalUrl = `${appUrl}/p/${project.token}`

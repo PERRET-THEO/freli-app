@@ -92,6 +92,33 @@ async function fetchWithRetry(
   throw lastError ?? new Error('Mistral API: échec après retries')
 }
 
+/** Estimation coût USD → centimes EUR approximatifs (ordre de grandeur). */
+export function estimateCostCents(args: {
+  operation: 'ocr' | 'chat' | 'vision'
+  model: string
+  inputTokens?: number
+  outputTokens?: number
+}): number {
+  const inTok = args.inputTokens ?? 0
+  const outTok = args.outputTokens ?? 0
+  // Tarifs indicatifs Mistral 2026 ($ / 1M tokens) convertis ~×0.92 € puis ×100 centimes
+  let inPerM = 0.1
+  let outPerM = 0.3
+  if (args.operation === 'ocr') {
+    // ~$4 / 1000 pages → ~0.4 cent/page ; on approxime 1 appel OCR = 0.4¢
+    return 0.4
+  }
+  if (args.model.includes('large') || args.model.includes('pixtral')) {
+    inPerM = 2
+    outPerM = 6
+  } else if (args.model.includes('small')) {
+    inPerM = 0.1
+    outPerM = 0.3
+  }
+  const usd = (inTok * inPerM + outTok * outPerM) / 1_000_000
+  return Math.round(usd * 0.92 * 100 * 10_000) / 10_000
+}
+
 /** Journalise la consommation de tokens (fire-and-forget). */
 export async function logAiUsage(
   supabase: SupabaseClient,
@@ -103,9 +130,17 @@ export async function logAiUsage(
     durationMs?: number
     success?: boolean
     errorMessage?: string | null
+    promptVersion?: string | null
+    creditsConsumed?: number
   },
 ): Promise<void> {
   try {
+    const estimated = estimateCostCents({
+      operation: entry.operation,
+      model: entry.model,
+      inputTokens: entry.inputTokens,
+      outputTokens: entry.outputTokens,
+    })
     await supabase.from('ai_usage_logs').insert({
       agency_id: entry.agencyId ?? null,
       project_id: entry.projectId ?? null,
@@ -117,6 +152,9 @@ export async function logAiUsage(
       duration_ms: entry.durationMs ?? null,
       success: entry.success !== false,
       error_message: entry.errorMessage ?? null,
+      estimated_cost_cents: estimated,
+      prompt_version: entry.promptVersion ?? null,
+      credits_consumed: entry.creditsConsumed ?? 0,
     })
   } catch (error) {
     console.warn('logAiUsage failed:', (error as Error).message)

@@ -187,7 +187,7 @@ export const CONTRACT_DRAFT_JSON_SCHEMA = {
         properties: {
           heading: { type: 'string' },
           content: { type: 'string' },
-          origin: { type: 'string', enum: ['brief', 'model', 'ai_generated'] },
+          origin: { type: 'string', enum: ['brief', 'model', 'library', 'ai_generated'] },
           needs_legal_review: { type: 'boolean' },
         },
       },

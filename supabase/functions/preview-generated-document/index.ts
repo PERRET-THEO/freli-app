@@ -11,7 +11,7 @@ import {
   type ProjectRow,
 } from '../_shared/contractProfiles.ts'
 import type { LayoutProfile } from '../_shared/contractDocument.ts'
-import { corsHeaders, getAuthenticatedUser, jsonResponse } from '../_shared/functionAuth.ts'
+import { corsHeaders, getAuthenticatedUser, assertUserIsAgencyMember, jsonResponse } from '../_shared/functionAuth.ts'
 import { previewContractHtml } from '../_shared/pdfService.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
@@ -43,7 +43,7 @@ serve(async (req) => {
       .select(
         `id, agency_id, current_version, status,
         agencies(
-          user_id, name, logo_url, brand_color, contact_email, contact_phone,
+          name, logo_url, brand_color, contact_email, contact_phone,
           legal_form, address_street, address_postal_code, address_city,
           siret, share_capital, vat_number, rcs_city
         ),
@@ -56,9 +56,11 @@ serve(async (req) => {
       .single()
     if (documentError || !document) return jsonResponse({ error: 'Document introuvable' }, 404)
 
+    const memberDenied = await assertUserIsAgencyMember(supabase, user.id, document.agency_id)
+    if (memberDenied) return jsonResponse({ error: memberDenied.error }, memberDenied.status)
+
     const agencyRel = document.agencies as AgencyRow | AgencyRow[] | null
     const agencyRow = Array.isArray(agencyRel) ? agencyRel[0] : agencyRel
-    if (agencyRow?.user_id !== user.id) return jsonResponse({ error: 'Forbidden' }, 403)
 
     const version = (body.version ?? document.current_version) as DocumentVersion
     if (!version?.title || !Array.isArray(version.sections)) {
