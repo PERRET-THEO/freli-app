@@ -143,22 +143,6 @@ export async function updateChecklistTemplate(
   await replaceTemplateItems(templateId, items)
 }
 
-export async function renameChecklistTemplate(
-  templateId: string,
-  name: string,
-  description?: string,
-): Promise<void> {
-  const { error } = await supabase
-    .from('checklist_templates')
-    .update({
-      name: name.trim(),
-      description: description?.trim() || null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', templateId)
-  if (error) throw new Error(error.message)
-}
-
 export async function deleteChecklistTemplate(templateId: string): Promise<void> {
   const { error } = await supabase.from('checklist_templates').delete().eq('id', templateId)
   if (error) throw new Error(error.message)

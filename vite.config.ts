@@ -6,6 +6,18 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default defineConfig({
   build: {
     chunkSizeWarningLimit: 1600,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('@supabase')) return 'supabase'
+          if (id.includes('@tanstack/react-table')) return 'react-table'
+          if (id.includes('/motion/') || id.includes('\\motion\\')) return 'motion'
+          if (id.includes('pdfjs-dist') || id.includes('pdf-lib')) return 'pdf'
+          if (id.includes('signature_pad')) return 'signature'
+        },
+      },
+    },
   },
   plugins: [
     react(),
@@ -20,19 +32,31 @@ export default defineConfig({
         theme_color: '#5B6EF5',
         background_color: '#0D0F14',
         display: 'standalone',
-        orientation: 'portrait',
         start_url: '/dashboard',
         icons: [
           {
             src: '/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
+            purpose: 'any',
           },
           {
             src: '/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
+          },
+          {
+            src: '/icon-192-maskable.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/icon-512-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },

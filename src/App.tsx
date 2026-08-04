@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AgencySessionProvider, useAgencySession } from './contexts/AgencyContext'
 import { AppChromeProvider } from './components/app-shell/AppChromeProvider'
@@ -8,31 +8,68 @@ import { MarketingPageTransition } from './components/layout/MarketingPageTransi
 import { ScrollToTop } from './components/layout/ScrollToTop'
 import { resolveAuthCallbackPath } from './lib/authCallbackRoute'
 import { supabase } from './lib/supabase'
-import { About } from './pages/About'
-import { ComparisonDetail, ComparisonsHub } from './pages/Comparisons'
-import { ClientPortal } from './pages/ClientPortal'
 import { ConfirmEmail } from './pages/ConfirmEmail'
-import { Dashboard } from './pages/Dashboard'
-import { Demo } from './pages/Demo'
-import { Faq } from './pages/Faq'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { Landing } from './pages/Landing'
-import { LegalNotice } from './pages/LegalNotice'
-import { PrivacyPolicy } from './pages/PrivacyPolicy'
-import { TermsOfUse } from './pages/TermsOfUse'
-import { NewProject } from './pages/NewProject'
 import { NotFound } from './pages/NotFound'
-import { ProjectDetail } from './pages/ProjectDetail'
 import { ResetPassword } from './pages/ResetPassword'
-import { Settings } from './pages/Settings'
 import { SignIn } from './pages/SignIn'
 import { SignUp } from './pages/SignUp'
-import { Templates } from './pages/Templates'
-import { Clients } from './pages/Clients'
-import { ClientDetail } from './pages/ClientDetail'
-import { Integrations } from './pages/Integrations'
-import { PortalPreview } from './pages/PortalPreview'
-import { Pricing } from './pages/Pricing'
+
+const About = lazy(() => import('./pages/About').then((m) => ({ default: m.About })))
+const Demo = lazy(() => import('./pages/Demo').then((m) => ({ default: m.Demo })))
+const Faq = lazy(() => import('./pages/Faq').then((m) => ({ default: m.Faq })))
+const Pricing = lazy(() => import('./pages/Pricing').then((m) => ({ default: m.Pricing })))
+const ComparisonsHub = lazy(() =>
+  import('./pages/Comparisons').then((m) => ({ default: m.ComparisonsHub })),
+)
+const ComparisonDetail = lazy(() =>
+  import('./pages/Comparisons').then((m) => ({ default: m.ComparisonDetail })),
+)
+const LegalNotice = lazy(() =>
+  import('./pages/LegalNotice').then((m) => ({ default: m.LegalNotice })),
+)
+const PrivacyPolicy = lazy(() =>
+  import('./pages/PrivacyPolicy').then((m) => ({ default: m.PrivacyPolicy })),
+)
+const TermsOfUse = lazy(() =>
+  import('./pages/TermsOfUse').then((m) => ({ default: m.TermsOfUse })),
+)
+
+const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })))
+const NewProject = lazy(() =>
+  import('./pages/NewProject').then((m) => ({ default: m.NewProject })),
+)
+const ProjectDetail = lazy(() =>
+  import('./pages/ProjectDetail').then((m) => ({ default: m.ProjectDetail })),
+)
+const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })))
+const Templates = lazy(() => import('./pages/Templates').then((m) => ({ default: m.Templates })))
+const Clients = lazy(() => import('./pages/Clients').then((m) => ({ default: m.Clients })))
+const ClientDetail = lazy(() =>
+  import('./pages/ClientDetail').then((m) => ({ default: m.ClientDetail })),
+)
+const Integrations = lazy(() =>
+  import('./pages/Integrations').then((m) => ({ default: m.Integrations })),
+)
+const ClientPortal = lazy(() =>
+  import('./pages/ClientPortal').then((m) => ({ default: m.ClientPortal })),
+)
+const PortalPreview = lazy(() =>
+  import('./pages/PortalPreview').then((m) => ({ default: m.PortalPreview })),
+)
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)]">
+      <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
+    </div>
+  )
+}
+
+function LazyPage({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<RouteFallback />}>{children}</Suspense>
+}
 
 function RequireAuth() {
   const [loading, setLoading] = useState(true)
@@ -51,11 +88,7 @@ function RequireAuth() {
   }, [])
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
-        <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
-      </div>
-    )
+    return <RouteFallback />
   }
 
   return isAuthenticated ? <Outlet /> : <Navigate to="/signin" replace />
@@ -65,11 +98,7 @@ function BillingGateOutlet() {
   const { loading, agency } = useAgencySession()
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
-        <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
-      </div>
-    )
+    return <RouteFallback />
   }
 
   return (
@@ -96,11 +125,7 @@ function RedirectIfAuthenticated() {
   }, [])
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
-        <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
-      </div>
-    )
+    return <RouteFallback />
   }
 
   return isAuthenticated ? <Navigate to="/dashboard" replace /> : <Outlet />
@@ -150,50 +175,189 @@ function App() {
     <ErrorBoundary>
       <ScrollToTop />
       <Routes>
-      <Route element={<MarketingPageTransition />}>
-        <Route path="/" element={<AppRoot />} />
-        <Route path="/demo" element={<Demo />} />
-        <Route path="/a-propos" element={<About />} />
-        <Route path="/faq" element={<Faq />} />
-        <Route path="/tarifs" element={<Pricing />} />
-        <Route path="/comparatifs" element={<ComparisonsHub />} />
-        <Route path="/vs/:slug" element={<ComparisonDetail />} />
-        <Route path="/mentions-legales" element={<LegalNotice />} />
-        <Route path="/confidentialite" element={<PrivacyPolicy />} />
-        <Route path="/conditions-utilisation" element={<TermsOfUse />} />
-      </Route>
-      <Route element={<RedirectIfAuthenticated />}>
-        <Route path="/signin" element={<SignIn />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-      </Route>
-      <Route path="/signup" element={<SignUp />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/confirm" element={<ConfirmEmail />} />
-      <Route path="/auth" element={<Navigate to="/signin" replace />} />
-      <Route element={<RequireAuth />}>
-        <Route element={<AgencySessionProvider><Outlet /></AgencySessionProvider>}>
+        <Route element={<MarketingPageTransition />}>
+          <Route path="/" element={<AppRoot />} />
+          <Route
+            path="/demo"
+            element={
+              <LazyPage>
+                <Demo />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/a-propos"
+            element={
+              <LazyPage>
+                <About />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/faq"
+            element={
+              <LazyPage>
+                <Faq />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/tarifs"
+            element={
+              <LazyPage>
+                <Pricing />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/comparatifs"
+            element={
+              <LazyPage>
+                <ComparisonsHub />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/vs/:slug"
+            element={
+              <LazyPage>
+                <ComparisonDetail />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/mentions-legales"
+            element={
+              <LazyPage>
+                <LegalNotice />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/confidentialite"
+            element={
+              <LazyPage>
+                <PrivacyPolicy />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/conditions-utilisation"
+            element={
+              <LazyPage>
+                <TermsOfUse />
+              </LazyPage>
+            }
+          />
+        </Route>
+        <Route element={<RedirectIfAuthenticated />}>
+          <Route path="/signin" element={<SignIn />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+        </Route>
+        <Route path="/signup" element={<SignUp />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/confirm" element={<ConfirmEmail />} />
+        <Route path="/auth" element={<Navigate to="/signin" replace />} />
+        <Route element={<RequireAuth />}>
+          <Route
+            element={
+              <AgencySessionProvider>
+                <Outlet />
+              </AgencySessionProvider>
+            }
+          >
+            <Route
+              element={
+                <AppChromeProvider>
+                  <BillingGateOutlet />
+                </AppChromeProvider>
+              }
+            >
+              <Route
+                path="/dashboard"
+                element={
+                  <LazyPage>
+                    <Dashboard />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="/dashboard/new"
+                element={
+                  <LazyPage>
+                    <NewProject />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="/dashboard/project/:id"
+                element={
+                  <LazyPage>
+                    <ProjectDetail />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="/dashboard/settings"
+                element={
+                  <LazyPage>
+                    <Settings />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="/dashboard/templates"
+                element={
+                  <LazyPage>
+                    <Templates />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="/dashboard/clients"
+                element={
+                  <LazyPage>
+                    <Clients />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="/dashboard/client/:id"
+                element={
+                  <LazyPage>
+                    <ClientDetail />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="/dashboard/integrations"
+                element={
+                  <LazyPage>
+                    <Integrations />
+                  </LazyPage>
+                }
+              />
+            </Route>
+          </Route>
+        </Route>
         <Route
+          path="/p/:token"
           element={
-            <AppChromeProvider>
-              <BillingGateOutlet />
-            </AppChromeProvider>
+            <LazyPage>
+              <ClientPortal />
+            </LazyPage>
           }
-        >
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/dashboard/new" element={<NewProject />} />
-        <Route path="/dashboard/project/:id" element={<ProjectDetail />} />
-        <Route path="/dashboard/settings" element={<Settings />} />
-        <Route path="/dashboard/templates" element={<Templates />} />
-        <Route path="/dashboard/clients" element={<Clients />} />
-        <Route path="/dashboard/client/:id" element={<ClientDetail />} />
-        <Route path="/dashboard/integrations" element={<Integrations />} />
-        </Route>
-        </Route>
-      </Route>
-      <Route path="/p/:token" element={<ClientPortal />} />
-      <Route path="/portal-preview" element={<PortalPreview />} />
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+        />
+        <Route
+          path="/portal-preview"
+          element={
+            <LazyPage>
+              <PortalPreview />
+            </LazyPage>
+          }
+        />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
     </ErrorBoundary>
   )
 }

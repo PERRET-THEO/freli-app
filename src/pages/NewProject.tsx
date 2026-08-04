@@ -6,17 +6,16 @@ import { fetchAgencyAiFlags } from '../lib/agencyQueries'
 import { sendProjectInviteEmail } from '../lib/resend'
 import { supabase } from '../lib/supabase'
 import { DashboardLayout } from '../components/DashboardLayout'
-import { Button, Card, Input } from '../components/ui'
-import { ChecklistBuilder } from '../components/checklist/ChecklistBuilder'
-import { CompanySearchAutocomplete } from '../components/company/CompanySearchAutocomplete'
-import { GeneratedDocumentEditor } from '../components/contracts/GeneratedDocumentEditor'
+import { Button, Card } from '../components/ui'
+import { ClientInfoStep } from '../components/new-project/ClientInfoStep'
+import { ChecklistStep } from '../components/new-project/ChecklistStep'
+import { ContractFinalizeStep } from '../components/new-project/ContractFinalizeStep'
 import type { CompanyLookupResult, LegalDataSource } from '../lib/companyLookup'
 import {
   buildChecklistItemConfig,
   buildChecklistItemValue,
   buildContractGenerationContext,
   buildDefaultContractBrief,
-  CHECKLIST_TYPE_LABELS,
   getAiSignatureItem,
   getChecklistContextLines,
   hasAiGenerateItems,
@@ -38,17 +37,6 @@ import {
   listAgencyChecklistTemplates,
   type AgencyChecklistTemplate,
 } from '../lib/checklistTemplates'
-
-const INDUSTRIES = [
-  'Web & Digital', 'E-commerce', 'Immobilier', 'Industrie', 'Santé',
-  'Education', 'Restauration', 'Mode & Luxe', 'Autre',
-]
-
-const COMPANY_TYPES = [
-  'Auto-entrepreneur', 'EURL', 'SARL', 'SAS', 'SASU', 'SA', 'Association', 'Autre',
-]
-
-const COMPANY_SIZES = ['1 personne', '2-5', '6-20', '21-50', '50+']
 
 type PendingContractLink = {
   checklistItemId: string
@@ -611,9 +599,6 @@ export function NewProject() {
     window.setTimeout(() => setCopySuccess(false), 1800)
   }
 
-  const selectCls =
-    'w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]'
-
   const stepSubtitle =
     step === 1
       ? `Étape 1/${totalSteps} — Client`
@@ -651,6 +636,7 @@ export function NewProject() {
   return (
     <DashboardLayout title="Nouveau projet" subtitle={stepSubtitle} maxWidth="4xl">
       <Card>
+        <div className="min-w-0">
         <div className="flex flex-wrap items-center justify-center gap-3">
           {renderStepIndicator(1, 'Client')}
           <span className="text-sm text-[var(--ink-muted)]">→</span>
@@ -664,292 +650,96 @@ export function NewProject() {
         </div>
 
         {step === 1 ? (
-          <form className="mt-6 space-y-5" onSubmit={handleStepOneSubmit}>
-            <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-5">
-              <h3 className="font-display text-base font-semibold text-[var(--ink)]">Informations personnelles</h3>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <Input placeholder="Prénom *" required value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-                <Input placeholder="Nom *" required value={lastName} onChange={(e) => setLastName(e.target.value)} />
-              </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <Input type="email" placeholder="Email professionnel *" required value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} />
-                <Input type="tel" placeholder="+33 6 00 00 00 00" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
-            </div>
-
-            <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-5">
-              <label className="flex cursor-pointer items-center gap-2">
-                <input type="checkbox" checked={isCompany} onChange={(e) => setIsCompany(e.target.checked)} className="h-4 w-4 rounded accent-[var(--accent)]" />
-                <span className="font-display text-base font-semibold text-[var(--ink)]">Mon client est une entreprise</span>
-              </label>
-              {isCompany && (
-                <div className="mt-4 space-y-3">
-                  <CompanySearchAutocomplete
-                    label="Rechercher l'entreprise du client"
-                    placeholder="Nom de l'entreprise ou SIRET/SIREN du client"
-                    onSelect={handleCompanySelect}
-                  />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Input placeholder="Nom de l'entreprise" value={companyName} onChange={(e) => { setCompanyName(e.target.value); markLegalManualEdit() }} />
-                    <select className={selectCls} value={companyType} onChange={(e) => { setCompanyType(e.target.value); markLegalManualEdit() }}>
-                      <option value="">Type d&apos;entreprise</option>
-                      {COMPANY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Input placeholder="SIRET (14 chiffres)" value={siret} onChange={(e) => { setSiret(e.target.value); markLegalManualEdit() }} maxLength={14} />
-                    <Input placeholder="N° TVA (FR + 11 chiffres)" value={vatNumber} onChange={(e) => { setVatNumber(e.target.value); markLegalManualEdit() }} />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowExtra(!showExtra)}
-              className="text-sm font-body font-medium text-[var(--accent)] hover:underline"
-            >
-              {showExtra ? '− Masquer les infos complémentaires' : '+ Ajouter plus d\u2019infos'}
-            </button>
-
-            {showExtra && (
-              <>
-                <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-5">
-                  <h3 className="font-display text-base font-semibold text-[var(--ink)]">Adresse</h3>
-                  <div className="mt-3 space-y-3">
-                    <Input placeholder="Rue" value={addressStreet} onChange={(e) => { setAddressStreet(e.target.value); markLegalManualEdit() }} />
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <Input placeholder="Code postal" value={postalCode} onChange={(e) => { setPostalCode(e.target.value); markLegalManualEdit() }} maxLength={5} />
-                      <Input placeholder="Ville" value={city} onChange={(e) => { setCity(e.target.value); markLegalManualEdit() }} />
-                      <Input placeholder="Pays" value={country} onChange={(e) => setCountry(e.target.value)} />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-5">
-                  <h3 className="font-display text-base font-semibold text-[var(--ink)]">Informations complémentaires</h3>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <Input placeholder="https://..." value={website} onChange={(e) => setWebsite(e.target.value)} />
-                    <select className={selectCls} value={industry} onChange={(e) => setIndustry(e.target.value)}>
-                      <option value="">Secteur d&apos;activité</option>
-                      {INDUSTRIES.map((i) => <option key={i} value={i}>{i}</option>)}
-                    </select>
-                  </div>
-                  <div className="mt-3">
-                    <p className="mb-2 text-sm font-body text-[var(--ink-soft)]">Taille de l&apos;entreprise</p>
-                    <div className="flex flex-wrap gap-2">
-                      {COMPANY_SIZES.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => setCompanySize(s)}
-                          className={`rounded-full border px-3 py-1.5 text-xs font-body transition ${companySize === s ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]' : 'border-[var(--border)] text-[var(--ink-muted)]'}`}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <textarea
-                    placeholder="Informations importantes sur ce client..."
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    className="mt-3 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none"
-                    rows={3}
-                  />
-                </div>
-              </>
-            )}
-
-            {error ? <p className="text-sm font-body text-[var(--amber)]">{error}</p> : null}
-            <Button type="submit" className="w-full">Suivant →</Button>
-          </form>
+          <ClientInfoStep
+            firstName={firstName}
+            lastName={lastName}
+            clientEmail={clientEmail}
+            phone={phone}
+            isCompany={isCompany}
+            companyName={companyName}
+            companyType={companyType}
+            siret={siret}
+            vatNumber={vatNumber}
+            showExtra={showExtra}
+            addressStreet={addressStreet}
+            postalCode={postalCode}
+            city={city}
+            country={country}
+            website={website}
+            industry={industry}
+            companySize={companySize}
+            notes={notes}
+            error={error}
+            onFirstNameChange={setFirstName}
+            onLastNameChange={setLastName}
+            onClientEmailChange={setClientEmail}
+            onPhoneChange={setPhone}
+            onIsCompanyChange={setIsCompany}
+            onCompanyNameChange={setCompanyName}
+            onCompanyTypeChange={setCompanyType}
+            onSiretChange={setSiret}
+            onVatNumberChange={setVatNumber}
+            onShowExtraToggle={() => setShowExtra(!showExtra)}
+            onAddressStreetChange={setAddressStreet}
+            onPostalCodeChange={setPostalCode}
+            onCityChange={setCity}
+            onCountryChange={setCountry}
+            onWebsiteChange={setWebsite}
+            onIndustryChange={setIndustry}
+            onCompanySizeChange={setCompanySize}
+            onNotesChange={setNotes}
+            onCompanySelect={handleCompanySelect}
+            onLegalManualEdit={markLegalManualEdit}
+            onSubmit={handleStepOneSubmit}
+          />
         ) : step === 2 ? (
-          <div className="mt-6">
-            <p className="text-sm font-body text-[var(--ink-muted)]">Configure la checklist de démarrage.</p>
-            {createdProjectId && needsContractStep ? (
-              <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
-                Tant que l&apos;invitation n&apos;est pas envoyée, vous pouvez modifier la checklist
-                puis régénérer le contrat à l&apos;étape suivante.
-              </p>
-            ) : null}
-
-            <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-5">
-              <label className="mb-1 block font-display text-base font-semibold text-[var(--ink)]">
-                Prix (€)
-              </label>
-              <p className="mb-2 text-xs font-body text-[var(--ink-muted)]">
-                Montant facturé au client à la fin de l&apos;onboarding si Stripe est activé dans Intégrations. Laisser vide pour ne pas proposer de paiement.
-              </p>
-              <Input
-                type="number"
-                min={0}
-                step={1}
-                placeholder="ex: 650"
-                value={projectPrice}
-                onChange={(e) => setProjectPrice(e.target.value)}
-              />
-            </div>
-
-            <div className="mt-4">
-              <ChecklistBuilder
-                items={items}
-                onChange={setItems}
-                contractTemplates={contractTemplates}
-                agencyTemplates={agencyTemplates}
-                agencyId={agencyId}
-                aiContractsEnabled={aiContractsEnabled}
-                hasDefaultContract={hasDefaultContract}
-                defaultContractBrief={defaultContractBrief}
-                priceEur={priceEur}
-                onTemplatesChanged={() => {
-                  if (agencyId) refreshAgencyTemplates(agencyId)
-                }}
-              />
-            </div>
-
-            {error ? <p className="mt-3 text-sm font-body text-[var(--amber)]">{error}</p> : null}
-            {loadingMessage ? (
-              <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">{loadingMessage}</p>
-            ) : null}
-
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Button variant="secondary" onClick={() => setStep(1)} disabled={loading}>
-                ← Retour
-              </Button>
-              <Button className="w-full py-4 text-base" onClick={handleCreateProject} disabled={loading}>
-                {loading ? 'En cours…' : stepTwoButtonLabel}
-              </Button>
-            </div>
-          </div>
+          <ChecklistStep
+            items={items}
+            onItemsChange={setItems}
+            projectPrice={projectPrice}
+            onProjectPriceChange={setProjectPrice}
+            contractTemplates={contractTemplates}
+            agencyTemplates={agencyTemplates}
+            agencyId={agencyId}
+            aiContractsEnabled={aiContractsEnabled}
+            hasDefaultContract={hasDefaultContract}
+            defaultContractBrief={defaultContractBrief}
+            priceEur={priceEur}
+            createdProjectId={createdProjectId}
+            needsContractStep={needsContractStep}
+            error={error}
+            loading={loading}
+            loadingMessage={loadingMessage}
+            submitLabel={stepTwoButtonLabel}
+            onTemplatesChanged={() => {
+              if (agencyId) refreshAgencyTemplates(agencyId)
+            }}
+            onBack={() => setStep(1)}
+            onSubmit={handleCreateProject}
+          />
         ) : (
-          <div className="mt-6">
-            <p className="text-sm font-body text-[var(--ink-muted)]">
-              Tant que l&apos;invitation n&apos;est pas envoyée, vous pouvez ajuster la checklist
-              et régénérer le contrat. Relisez-le puis finalisez-le avant l&apos;envoi à{' '}
-              {clientFullName || 'votre client'}.
-            </p>
-
-            {contextStale && !generatedToken && !contractFinalized ? (
-              <div className="mt-4 rounded-[var(--radius-sm)] border border-[var(--amber)]/40 bg-[var(--amber-soft)] px-4 py-3">
-                <p className="text-sm font-body text-[var(--amber)]">
-                  La checklist ou le brief a changé depuis la dernière génération. Régénérez le
-                  contrat pour intégrer ces éléments.
-                </p>
-                <Button
-                  className="mt-3"
-                  variant="secondary"
-                  onClick={() => void handleRegenerateContract()}
-                  disabled={regenerating || loading || contractFinalized}
-                >
-                  {regenerating ? 'Régénération…' : 'Régénérer le contrat'}
-                </Button>
-              </div>
-            ) : null}
-
-            <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)]">
-              <button
-                type="button"
-                onClick={() => setShowContextRecap((value) => !value)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left"
-              >
-                <span className="font-display text-sm font-semibold text-[var(--ink)]">
-                  Contexte du contrat
-                </span>
-                <span className="text-xs font-body text-[var(--ink-muted)]">
-                  {showContextRecap ? 'Masquer' : 'Afficher'}
-                </span>
-              </button>
-              {showContextRecap ? (
-                <div className="border-t border-[var(--border)] px-4 py-3">
-                  <p className="text-sm font-body text-[var(--ink-soft)]">
-                    Client : {clientFullName || '—'}
-                    {priceEur ? ` · ${priceEur} € HT` : ''}
-                  </p>
-                  <ul className="mt-3 space-y-2">
-                    {items.map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex items-center justify-between gap-2 text-sm font-body text-[var(--ink-soft)]"
-                      >
-                        <span>{item.label}</span>
-                        <span className="shrink-0 rounded-full bg-[var(--surface-warm)] px-2 py-0.5 text-[10px] font-medium text-[var(--ink-muted)]">
-                          {CHECKLIST_TYPE_LABELS[item.type]}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    type="button"
-                    onClick={() => setStep(2)}
-                    disabled={loading || contractFinalized || regenerating}
-                    className="mt-3 text-sm font-body font-medium text-[var(--accent)] hover:underline disabled:opacity-50"
-                  >
-                    Modifier la checklist →
-                  </button>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-4">
-              <label className="mb-1 block font-display text-sm font-semibold text-[var(--ink)]">
-                Brief de l&apos;agence
-              </label>
-              <p className="mb-2 text-xs font-body text-[var(--ink-muted)]">
-                Ce brief et les éléments de la checklist alimentent la génération.
-              </p>
-              <textarea
-                value={manualBrief}
-                onChange={(e) => handleBriefChange(e.target.value)}
-                rows={4}
-                disabled={contractFinalized || regenerating}
-                className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] outline-none transition focus:border-[var(--accent)] disabled:opacity-60"
-              />
-            </div>
-
-            {generatedDocuments.length > 0 ? (
-              <div className="mt-4 space-y-4">
-                {generatedDocuments.map((doc) => (
-                  <GeneratedDocumentEditor
-                    key={doc.id}
-                    document={doc}
-                    onFinalized={handleContractFinalized}
-                    onRegenerate={
-                      !generatedToken && !contractFinalized ? handleRegenerateContract : undefined
-                    }
-                    regenerating={regenerating}
-                    regenerateDisabled={loading || contractFinalized || Boolean(generatedToken)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm font-body text-[var(--ink-muted)]">
-                Chargement du brouillon…
-              </p>
-            )}
-
-            {contractFinalized ? (
-              <p className="mt-3 text-sm font-body text-[var(--mint)]">
-                Contrat finalisé — invitation envoyée au client.
-              </p>
-            ) : null}
-
-            {error ? <p className="mt-3 text-sm font-body text-[var(--amber)]">{error}</p> : null}
-            {loadingMessage ? (
-              <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">{loadingMessage}</p>
-            ) : null}
-
-            <div className="mt-6">
-              <Button
-                variant="secondary"
-                onClick={() => setStep(2)}
-                disabled={loading || contractFinalized || regenerating}
-              >
-                ← Retour à la checklist
-              </Button>
-            </div>
-          </div>
+          <ContractFinalizeStep
+            clientFullName={clientFullName}
+            priceEur={priceEur}
+            items={items}
+            manualBrief={manualBrief}
+            onBriefChange={handleBriefChange}
+            contextStale={contextStale}
+            showContextRecap={showContextRecap}
+            onToggleContextRecap={() => setShowContextRecap((value) => !value)}
+            generatedDocuments={generatedDocuments}
+            generatedToken={generatedToken}
+            contractFinalized={contractFinalized}
+            regenerating={regenerating}
+            loading={loading}
+            loadingMessage={loadingMessage}
+            error={error}
+            onRegenerate={handleRegenerateContract}
+            onContractFinalized={handleContractFinalized}
+            onBackToChecklist={() => setStep(2)}
+          />
         )}
+        </div>
       </Card>
 
       {generatedToken ? (
@@ -967,7 +757,7 @@ export function NewProject() {
               ) : (
                 <Link to="/dashboard" className="w-full sm:w-auto"><Button variant="secondary" className="w-full">Retour au dashboard</Button></Link>
               )}
-              <Button variant="secondary" onClick={() => navigate(`/p/${generatedToken}`)}>Ouvrir le portail</Button>
+              <Button className="w-full" variant="secondary" onClick={() => navigate(`/p/${generatedToken}`)}>Ouvrir le portail</Button>
             </div>
           </Card>
         </div>

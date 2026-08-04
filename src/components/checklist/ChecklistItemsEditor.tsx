@@ -17,7 +17,7 @@ import { FieldItemConfig } from './FieldItemConfig'
 type ContractTemplateOption = { id: string; name: string }
 
 const smallSelectCls =
-  'rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-xs font-body text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]'
+  'min-w-0 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-xs font-body text-[var(--ink)] focus:outline-none focus:border-[var(--accent)] sm:w-auto sm:max-w-[12rem]'
 
 const QUICK_ADD_ITEMS: { type: ChecklistItemType; label: string; defaultLabel: string }[] = [
   { type: 'text', label: 'Texte', defaultLabel: 'Nouvel item texte' },
@@ -109,11 +109,11 @@ export function ChecklistItemsEditor({
           items.map((item, index) => (
             <div
               key={item.id}
-              className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] p-3"
+              className="min-w-0 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] p-3"
             >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                 <Input
-                  className="flex-1"
+                  className="min-w-0 flex-1"
                   value={item.label}
                   placeholder="Libellé de l'item"
                   onChange={(e) => updateItem(item.id, { label: e.target.value })}
@@ -164,7 +164,7 @@ export function ChecklistItemsEditor({
                     type="button"
                     onClick={() => onChange(moveItem(items, item.id, 'up'))}
                     disabled={index === 0}
-                    className="h-8 w-8 shrink-0 rounded-full border border-[var(--border)] text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
+                    className="touch-target shrink-0 rounded-full border border-[var(--border)] text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
                     aria-label="Monter"
                   >
                     ↑
@@ -173,7 +173,7 @@ export function ChecklistItemsEditor({
                     type="button"
                     onClick={() => onChange(moveItem(items, item.id, 'down'))}
                     disabled={index === items.length - 1}
-                    className="h-8 w-8 shrink-0 rounded-full border border-[var(--border)] text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
+                    className="touch-target shrink-0 rounded-full border border-[var(--border)] text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
                     aria-label="Descendre"
                   >
                     ↓
@@ -181,7 +181,7 @@ export function ChecklistItemsEditor({
                   <button
                     type="button"
                     onClick={() => onChange([...items, duplicateItem(item)])}
-                    className="h-8 w-8 shrink-0 rounded-full border border-[var(--border)] text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                    className="touch-target shrink-0 rounded-full border border-[var(--border)] text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
                     aria-label="Dupliquer"
                   >
                     ⧉
@@ -189,7 +189,7 @@ export function ChecklistItemsEditor({
                   <button
                     type="button"
                     onClick={() => onChange(items.filter((it) => it.id !== item.id))}
-                    className="h-8 w-8 shrink-0 rounded-full border border-[var(--border)] text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                    className="touch-target shrink-0 rounded-full border border-[var(--border)] text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
                     aria-label="Supprimer cet item"
                   >
                     ×
@@ -230,9 +230,9 @@ export function ChecklistItemsEditor({
 
       <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-warm)] p-4">
         <p className="mb-2 text-sm font-body font-medium text-[var(--ink)]">Ajouter un item</p>
-        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row">
           <Input
-            className="flex-1"
+            className="min-w-0 flex-1"
             placeholder="Libellé du nouvel item"
             value={newItemLabel}
             onChange={(event) => setNewItemLabel(event.target.value)}

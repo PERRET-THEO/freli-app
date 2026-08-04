@@ -28,7 +28,7 @@ export function ConfirmEmail() {
 
   if (status === 'loading') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <p className="text-sm font-body text-[var(--ink-muted)]">Vérification en cours…</p>
       </div>
     )
@@ -36,7 +36,7 @@ export function ConfirmEmail() {
 
   if (status === 'error') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <Card className="w-full max-w-md text-center">
           <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--ink)]">
             Lien invalide ou expiré
@@ -54,7 +54,7 @@ export function ConfirmEmail() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
       <Card className="w-full max-w-md text-center">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--mint-soft)]">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

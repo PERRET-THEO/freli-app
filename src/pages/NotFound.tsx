@@ -3,7 +3,7 @@ import { Button, Card } from '../components/ui'
 
 export function NotFound() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
       <Card className="w-full max-w-xl text-center">
         <p className="font-display text-7xl font-extrabold tracking-tighter text-[var(--ink)]">
           404

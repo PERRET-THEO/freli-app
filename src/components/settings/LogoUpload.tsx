@@ -99,7 +99,7 @@ export function LogoUpload({ currentUrl, file, onFileChange, onError }: LogoUplo
           setDragOver(false)
           validateAndSet(e.dataTransfer.files?.[0] ?? null)
         }}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-[var(--radius-md)] border-2 border-dashed px-6 py-8 transition ${
+        className={`flex min-w-0 cursor-pointer flex-col items-center justify-center rounded-[var(--radius-md)] border-2 border-dashed px-4 py-8 text-center transition sm:px-6 ${
           dragOver
             ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
             : 'border-[var(--border)] bg-[var(--surface-warm)] hover:border-[var(--accent)]'
@@ -116,10 +116,10 @@ export function LogoUpload({ currentUrl, file, onFileChange, onError }: LogoUplo
             🏢
           </div>
         )}
-        <p className="mt-3 text-sm font-body font-medium text-[var(--ink)]">
+        <p className="mt-3 max-w-full break-words text-sm font-body font-medium text-[var(--ink)]">
           {file ? file.name : 'Glissez une image ou cliquez pour parcourir'}
         </p>
-        <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
+        <p className="mt-1 max-w-full break-words text-xs font-body text-[var(--ink-muted)]">
           SVG recommandé pour un logo net sur tous les écrans ; PNG/WebP aussi acceptés (max 2 Mo /
           512 Ko SVG).
         </p>

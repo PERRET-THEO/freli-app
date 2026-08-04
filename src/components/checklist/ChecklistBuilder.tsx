@@ -119,10 +119,10 @@ export function ChecklistBuilder({
   }
 
   return (
-    <div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+    <div className="min-w-0">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
         <select
-          className={selectCls}
+          className={`${selectCls} min-w-0 flex-1`}
           value={selectedTemplate}
           onChange={(event) => handleTemplateChange(event.target.value)}
           disabled={loadingTemplate}
@@ -189,7 +189,7 @@ export function ChecklistBuilder({
 
       {showSaveModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/45 px-4">
-          <div className="w-full max-w-md rounded-[var(--radius-lg)] bg-[var(--white)] p-7 shadow-[0_2px_16px_rgba(13,15,20,0.12)]">
+          <div className="w-full max-w-md rounded-[var(--radius-lg)] bg-[var(--white)] p-4 shadow-[0_2px_16px_rgba(13,15,20,0.12)] sm:p-7">
             <h2 className="font-display text-2xl font-bold text-[var(--ink)]">Enregistrer le modèle</h2>
             <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
               Réutilise cette checklist ({items.length} item{items.length > 1 ? 's' : ''}) pour tes prochains projets.
@@ -209,7 +209,7 @@ export function ChecklistBuilder({
               />
               {saveError ? <p className="text-sm font-body text-[var(--amber)]">{saveError}</p> : null}
             </div>
-            <div className="mt-5 flex gap-3">
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <Button onClick={handleSaveTemplate} disabled={saving}>
                 {saving ? 'Enregistrement…' : 'Enregistrer'}
               </Button>

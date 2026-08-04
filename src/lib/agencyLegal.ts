@@ -26,14 +26,3 @@ export const LEGAL_FORM_OPTIONS = [
   'Association',
   'Autre',
 ] as const
-
-export function formatAgencyAddress(row: AgencyLegalFields): string {
-  return [row.address_street, row.address_postal_code, row.address_city]
-    .map((v) => v?.trim())
-    .filter(Boolean)
-    .join(', ')
-}
-
-export function legalProfileComplete(row: AgencyLegalFields): boolean {
-  return Boolean(row.siret?.trim() && formatAgencyAddress(row))
-}

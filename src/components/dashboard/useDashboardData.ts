@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAgencySession } from '../../contexts/AgencyContext'
 import {
-  findProjectBottleneck,
-  type BottleneckItem,
-} from '../../lib/projectBottleneck'
-import type { ReviewStatus } from '../../lib/checklistReview'
+  buildNavAttentionFromDashboard,
+  fetchChecklistAttentionRows,
+  groupChecklistByProject,
+  type ChecklistAttentionRow,
+} from '../../lib/agencyAttention'
+import { findProjectBottleneck } from '../../lib/projectBottleneck'
 import { supabase } from '../../lib/supabase'
 import type { ProjectCardData } from './types'
 
@@ -20,19 +22,6 @@ type ProjectRecord = {
   price: number | null
   payment_status: string | null
   clients?: { company_name: string | null; phone: string | null }[] | { company_name: string | null; phone: string | null } | null
-}
-
-type ChecklistCountRow = {
-  project_id: string
-  completed: boolean
-  label: string
-  type: string
-  order_index: number
-  value: string | null
-  review_status: ReviewStatus | null
-  submitted_at: string | null
-  reviewed_at: string | null
-  config: BottleneckItem['config']
 }
 
 type ReminderLogRow = {
@@ -72,40 +61,26 @@ export function useDashboardData() {
       setDraftReminderCount(0)
       setAutoRemindersThisMonth(0)
       setPendingExtractionProjects(new Set())
+      buildNavAttentionFromDashboard({
+        agencyId,
+        projects: [],
+        checklistRows: [],
+        draftReminderCount: 0,
+      })
       setLoading(false)
       return
     }
 
     const projectIds = rawProjects.map((project) => project.id)
-    const { data: checklistRows } = await supabase
-      .from('checklist_items')
-      .select(
-        'project_id, completed, label, type, order_index, value, review_status, submitted_at, reviewed_at, config',
-      )
-      .in('project_id', projectIds)
-      .order('order_index', { ascending: true })
+    const checklistRows = await fetchChecklistAttentionRows(projectIds)
+    const itemsByProject = groupChecklistByProject(checklistRows)
 
-    const itemsByProject = new Map<string, BottleneckItem[]>()
     const countsByProject = new Map<string, { total: number; completed: number }>()
-    for (const row of (checklistRows ?? []) as ChecklistCountRow[]) {
+    for (const row of checklistRows) {
       const current = countsByProject.get(row.project_id) ?? { total: 0, completed: 0 }
       current.total += 1
       if (row.completed) current.completed += 1
       countsByProject.set(row.project_id, current)
-
-      const list = itemsByProject.get(row.project_id) ?? []
-      list.push({
-        label: row.label,
-        type: row.type,
-        completed: row.completed,
-        value: row.value,
-        order_index: row.order_index,
-        review_status: row.review_status,
-        submitted_at: row.submitted_at,
-        reviewed_at: row.reviewed_at,
-        config: row.config,
-      })
-      itemsByProject.set(row.project_id, list)
     }
 
     const { data: reminderRows } = await supabase
@@ -176,9 +151,17 @@ export function useDashboardData() {
       .eq('agency_id', agencyId)
       .eq('status', 'draft')
 
+    const draftReminderCount = draftCount ?? 0
+    buildNavAttentionFromDashboard({
+      agencyId,
+      projects: mapped,
+      checklistRows: checklistRows as ChecklistAttentionRow[],
+      draftReminderCount,
+    })
+
     setProjects(mapped)
     setAutoRemindersThisMonth(autoCount)
-    setDraftReminderCount(draftCount ?? 0)
+    setDraftReminderCount(draftReminderCount)
     setLoading(false)
   }, [])
 

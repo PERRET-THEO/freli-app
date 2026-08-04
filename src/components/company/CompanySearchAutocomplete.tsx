@@ -122,7 +122,7 @@ export function CompanySearchAutocomplete({
         </label>
       ) : null}
       <div className="flex gap-2">
-        <div className="relative flex-1">
+        <div className="relative min-w-0 flex-1">
           <input
             role="combobox"
             aria-expanded={open}
@@ -137,7 +137,7 @@ export function CompanySearchAutocomplete({
             onFocus={() => {
               if (results.length > 0) setOpen(true)
             }}
-            className="w-full bg-[var(--white)] border border-[var(--border)] rounded-[var(--radius-sm)] px-4 py-3 font-body text-sm text-[var(--ink)] placeholder-[var(--ink-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)] transition-all"
+            className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-base text-[var(--ink)] placeholder-[var(--ink-muted)] transition-all focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)]"
           />
           {loading ? (
             <span className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--accent)]" />

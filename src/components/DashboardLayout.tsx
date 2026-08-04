@@ -32,14 +32,14 @@ export function DashboardLayout({
   const showSkeleton = (sessionLoading || loading) && skeleton
 
   return (
-    <div className="min-h-screen bg-[var(--surface)]">
+    <div className="flex h-dvh flex-col overflow-hidden bg-[var(--surface)] md:block md:min-h-dvh md:h-auto md:overflow-visible">
       <AppSidebar />
       <CommandPalette />
 
       <div
-        className={`mx-auto min-w-0 transition-[margin] duration-200 ease-out md:ml-[var(--sidebar-current-width)] ${contentMax}`}
+        className={`mx-auto flex min-h-0 min-w-0 flex-1 flex-col transition-[margin] duration-200 ease-out md:ml-[var(--sidebar-current-width)] md:block md:flex-none ${contentMax}`}
       >
-        <main className="w-full min-w-0 px-4 py-8 pb-24 sm:px-8 md:pb-8">
+        <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain px-4 py-6 pt-[max(1.5rem,var(--safe-top))] sm:px-8 md:overflow-visible md:py-8 md:pt-8">
           {title ? (
             <header className="mb-6">
               <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">{title}</h1>
@@ -56,9 +56,11 @@ export function DashboardLayout({
             children
           )}
         </main>
-      </div>
 
-      <MobileBottomNav />
+        <div className="shrink-0 md:hidden">
+          <MobileBottomNav />
+        </div>
+      </div>
     </div>
   )
 }

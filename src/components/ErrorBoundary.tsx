@@ -24,7 +24,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+        <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
           <Card className="max-w-md text-center">
             <h1 className="font-display text-xl font-bold text-[var(--ink)]">Une erreur est survenue</h1>
             <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">

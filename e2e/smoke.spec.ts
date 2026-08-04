@@ -17,8 +17,9 @@ test.describe('Freli public pages', () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
     await page.getByRole('button', { name: /ouvrir le menu/i }).click()
-    await expect(page.getByRole('link', { name: /Fonctionnalités/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /Intégrations/i })).toBeVisible()
+    const mobileNav = page.locator('#mobile-nav-menu')
+    await expect(mobileNav.getByRole('link', { name: /Fonctionnalités/i })).toBeVisible()
+    await expect(mobileNav.getByRole('link', { name: /Intégrations/i })).toBeVisible()
   })
 })
 

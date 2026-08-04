@@ -29,7 +29,7 @@ export function AuthShell({ title, subtitle, children, footer }: AuthShellProps)
   const homeUrl = marketingHomeUrl()
 
   return (
-    <div className="flex min-h-screen bg-[var(--surface)]">
+    <div className="flex min-h-dvh bg-[var(--surface)]">
       <div className="flex w-full flex-col lg:w-[48%] lg:max-w-xl xl:max-w-2xl">
         <header className="flex items-center justify-between gap-4 px-5 py-5 sm:px-8">
           <a href={homeUrl} className="shrink-0 transition hover:opacity-90" aria-label="Freli — Accueil">

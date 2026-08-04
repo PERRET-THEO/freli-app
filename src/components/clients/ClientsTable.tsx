@@ -242,7 +242,7 @@ export function ClientsTable({
 
   return (
     <div className="hidden overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] md:block">
-      <div className="max-h-[calc(100vh-14rem)] overflow-auto">
+      <div className="max-h-[calc(100dvh-14rem)] overflow-auto">
         <table className="w-full border-collapse text-left text-sm font-body">
           <thead className="sticky top-0 z-10 bg-[var(--surface)]">
             {table.getHeaderGroups().map((hg) => (

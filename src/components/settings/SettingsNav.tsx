@@ -86,11 +86,18 @@ export function SettingsNav({ activeId: activeIdProp }: SettingsNavProps) {
   }, [])
 
   useEffect(() => {
+    const scroller = scrollerRef.current
     const btn = tabRefs.current.get(activeId)
-    btn?.scrollIntoView({
+    if (!scroller || !btn) return
+
+    const target =
+      btn.offsetLeft - scroller.clientWidth / 2 + btn.offsetWidth / 2
+    const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth)
+    const nextLeft = Math.max(0, Math.min(maxScroll, target))
+
+    scroller.scrollTo({
+      left: nextLeft,
       behavior: reduceMotion ? 'auto' : 'smooth',
-      inline: 'center',
-      block: 'nearest',
     })
   }, [activeId, reduceMotion])
 
@@ -105,7 +112,7 @@ export function SettingsNav({ activeId: activeIdProp }: SettingsNavProps) {
 
   return (
     <>
-      <nav className="sticky top-4 hidden space-y-1 lg:block" aria-label="Sections paramètres">
+      <nav className="sticky top-4 hidden min-w-0 space-y-1 lg:block" aria-label="Sections paramètres">
         <p className="mb-2 px-3 text-[10px] font-display font-bold uppercase tracking-[0.18em] text-[var(--ink-muted)]">
           Sections
         </p>
@@ -127,14 +134,14 @@ export function SettingsNav({ activeId: activeIdProp }: SettingsNavProps) {
       </nav>
 
       <div
-        className="sticky top-0 z-10 -mx-1 border-b border-[var(--border)] bg-[var(--surface)] lg:hidden"
+        className="sticky top-0 z-10 -mx-1 min-w-0 max-w-full overflow-hidden border-b border-[var(--border)] bg-[var(--surface)] lg:hidden"
         style={maskImage ? { maskImage, WebkitMaskImage: maskImage } : undefined}
       >
         <div
           ref={scrollerRef}
           role="tablist"
           aria-label="Sections paramètres"
-          className="flex gap-1 overflow-x-auto px-1 pt-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          className="flex gap-1 overflow-x-auto overscroll-x-contain px-1 pt-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         >
           {SECTIONS.map((section) => {
             const isActive = activeId === section.id

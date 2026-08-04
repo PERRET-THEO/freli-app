@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { ScheduleBookingStep } from '../components/onboarding/ScheduleBookingStep'
-import { SignatureModal } from '../components/onboarding/SignatureModal'
-import { PortalContactLinks } from '../components/portal/PortalContactLinks'
-import { PortalPortfolioLink } from '../components/portal/PortalPortfolioLink'
+import { PortalCompletedState } from '../components/portal/PortalCompletedState'
+import { PortalFooter } from '../components/portal/PortalFooter'
+import { PortalWelcomeHero } from '../components/portal/PortalWelcomeHero'
 import { Button } from '../components/ui'
 import { triggerIntegrations } from '../lib/integrations/triggerIntegrations'
 import type { IntegrationResults } from '../lib/integrations/triggerIntegrations'
@@ -37,6 +37,10 @@ import {
   saveDraft,
 } from '../lib/portalDrafts'
 import { supabase } from '../lib/supabase'
+
+const SignatureModal = lazy(() =>
+  import('../components/onboarding/SignatureModal').then((m) => ({ default: m.SignatureModal })),
+)
 
 type AgencyPortalRelation = {
   logo_url: string | null
@@ -715,7 +719,7 @@ export function ClientPortal() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[var(--surface)]">
+      <div className="min-h-dvh bg-[var(--surface)]">
         <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
           <SkeletonLoader />
         </div>
@@ -725,7 +729,7 @@ export function ClientPortal() {
 
   if (error && !project) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <div className="rounded-[var(--radius-lg)] bg-[var(--white)] p-8 text-center shadow-lg">
           <p className="text-5xl">🔗</p>
           <p className="mt-4 font-display text-lg font-bold text-[var(--ink)]">Lien introuvable</p>
@@ -738,10 +742,10 @@ export function ClientPortal() {
   if (!project) return null
 
   return (
-    <div className="min-h-screen bg-[var(--surface)]" style={portalStyle}>
+    <div className="min-h-dvh bg-[var(--surface)]" style={portalStyle}>
       {showConfetti && <Confetti />}
 
-      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--white)]/95 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--white)]/95 pt-safe backdrop-blur-md">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             {agencyLogoUrl ? (
@@ -803,87 +807,29 @@ export function ClientPortal() {
         )}
 
         {showHero && !isCompleted && (
-          <div className="mb-8 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--white)] p-6 shadow-[0_2px_16px_rgba(13,15,20,0.06)] sm:p-8">
-            <p className="text-4xl">👋</p>
-            <h1 className="mt-3 font-display text-2xl font-bold tracking-tight text-[var(--ink)] sm:text-3xl">
-              Bonjour {project.client_name} !
-            </h1>
-            <p className="mt-2 font-body text-base text-[var(--ink-soft)]">
-              Votre espace d&apos;onboarding avec <strong>{agencyName}</strong>
-            </p>
-            {agencyTagline ? (
-              <p className="mt-1 font-body text-sm text-[var(--ink-muted)]">{agencyTagline}</p>
-            ) : null}
-            <p className="mt-2 font-body text-sm text-[var(--ink-muted)]">{portalWelcomeMessage}</p>
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <Button className="w-full sm:w-auto" onClick={scrollToFirstIncomplete}>
-                Commencer →
-              </Button>
-              <PortalPortfolioLink url={portfolioUrl} label={portfolioLabel} />
-            </div>
-          </div>
+          <PortalWelcomeHero
+            clientName={project.client_name}
+            agencyName={agencyName}
+            agencyTagline={agencyTagline}
+            portalWelcomeMessage={portalWelcomeMessage}
+            portfolioUrl={portfolioUrl}
+            portfolioLabel={portfolioLabel}
+            onStart={scrollToFirstIncomplete}
+          />
         )}
 
         {isCompleted && (
-          <div className="mb-8 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--white)] p-6 text-center shadow-[0_2px_16px_rgba(13,15,20,0.06)] sm:p-10">
-            <p className="text-5xl animate-bounce">🎉</p>
-            <h1 className="mt-4 font-display text-2xl font-extrabold tracking-tight text-[var(--accent)] sm:text-3xl">Onboarding complété !</h1>
-            <p className="mx-auto mt-3 max-w-sm font-body text-base text-[var(--ink-soft)]">
-              Merci <strong>{project.client_name}</strong>, {agencyName} a été notifié et vous contactera très bientôt.
-            </p>
-            <div className="mx-auto mt-6 max-w-xs space-y-2 text-left">
-              {visibleItems.map((item) => (
-                <div key={item.id} className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--mint-soft)] px-3 py-2">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0 text-[var(--mint)]"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  <span className="font-body text-sm text-[var(--ink-soft)]">{item.label}</span>
-                </div>
-              ))}
-            </div>
-            {paymentState === 'paid' ? (
-              <div className="mx-auto mt-6 max-w-sm rounded-[var(--radius-sm)] bg-[var(--mint-soft)] px-4 py-3">
-                <p className="font-body text-sm font-medium text-[var(--ink)]">
-                  Paiement confirmé{project.price ? ` — ${formatPriceEur(project.price)}` : ''}. Merci !
-                </p>
-              </div>
-            ) : awaitingPaymentConfirmation ? (
-              <div className="mx-auto mt-6 max-w-sm rounded-[var(--radius-sm)] bg-[var(--surface-warm)] px-4 py-3">
-                <p className="font-body text-sm font-medium text-[var(--ink)]">
-                  Paiement en cours de confirmation…
-                </p>
-                <p className="mt-1 font-body text-xs text-[var(--ink-muted)]">
-                  Merci, nous finalisons la validation. Cette page se mettra à jour automatiquement.
-                </p>
-              </div>
-            ) : paymentState === 'pending' ? (
-              <div className="mx-auto mt-6 max-w-sm">
-                {paymentNotice === 'cancelled' && (
-                  <p className="mb-3 font-body text-sm text-[var(--ink-soft)]">
-                    Paiement annulé — vous pouvez réessayer ci-dessous.
-                  </p>
-                )}
-                {checkoutUrl ? (
-                  <>
-                    <a
-                      href={checkoutUrl}
-                      className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-6 py-3 font-body text-sm font-medium text-[var(--white)] transition hover:brightness-95"
-                    >
-                      Procéder au paiement{project.price ? ` (${formatPriceEur(project.price)})` : ''}
-                    </a>
-                    <p className="mt-3 font-body text-xs text-[var(--ink-muted)]">
-                      Un email avec le lien de paiement vous a également été envoyé.
-                    </p>
-                  </>
-                ) : (
-                  <p className="font-body text-sm text-[var(--ink-soft)]">
-                    {checkoutTriggerError
-                      ? `${agencyName} finalise le lien de paiement — réessayez dans un instant ou contactez l’agence.`
-                      : `${agencyName} vous enverra le lien de paiement très bientôt.`}
-                  </p>
-                )}
-              </div>
-            ) : null}
-            <p className="mt-6 font-body text-xs text-[var(--ink-muted)]">Vous pouvez fermer cette page.</p>
-          </div>
+          <PortalCompletedState
+            clientName={project.client_name}
+            agencyName={agencyName}
+            items={visibleItems}
+            paymentState={paymentState}
+            awaitingPaymentConfirmation={awaitingPaymentConfirmation}
+            paymentNotice={paymentNotice}
+            checkoutUrl={checkoutUrl}
+            checkoutTriggerError={checkoutTriggerError}
+            price={project.price}
+          />
         )}
 
         <div className="space-y-0">
@@ -967,14 +913,14 @@ export function ClientPortal() {
                           <input
                             type="text"
                             inputMode={FIELD_INPUT_MODES[item.type]}
-                            className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-sm text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)] transition-all"
+                            className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-base text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)] transition-all"
                             placeholder={FIELD_PLACEHOLDERS[item.type]}
                             value={textValues[item.id] ?? ''}
                             onChange={(e) => handleFieldChange(item.id, e.target.value)}
                           />
                         ) : (
                           <textarea
-                            className="min-h-28 w-full resize-y rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-sm text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)] transition-all"
+                            className="min-h-28 w-full resize-y rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-base text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)] transition-all"
                             placeholder={FIELD_PLACEHOLDERS.text}
                             value={textValues[item.id] ?? ''}
                             onChange={(e) => handleFieldChange(item.id, e.target.value)}
@@ -1115,50 +1061,37 @@ export function ClientPortal() {
         </div>
       </main>
 
-      <footer className="pb-8 text-center">
-        {showHelpBlock ? (
-          <div className="mb-4 px-4">
-            <p className="font-display text-sm font-semibold text-[var(--ink)]">{portalHelpTitle}</p>
-            {portalHelpText ? (
-              <p className="mx-auto mt-1 max-w-md font-body text-xs text-[var(--ink-muted)]">
-                {portalHelpText}
-              </p>
-            ) : null}
-            {portalAvailability ? (
-              <p className="mt-1 font-body text-xs text-[var(--ink-muted)]">{portalAvailability}</p>
-            ) : null}
-            <PortalContactLinks
-              email={agencyContactEmail}
-              phone={agencyContactPhone}
-              projectName={project.client_name}
-              className="mt-2"
-            />
-          </div>
-        ) : null}
-        <p className="font-body text-xs text-[var(--ink-muted)]">
-          Propulsé par{' '}<span className="font-display font-bold text-[var(--ink)]">Freli</span>
-        </p>
-      </footer>
+      <PortalFooter
+        showHelpBlock={showHelpBlock}
+        portalHelpTitle={portalHelpTitle}
+        portalHelpText={portalHelpText}
+        portalAvailability={portalAvailability}
+        agencyContactEmail={agencyContactEmail}
+        agencyContactPhone={agencyContactPhone}
+        projectName={project.client_name}
+      />
 
       {signingItemId && project && (
-        <SignatureModal
-          contractName={loadedTemplate?.name ?? signingItem?.label ?? 'Contrat'}
-          pdfUrl={templatePdfUrl}
-          signaturePage={loadedTemplate?.signature_page}
-          signatureX={loadedTemplate?.signature_x}
-          signatureY={loadedTemplate?.signature_y}
-          signatureWidth={loadedTemplate?.signature_width}
-          signatureHeight={loadedTemplate?.signature_height}
-          clientName={project.client_name}
-          clientEmail={(project.client_email ?? '').trim()}
-          projectToken={token!}
-          checklistItemId={signingItemId}
-          onComplete={async (signedPdfUrl) => {
-            await markItemCompleted(signingItemId, signedPdfUrl)
-            setSigningItemId(null)
-          }}
-          onClose={() => setSigningItemId(null)}
-        />
+        <Suspense fallback={null}>
+          <SignatureModal
+            contractName={loadedTemplate?.name ?? signingItem?.label ?? 'Contrat'}
+            pdfUrl={templatePdfUrl}
+            signaturePage={loadedTemplate?.signature_page}
+            signatureX={loadedTemplate?.signature_x}
+            signatureY={loadedTemplate?.signature_y}
+            signatureWidth={loadedTemplate?.signature_width}
+            signatureHeight={loadedTemplate?.signature_height}
+            clientName={project.client_name}
+            clientEmail={(project.client_email ?? '').trim()}
+            projectToken={token!}
+            checklistItemId={signingItemId}
+            onComplete={async (signedPdfUrl) => {
+              await markItemCompleted(signingItemId, signedPdfUrl)
+              setSigningItemId(null)
+            }}
+            onClose={() => setSigningItemId(null)}
+          />
+        </Suspense>
       )}
     </div>
   )

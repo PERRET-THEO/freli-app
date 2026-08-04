@@ -1,14 +1,10 @@
 import {
   ATTENTION_VIEW_LABELS,
   ATTENTION_VIEW_SHORT_LABELS,
-  ATTENTION_VIEWS,
   type AttentionView,
 } from '../../lib/projectAttention'
 
 export type ProjectStatus = 'pending' | 'in_progress' | 'completed'
-
-/** @deprecated Prefer AttentionView — kept for gradual migration of KPIs. */
-export type StatusFilter = 'all' | ProjectStatus
 
 export type ProjectCardData = {
   id: string
@@ -38,4 +34,3 @@ export type { AttentionView }
 
 export const FILTER_LABELS = ATTENTION_VIEW_LABELS
 export const FILTER_SHORT_LABELS = ATTENTION_VIEW_SHORT_LABELS
-export const FILTER_ORDER = ATTENTION_VIEWS

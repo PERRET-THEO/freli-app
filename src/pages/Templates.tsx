@@ -203,7 +203,10 @@ function PositionEditor({ template, onSave, onClose }: {
   return (
     <div className="space-y-4">
       <p className="text-sm font-body text-[var(--ink-muted)]">
-        Glissez le rectangle bleu ou utilisez un raccourci pour positionner la signature.
+        <span className="md:hidden">Choisissez un raccourci pour placer la signature, puis affinez si besoin.</span>
+        <span className="hidden md:inline">
+          Glissez le rectangle bleu ou utilisez un raccourci pour positionner la signature.
+        </span>
       </p>
 
       <div className="flex flex-wrap gap-2">
@@ -212,7 +215,7 @@ function PositionEditor({ template, onSave, onClose }: {
             key={p.label}
             type="button"
             onClick={() => setPos({ x: p.x, y: p.y })}
-            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 font-body text-xs font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+            className="min-h-11 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-body text-sm font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
           >
             {p.label}
           </button>
@@ -220,30 +223,35 @@ function PositionEditor({ template, onSave, onClose }: {
         <button
           type="button"
           onClick={() => setPos({ x: template.signature_x ?? 0.7, y: template.signature_y ?? 0.85 })}
-          className="rounded-[var(--radius-sm)] border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1.5 font-body text-xs font-medium text-[var(--accent)]"
+          className="min-h-11 rounded-[var(--radius-sm)] border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 font-body text-sm font-medium text-[var(--accent)]"
         >
-          Personnalisé (drag)
+          Position enregistrée
         </button>
       </div>
 
       {pdfLoading && <p className="text-sm font-body text-[var(--ink-muted)]">Chargement du PDF…</p>}
 
-      <div className="overflow-auto rounded-lg border border-[var(--border)]">
+      <div className="max-h-[min(55dvh,640px)] overflow-auto overscroll-contain rounded-lg border border-[var(--border)]">
         <canvas
           ref={canvasRef}
-          className="block cursor-move touch-none"
-          style={{ maxWidth: '100%' }}
+          className="block max-w-full cursor-move touch-none"
+          style={{ width: '100%', height: 'auto' }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
         />
       </div>
+      <p className="text-xs font-body text-[var(--ink-muted)] md:hidden">
+        Astuce : utilisez d&apos;abord un raccourci (Bas gauche / centre / droite), le drag précis est plus confortable sur grand écran.
+      </p>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={handleSave} disabled={saving}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
           {saving ? 'Sauvegarde…' : 'Sauvegarder la position'}
         </Button>
-        <Button variant="secondary" onClick={onClose}>Fermer</Button>
+        <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">
+          Fermer
+        </Button>
         <span className="text-xs font-body text-[var(--ink-muted)]">
           Position : X={Math.round(pos.x * 100)}% Y={Math.round(pos.y * 100)}%
         </span>
@@ -482,12 +490,12 @@ export function Templates() {
       ) : null}
 
       {editingTemplate ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/40 px-4 py-6">
-          <Card className="max-h-[90vh] w-full max-w-3xl overflow-y-auto">
-            <h2 className="font-display text-2xl font-bold text-[var(--ink)]">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-[var(--ink)]/40 p-0 sm:items-center sm:p-4 sm:py-6">
+          <Card className="flex h-dvh w-full max-w-3xl flex-col overflow-y-auto rounded-none sm:h-auto sm:max-h-[min(90dvh,900px)] sm:rounded-[var(--radius-lg)]">
+            <h2 className="pt-safe font-display text-xl font-bold text-[var(--ink)] sm:pt-0 sm:text-2xl">
               Position de la signature — {editingTemplate.name}
             </h2>
-            <div className="mt-4">
+            <div className="mt-4 pb-[max(1rem,var(--safe-bottom))] sm:pb-0">
               <PositionEditor
                 template={editingTemplate}
                 onSave={async () => {

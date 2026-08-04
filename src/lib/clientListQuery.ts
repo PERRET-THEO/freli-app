@@ -1,4 +1,3 @@
-import { CLIENT_FILTER_SERVER_THRESHOLD } from './projectAttention'
 import {
   CLIENT_LIST_FETCH_LIMIT_PRE_PAGER,
   CLIENT_LIST_PAGE_SIZE,
@@ -79,10 +78,6 @@ function mapRow(row: RpcRow): ClientListRow {
     last_activity_at: row.last_activity_at || row.created_at,
     portal_token: row.portal_token,
   }
-}
-
-export function shouldUseServerSearch(totalAgencyClients: number): boolean {
-  return totalAgencyClients >= CLIENT_FILTER_SERVER_THRESHOLD
 }
 
 export async function listClients(params: ListClientsParams): Promise<ListClientsResult> {

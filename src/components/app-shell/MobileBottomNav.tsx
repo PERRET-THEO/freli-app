@@ -56,7 +56,7 @@ function MobileMoreMenu() {
               to={item.to}
               role="menuitem"
               onClick={() => setOpen(false)}
-              className="block px-4 py-2.5 text-sm font-body text-[var(--nav-fg-strong)] hover:bg-[var(--nav-hover)]"
+              className="block min-h-11 px-4 py-3 text-sm font-body text-[var(--nav-fg-strong)] hover:bg-[var(--nav-hover)]"
             >
               {item.label}
             </NavLink>
@@ -67,10 +67,11 @@ function MobileMoreMenu() {
   )
 }
 
+/** In-flow bottom nav (parent provides shrink-0). Avoids iOS standalone fixed-bottom gap. */
 export function MobileBottomNav() {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--nav-border)] bg-[var(--nav-bg)] px-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 md:hidden"
+      className="border-t border-[var(--nav-border)] bg-[var(--nav-bg)] px-1 pb-[max(0.5rem,var(--safe-bottom))] pt-2"
       aria-label="Navigation mobile"
     >
       <div className="mx-auto flex max-w-lg items-end justify-between">

@@ -1,3 +1,8 @@
+# AEO / GEO — Share of Answer Freli
+
+Ancien module runtime déplacé hors `src/` (jamais importé par l’app).
+
+```ts
 /**
  * Prompt set AEO / GEO — Share of Answer Freli (ICP FR).
  *
@@ -240,3 +245,5 @@ export function emptyBaselineResults(): Record<
 > {
   return Object.fromEntries(aeoPrompts.map((p) => [p.id, {}]))
 }
+\n
+```

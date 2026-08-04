@@ -354,14 +354,14 @@ export function SignatureModal({
   }, [accepted, pdfUrl, contractName, clientName, clientEmail, projectToken, checklistItemId, signaturePage, sxNorm, syNorm, swNorm, shNorm, onComplete])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/50 px-4 py-6">
-      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[var(--radius-lg)] bg-[var(--white)] shadow-2xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-6 py-4">
-          <h2 className="font-display text-xl font-bold text-[var(--ink)]">Signez le document</h2>
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-[var(--ink)]/50 p-0 sm:items-center sm:p-4 sm:py-6">
+      <div className="flex h-dvh w-full max-w-4xl flex-col overflow-hidden bg-[var(--white)] shadow-2xl sm:h-auto sm:max-h-[min(92dvh,920px)] sm:rounded-[var(--radius-lg)]">
+        <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-4 pb-3 pt-[max(0.75rem,var(--safe-top))] sm:px-6 sm:py-4 sm:pt-4">
+          <h2 className="font-display text-lg font-bold text-[var(--ink)] sm:text-xl">Signez le document</h2>
           <button
             onClick={onClose}
             disabled={saving}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-xl text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
+            className="touch-target flex items-center justify-center rounded-full text-2xl leading-none text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
             aria-label="Fermer"
           >
             ×
@@ -369,7 +369,7 @@ export function SignatureModal({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="flex-1 space-y-6 overflow-y-auto p-6">
+          <div className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 sm:space-y-6 sm:p-6">
             {!pdfUrl && (
               <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-6 text-center">
                 <p className="text-3xl">📄</p>
@@ -391,7 +391,7 @@ export function SignatureModal({
                       type="button"
                       disabled={docActionsBusy || !numPages}
                       onClick={() => void handleDownloadPdf()}
-                      className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 font-body text-xs font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50"
+                      className="min-h-11 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-body text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50"
                     >
                       ⬇ Télécharger le PDF
                     </button>
@@ -399,7 +399,7 @@ export function SignatureModal({
                       type="button"
                       disabled={docActionsBusy || !numPages}
                       onClick={() => void handlePrintPdf()}
-                      className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 font-body text-xs font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50"
+                      className="min-h-11 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-body text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50"
                     >
                       🖨 Imprimer
                     </button>
@@ -415,7 +415,7 @@ export function SignatureModal({
                   </div>
                 )}
 
-                <div className="relative max-h-[min(70vh,720px)] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)]">
+                <div className="relative max-h-[min(42dvh,480px)] overflow-y-auto overscroll-contain rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] sm:max-h-[min(55dvh,720px)]">
                   {!fullDocReady && !previewError && numPages > 0 && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--surface)]">
                       <p className="font-body text-sm text-[var(--ink-muted)]">Préparation de l&apos;aperçu…</p>
@@ -427,7 +427,7 @@ export function SignatureModal({
                     </div>
                   )}
 
-                  <div className="flex flex-col items-center gap-6 p-4">
+                  <div className="flex flex-col items-center gap-6 p-3 sm:p-4">
                     {numPages > 0 &&
                       Array.from({ length: numPages }, (_, idx) => (
                         <div key={idx} className="w-full max-w-[720px]">
@@ -458,14 +458,17 @@ export function SignatureModal({
             <div className="space-y-2">
               <p className="font-display text-sm font-semibold text-[var(--ink)]">Votre signature</p>
               <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-white">
-                <canvas ref={canvasRef} className="block h-40 w-full cursor-crosshair touch-none" />
+                <canvas
+                  ref={canvasRef}
+                  className="block h-48 w-full cursor-crosshair touch-none sm:h-44"
+                />
               </div>
               <div className="flex justify-end">
                 <button
                   type="button"
                   onClick={handleClear}
                   disabled={isEmpty || saving}
-                  className="rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-1.5 font-body text-xs font-medium text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
+                  className="min-h-11 rounded-[var(--radius-sm)] border border-[var(--border)] px-4 py-2 font-body text-sm font-medium text-[var(--ink-muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
                 >
                   Effacer
                 </button>
@@ -479,9 +482,9 @@ export function SignatureModal({
                   checked={accepted}
                   onChange={(e) => setAccepted(e.target.checked)}
                   disabled={saving}
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--border)] accent-[var(--accent)]"
+                  className="mt-1 h-5 w-5 shrink-0 rounded border-[var(--border)] accent-[var(--accent)]"
                 />
-                <span className="font-body text-sm text-[var(--ink)]">
+                <span className="font-body text-sm text-[var(--ink)] sm:text-base">
                   J&apos;ai lu et j&apos;accepte le contrat. En signant, je reconnais avoir pris connaissance du
                   document ci-dessus.
                 </span>
@@ -500,11 +503,11 @@ export function SignatureModal({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center justify-end gap-3 border-t border-[var(--border)] px-6 py-4">
-          <Button variant="secondary" onClick={onClose} disabled={saving}>
+        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-[var(--border)] px-4 pb-[max(1rem,var(--safe-bottom))] pt-3 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6 sm:py-4 sm:pb-4">
+          <Button variant="secondary" onClick={onClose} disabled={saving} className="w-full sm:w-auto">
             Annuler
           </Button>
-          <Button onClick={handleValidate} disabled={!canValidate}>
+          <Button onClick={handleValidate} disabled={!canValidate} className="w-full sm:w-auto">
             {saving ? 'Enregistrement...' : 'Valider la signature →'}
           </Button>
         </div>

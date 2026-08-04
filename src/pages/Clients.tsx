@@ -486,7 +486,7 @@ export function Clients() {
 
       {toast ? (
         <div
-          className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-sm text-[var(--white)] shadow-lg md:bottom-8"
+          className="fixed bottom-[calc(5.25rem+var(--safe-bottom))] left-1/2 z-50 -translate-x-1/2 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-sm text-[var(--white)] shadow-lg md:bottom-8"
           role="status"
         >
           {toast}

@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
-import { BrandColorPicker } from '../components/settings/BrandColorPicker'
 import { LogoUpload } from '../components/settings/LogoUpload'
-import { PortalPreviewLink } from '../components/settings/PortalPreviewLink'
+import { PortalBrandingPanel } from '../components/settings/PortalBrandingPanel'
 import { ReminderSettingsPanel } from '../components/settings/ReminderSettingsPanel'
 import { AgencyLegalProfilePanel } from '../components/settings/AgencyLegalProfilePanel'
 import { AiModulesPanel, type AiModuleFlags } from '../components/settings/AiModulesPanel'
@@ -34,12 +33,7 @@ import {
   isValidPortfolioUrl,
   normalizePortfolioUrl,
 } from '../lib/portfolioUrl'
-import {
-  DEFAULT_PORTAL_HELP_TITLE,
-  DEFAULT_PORTAL_WELCOME,
-  insertWelcomeVariable,
-  PORTAL_WELCOME_VARIABLES,
-} from '../lib/portalWelcomeTemplate'
+import { DEFAULT_PORTAL_HELP_TITLE } from '../lib/portalWelcomeTemplate'
 import { normalizeReminderDelayHours } from '../lib/reminderSettings'
 import {
   normalizeSmartReminderMax,
@@ -90,7 +84,6 @@ export function Settings() {
   const [availability, setAvailability] = useState('')
   const [portfolioUrl, setPortfolioUrl] = useState('')
   const [portfolioLabel, setPortfolioLabel] = useState('')
-  const welcomeTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [legalForm, setLegalForm] = useState('')
   const [addressStreet, setAddressStreet] = useState('')
   const [addressPostalCode, setAddressPostalCode] = useState('')
@@ -652,7 +645,7 @@ export function Settings() {
             )}
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-display text-xl font-bold text-[var(--ink)]">
+                <h2 className="break-words font-display text-xl font-bold text-[var(--ink)]">
                   {agencyName.trim() || 'Mon agence'}
                 </h2>
                 <span className="rounded-full bg-[var(--accent-soft)] px-2.5 py-0.5 text-xs font-body font-medium text-[var(--accent)]">
@@ -661,16 +654,16 @@ export function Settings() {
               </div>
               <p className="mt-1 truncate text-sm font-body text-[var(--ink-muted)]">{accountEmail}</p>
               {tagline.trim() ? (
-                <p className="mt-0.5 text-sm font-body text-[var(--ink-soft)]">{tagline.trim()}</p>
+                <p className="mt-0.5 break-words text-sm font-body text-[var(--ink-soft)]">{tagline.trim()}</p>
               ) : null}
             </div>
           </div>
         </Card>
 
-        <div className="grid gap-4 lg:grid-cols-[200px_1fr] lg:items-start">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[200px_1fr] lg:items-start">
           <SettingsNav />
 
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <SettingsSection
               id="settings-organisation"
               icon="🏢"
@@ -754,127 +747,37 @@ export function Settings() {
               title="Portail client"
               description="Personnalisez l'expérience de vos clients pendant l'onboarding."
             >
-              <div className="space-y-4">
-                <LogoUpload
-                  currentUrl={agency?.logo_url ?? null}
-                  file={logoFile}
-                  onFileChange={setLogoFile}
-                  onError={setLogoError}
-                />
-                {logoError ? (
-                  <p className="text-sm font-body text-[var(--amber)]">{logoError}</p>
-                ) : null}
-                <Input
-                  placeholder="Sous-titre (ex. Studio créatif à Paris)"
-                  value={tagline}
-                  onChange={(event) => setTagline(event.target.value)}
-                />
-                <div>
-                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                    <label className="block text-sm font-body font-medium text-[var(--ink-soft)]">
-                      Message d&apos;accueil
-                    </label>
-                    <label className="flex items-center gap-1.5 text-xs font-body text-[var(--ink-muted)]">
-                      Insérer
-                      <select
-                        className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
-                        defaultValue=""
-                        onChange={(event) => {
-                          const token = event.target.value
-                          if (!token) return
-                          const el = welcomeTextareaRef.current
-                          const cursor = el?.selectionStart ?? welcomeMessage.length
-                          setWelcomeMessage(insertWelcomeVariable(welcomeMessage, token, cursor))
-                          event.target.value = ''
-                          requestAnimationFrame(() => {
-                            if (!el) return
-                            const next = cursor + token.length
-                            el.focus()
-                            el.setSelectionRange(next, next)
-                          })
-                        }}
-                        aria-label="Insérer une variable"
-                      >
-                        <option value="" disabled>
-                          Variable…
-                        </option>
-                        {PORTAL_WELCOME_VARIABLES.map((v) => (
-                          <option key={v.key} value={v.token}>
-                            {v.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <textarea
-                    ref={welcomeTextareaRef}
-                    value={welcomeMessage}
-                    onChange={(event) => setWelcomeMessage(event.target.value)}
-                    placeholder={DEFAULT_PORTAL_WELCOME}
-                    rows={3}
-                    className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] outline-none transition focus:border-[var(--accent)]"
-                  />
-                  <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
-                    Variables : {'{{client.prenom}}'}, {'{{client.entreprise}}'}, {'{{projet.nom}}'},{' '}
-                    {'{{agence.nom}}'}
-                  </p>
-                </div>
-                <BrandColorPicker value={brandColor} onChange={setBrandColor} />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Input
-                    type="email"
-                    placeholder="Email de contact (optionnel)"
-                    value={contactEmail}
-                    onChange={(event) => setContactEmail(event.target.value)}
-                  />
-                  <Input
-                    type="tel"
-                    placeholder="Téléphone (optionnel)"
-                    value={contactPhone}
-                    onChange={(event) => setContactPhone(event.target.value)}
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Input
-                    type="url"
-                    placeholder="Portfolio https://… (optionnel)"
-                    value={portfolioUrl}
-                    onChange={(event) => setPortfolioUrl(event.target.value)}
-                  />
-                  <Input
-                    placeholder="Libellé du bouton portfolio"
-                    value={portfolioLabel}
-                    onChange={(event) => setPortfolioLabel(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-3 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-warm)] p-4">
-                  <p className="text-sm font-body font-medium text-[var(--ink-soft)]">
-                    Bloc « Besoin d&apos;aide ? »
-                  </p>
-                  <Input
-                    placeholder="Titre"
-                    value={helpTitle}
-                    onChange={(event) => setHelpTitle(event.target.value)}
-                  />
-                  <textarea
-                    value={helpText}
-                    onChange={(event) => setHelpText(event.target.value)}
-                    placeholder="Texte d'accompagnement (optionnel)"
-                    rows={2}
-                    className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 text-sm font-body text-[var(--ink)] outline-none transition focus:border-[var(--accent)]"
-                  />
-                  <Input
-                    placeholder="Horaires (ex. Lun–Ven 9h–18h)"
-                    value={availability}
-                    onChange={(event) => setAvailability(event.target.value)}
-                  />
-                </div>
-                <PortalPreviewLink data={previewData} />
-                <Button onClick={handleSaveAgency} disabled={agencySaving}>
-                  {agencySaving ? 'Enregistrement…' : 'Enregistrer les paramètres'}
-                </Button>
-                <SectionMessage feedback={agencyFeedback} />
-              </div>
+              <PortalBrandingPanel
+                logoCurrentUrl={agency?.logo_url ?? null}
+                logoFile={logoFile}
+                onLogoFileChange={setLogoFile}
+                onLogoError={setLogoError}
+                logoError={logoError}
+                tagline={tagline}
+                onTaglineChange={setTagline}
+                welcomeMessage={welcomeMessage}
+                onWelcomeMessageChange={setWelcomeMessage}
+                brandColor={brandColor}
+                onBrandColorChange={setBrandColor}
+                contactEmail={contactEmail}
+                onContactEmailChange={setContactEmail}
+                contactPhone={contactPhone}
+                onContactPhoneChange={setContactPhone}
+                portfolioUrl={portfolioUrl}
+                onPortfolioUrlChange={setPortfolioUrl}
+                portfolioLabel={portfolioLabel}
+                onPortfolioLabelChange={setPortfolioLabel}
+                helpTitle={helpTitle}
+                onHelpTitleChange={setHelpTitle}
+                helpText={helpText}
+                onHelpTextChange={setHelpText}
+                availability={availability}
+                onAvailabilityChange={setAvailability}
+                previewData={previewData}
+                onSave={handleSaveAgency}
+                saving={agencySaving}
+                feedback={agencyFeedback}
+              />
             </SettingsSection>
 
             <SettingsSection
@@ -1027,7 +930,7 @@ export function Settings() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <a
                   href={supportMailto}
-                  className="inline-flex rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-5 py-2.5 text-sm font-body font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                  className="inline-flex max-w-full break-words whitespace-normal rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-5 py-2.5 text-sm font-body font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
                 >
                   Contacter le support ({SUPPORT_EMAIL})
                 </a>
@@ -1073,7 +976,7 @@ export function Settings() {
       </div>
 
       {toast ? (
-        <div className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-sm font-body text-[var(--white)] shadow-lg md:bottom-8">
+        <div className="fixed bottom-[calc(5.25rem+var(--safe-bottom))] left-1/2 z-50 -translate-x-1/2 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-sm font-body text-[var(--white)] shadow-lg md:bottom-8">
           {toast}
         </div>
       ) : null}

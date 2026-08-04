@@ -17,7 +17,3 @@ export function resolveAuthCallbackPath(search: string, hash: string): '/signup'
   // PKCE sans type explicite : invitation (recovery doit viser /reset-password dans redirectTo).
   return '/signup'
 }
-
-export function hasAuthCallback(search: string, hash: string): boolean {
-  return resolveAuthCallbackPath(search, hash) !== null
-}

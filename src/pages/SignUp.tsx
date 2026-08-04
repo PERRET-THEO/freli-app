@@ -352,7 +352,7 @@ export function SignUp() {
 
   if (phase === 'verifying') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <p className="text-sm font-body text-[var(--ink-muted)]">
           {saasSessionId ? 'Vérification du paiement…' : 'Validation de ton invitation…'}
         </p>
@@ -362,7 +362,7 @@ export function SignUp() {
 
   if (phase === 'payment_pending') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <Card className="w-full max-w-md text-center">
           <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--ink)]">
             Paiement en cours
@@ -381,7 +381,7 @@ export function SignUp() {
 
   if (phase === 'expired') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <Card className="w-full max-w-md text-center">
           <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--ink)]">
             Lien expiré
@@ -399,7 +399,7 @@ export function SignUp() {
 
   if (phase === 'already_registered') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <Card className="w-full max-w-md text-center">
           <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--ink)]">
             Compte déjà actif
@@ -419,7 +419,7 @@ export function SignUp() {
 
   if (phase === 'invalid') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <Card className="w-full max-w-md text-center">
           <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--ink)]">
             Lien invalide
@@ -438,7 +438,7 @@ export function SignUp() {
 
   if (phase === 'saas_form') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <Card className="w-full max-w-md">
           <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
             Crée ton compte Freli
@@ -496,7 +496,7 @@ export function SignUp() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
       <Card className="w-full max-w-md">
         <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
           Bienvenue sur Freli

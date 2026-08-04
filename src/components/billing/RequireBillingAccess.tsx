@@ -51,7 +51,7 @@ export function RequireBillingAccess({ agencyId, children }: RequireBillingAcces
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)]">
         <p className="text-sm font-body text-[var(--ink-muted)]">Vérification de l’abonnement…</p>
       </div>
     )
@@ -59,7 +59,7 @@ export function RequireBillingAccess({ agencyId, children }: RequireBillingAcces
 
   if (!allowed) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)] px-4">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <Card className="w-full max-w-md text-center">
           <h1 className="font-display text-2xl font-bold text-[var(--ink)]">
             Abonnement requis

@@ -71,7 +71,7 @@ export function TemplateItemCard({
                   <button
                     type="button"
                     onClick={() => setMenuOpen((open) => !open)}
-                    className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
+                    className="touch-target flex items-center justify-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
                     aria-label="Plus d'options"
                     aria-expanded={menuOpen}
                   >

@@ -35,7 +35,7 @@ export function SettingsSection({
               </span>
             ) : null}
           </div>
-          <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">{description}</p>
+          <p className="mt-1 break-words text-sm font-body text-[var(--ink-muted)]">{description}</p>
         </div>
       </div>
       <div className="mt-4">{children}</div>

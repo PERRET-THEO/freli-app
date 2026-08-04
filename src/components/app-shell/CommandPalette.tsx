@@ -74,9 +74,9 @@ function CommandPaletteDialog({ onClose }: { onClose: () => void }) {
         aria-label="Fermer la palette"
         onClick={onClose}
       />
-      <div className="relative mx-auto mt-[12vh] w-[min(100%-1.5rem,32rem)] overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] shadow-2xl">
-        <Command label="Palette de commandes">
-          <div className="flex items-center gap-2 border-b border-[var(--border)] px-3">
+      <div className="relative mx-auto mt-0 flex h-dvh w-full max-w-none flex-col overflow-hidden bg-[var(--white)] shadow-2xl sm:mt-[12vh] sm:h-auto sm:max-h-[min(80dvh,40rem)] sm:w-[min(100%-1.5rem,32rem)] sm:rounded-[var(--radius-md)] sm:border sm:border-[var(--border)]">
+        <Command label="Palette de commandes" className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 pt-safe sm:pt-0">
             <NavIcon icon={NAV_ICONS.search} className="text-[var(--ink-muted)]" />
             <Command.Input
               value={query}
@@ -85,13 +85,21 @@ function CommandPaletteDialog({ onClose }: { onClose: () => void }) {
                 if (value.trim().length < 2) setClients([])
               }}
               placeholder="Aller à… créer… chercher un client"
-              className="h-12 w-full border-0 bg-transparent font-body text-sm text-[var(--ink)] outline-none placeholder:text-[var(--ink-muted)]"
+              className="h-12 w-full border-0 bg-transparent font-body text-base text-[var(--ink)] outline-none placeholder:text-[var(--ink-muted)]"
             />
+            <button
+              type="button"
+              onClick={onClose}
+              className="touch-target flex items-center justify-center text-[var(--ink-muted)] sm:hidden"
+              aria-label="Fermer"
+            >
+              ×
+            </button>
             <kbd className="hidden rounded border border-[var(--border)] px-1.5 py-0.5 font-body text-[10px] text-[var(--ink-muted)] sm:inline">
               esc
             </kbd>
           </div>
-          <Command.List className="max-h-80 overflow-y-auto p-2">
+          <Command.List className="max-h-none flex-1 overflow-y-auto overscroll-contain p-2 pb-[max(0.5rem,var(--safe-bottom))] sm:max-h-80 sm:pb-2">
             <Command.Empty className="px-3 py-6 text-center font-body text-sm text-[var(--ink-muted)]">
               Aucun résultat
             </Command.Empty>
@@ -103,7 +111,7 @@ function CommandPaletteDialog({ onClose }: { onClose: () => void }) {
               <Command.Item
                 value={`créer ${NEW_PROJECT_NAV.label}`}
                 onSelect={() => go(NEW_PROJECT_NAV.to)}
-                className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 py-2 font-body text-sm text-[var(--ink)] aria-selected:bg-[var(--accent-soft)]"
+                className="flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 py-2.5 font-body text-sm text-[var(--ink)] aria-selected:bg-[var(--accent-soft)]"
               >
                 <NavIcon icon={NEW_PROJECT_NAV.icon} className="text-[var(--accent)]" />
                 {NEW_PROJECT_NAV.label}
@@ -121,7 +129,7 @@ function CommandPaletteDialog({ onClose }: { onClose: () => void }) {
                     key={item.id}
                     value={item.label}
                     onSelect={() => go(item.to)}
-                    className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 py-2 font-body text-sm text-[var(--ink)] aria-selected:bg-[var(--accent-soft)]"
+                    className="flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 py-2.5 font-body text-sm text-[var(--ink)] aria-selected:bg-[var(--accent-soft)]"
                   >
                     <NavIcon icon={item.icon} className="text-[var(--ink-muted)]" />
                     {item.label}
@@ -139,7 +147,7 @@ function CommandPaletteDialog({ onClose }: { onClose: () => void }) {
                     key={project.id}
                     value={`projet ${project.name}`}
                     onSelect={() => go(`/dashboard/project/${project.id}`)}
-                    className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 py-2 font-body text-sm text-[var(--ink)] aria-selected:bg-[var(--accent-soft)]"
+                    className="flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 py-2.5 font-body text-sm text-[var(--ink)] aria-selected:bg-[var(--accent-soft)]"
                   >
                     <NavIcon icon={NAV_ICONS.history} className="text-[var(--ink-muted)]" />
                     {project.name}
@@ -163,7 +171,7 @@ function CommandPaletteDialog({ onClose }: { onClose: () => void }) {
                       key={client.id}
                       value={`client ${name} ${client.email}`}
                       onSelect={() => go(`/dashboard/client/${client.id}`)}
-                      className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 py-2 font-body text-sm text-[var(--ink)] aria-selected:bg-[var(--accent-soft)]"
+                      className="flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 py-2.5 font-body text-sm text-[var(--ink)] aria-selected:bg-[var(--accent-soft)]"
                     >
                       <span className="truncate">{name}</span>
                       <span className="ml-auto truncate text-xs text-[var(--ink-muted)]">

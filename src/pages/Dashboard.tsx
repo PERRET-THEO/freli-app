@@ -157,18 +157,18 @@ export function Dashboard() {
   return (
     <DashboardLayout loading={loading} skeleton={<DashboardSkeleton />}>
       {canInstall ? (
-        <div className="mb-4 flex items-center justify-between rounded-[var(--radius-sm)] border border-[rgba(91,110,245,0.2)] bg-[var(--accent-soft)] px-4 py-3">
+        <div className="hide-in-pwa mb-4 flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[rgba(91,110,245,0.2)] bg-[var(--accent-soft)] px-4 py-3">
           <p className="font-body text-sm text-[var(--accent)]">
             Installez Freli sur votre téléphone
           </p>
           <div className="flex items-center gap-2">
-            <Button className="px-3 py-2 text-xs" onClick={() => promptInstall().then()}>
+            <Button className="min-h-11 px-3 py-2 text-sm" onClick={() => promptInstall().then()}>
               Installer
             </Button>
             <button
               type="button"
               onClick={dismissBanner}
-              className="h-8 w-8 rounded-full text-[var(--accent)] transition hover:bg-[var(--white)]"
+              className="touch-target flex items-center justify-center rounded-full text-[var(--accent)] transition hover:bg-[var(--white)]"
               aria-label="Fermer"
             >
               ×
@@ -363,7 +363,7 @@ export function Dashboard() {
       )}
 
       {toast && (
-        <div className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-sm font-body text-[var(--white)] shadow-lg md:bottom-8">
+        <div className="fixed bottom-[calc(5.25rem+var(--safe-bottom))] left-1/2 z-50 -translate-x-1/2 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-sm font-body text-[var(--white)] shadow-lg md:bottom-8">
           {toast}
         </div>
       )}
