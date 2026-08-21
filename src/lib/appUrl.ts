@@ -21,7 +21,7 @@ function getAppOrigin(): string {
 
   if (typeof window !== 'undefined') {
     const host = window.location.hostname
-    if (host === 'freli.fr' || host === 'www.freli.fr') {
+    if (host === 'freli.fr' || host === 'www.freli.fr' || host === 'lancement.freli.fr') {
       return PRODUCTION_APP_ORIGIN
     }
     return window.location.origin
@@ -45,7 +45,7 @@ export function marketingUrl(path = '/'): string {
     return `${PRODUCTION_MARKETING_ORIGIN}${normalized === '/' ? '' : normalized}`
   }
   const host = window.location.hostname
-  if (host === 'app.freli.fr') {
+  if (host === 'app.freli.fr' || host === 'lancement.freli.fr') {
     return `${PRODUCTION_MARKETING_ORIGIN}${normalized === '/' ? '' : normalized}`
   }
   return normalized

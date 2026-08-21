@@ -84,6 +84,12 @@ export const routesMeta: Record<string, RouteMeta> = {
       "Conditions d'utilisation du service Freli : accès, responsabilités, propriété intellectuelle et résiliation.",
     type: 'website',
   },
+  '/lancement': {
+    title: 'Freli arrive bientôt — Soyez prévenu·e du lancement',
+    description:
+      "Freli automatise l'onboarding client des freelances et agences : portail unique, signature électronique, paiement Stripe et sync Google Drive. Inscrivez-vous pour être prévenu·e dès l'ouverture publique.",
+    type: 'website',
+  },
   '/tarifs': {
     title: 'Tarifs Freli — Abonnement unique',
     description: `Abonnement Freli à ${FRELI_SUBSCRIPTION.monthlyLabelHt} / mois ou ${FRELI_SUBSCRIPTION.yearlyLabelHt} / an. Add-on IA optionnel à ${FRELI_AI_ADDON.monthlyLabelHt} / mois. TVA calculée au paiement.`,

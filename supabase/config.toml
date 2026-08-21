@@ -129,3 +129,7 @@ verify_jwt = true
 # One-shot setup Prices SaaS (protégé par header x-freli-bootstrap)
 [functions.bootstrap-saas-prices]
 verify_jwt = false
+
+# Liste d'attente lancement.freli.fr — formulaire public (honeypot + rate limit)
+[functions.submit-waitlist-signup]
+verify_jwt = false

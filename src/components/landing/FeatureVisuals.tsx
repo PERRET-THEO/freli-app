@@ -10,29 +10,57 @@ export type FeatureVisualId =
   | 'branded-portal'
   | 'ai-extraction'
 
-function VisualFrame({ children }: { children: ReactNode }) {
+export type FeatureVisualSize = 'default' | 'hero'
+
+type VisualProps = { size?: FeatureVisualSize }
+
+function VisualFrame({ children, size = 'default' }: { children: ReactNode; size?: FeatureVisualSize }) {
+  const isHero = size === 'hero'
   return (
-    <div className="flex min-h-[12rem] h-auto items-center justify-center overflow-hidden rounded-[var(--radius-lg)] bg-[var(--accent-soft)] px-4 py-5 md:min-h-[14rem]">
-      <div className="w-full max-w-[300px] rounded-[var(--radius-sm)] border border-[rgba(13,15,20,0.08)] bg-[var(--white)] p-4 shadow-[0_8px_24px_rgba(13,15,20,0.08)]">
+    <div
+      className={
+        isHero
+          ? 'flex h-auto min-h-[20rem] w-full items-center justify-center overflow-hidden rounded-none bg-[var(--accent-soft)] px-5 py-6 md:min-h-[24rem]'
+          : 'flex h-auto min-h-[12rem] items-center justify-center overflow-hidden rounded-[var(--radius-lg)] bg-[var(--accent-soft)] px-4 py-5 md:min-h-[14rem]'
+      }
+    >
+      <div
+        className={
+          isHero
+            ? 'w-full max-w-none rounded-[var(--radius-sm)] border border-[rgba(13,15,20,0.08)] bg-[var(--white)] p-5 shadow-[0_8px_24px_rgba(13,15,20,0.08)] sm:p-6'
+            : 'w-full max-w-[300px] rounded-[var(--radius-sm)] border border-[rgba(13,15,20,0.08)] bg-[var(--white)] p-4 shadow-[0_8px_24px_rgba(13,15,20,0.08)]'
+        }
+      >
         {children}
       </div>
     </div>
   )
 }
 
-function PortalChecklistVisual() {
+function PortalChecklistVisual({ size = 'default' }: VisualProps) {
+  const isHero = size === 'hero'
   return (
-    <VisualFrame>
-      <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--accent)] font-display text-[10px] font-bold text-[var(--white)]">
+    <VisualFrame size={size}>
+      <div className={`flex items-center gap-2 ${isHero ? 'mb-4' : 'mb-3'}`}>
+        <div
+          className={`flex items-center justify-center rounded-md bg-[var(--accent)] font-display font-bold text-[var(--white)] ${
+            isHero ? 'h-9 w-9 text-xs' : 'h-6 w-6 text-[10px]'
+          }`}
+        >
           SN
         </div>
         <div className="min-w-0">
-          <p className="truncate font-display text-[11px] font-bold text-[var(--ink)]">Studio Nova</p>
-          <p className="text-[9px] font-body text-[var(--ink-muted)]">Portail client</p>
+          <p
+            className={`truncate font-display font-bold text-[var(--ink)] ${isHero ? 'text-sm' : 'text-[11px]'}`}
+          >
+            Studio Nova
+          </p>
+          <p className={`font-body text-[var(--ink-muted)] ${isHero ? 'text-xs' : 'text-[9px]'}`}>
+            Portail client
+          </p>
         </div>
       </div>
-      <div className="space-y-2">
+      <div className={isHero ? 'space-y-2.5' : 'space-y-2'}>
         {[
           { label: 'Brief projet', done: true },
           { label: 'Documents', done: true },
@@ -41,12 +69,14 @@ function PortalChecklistVisual() {
         ].map((item) => (
           <div
             key={item.label}
-            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-[10px] font-body ${
-              item.current ? 'bg-[var(--accent-soft)]' : 'bg-[rgba(13,15,20,0.03)]'
-            }`}
+            className={`flex items-center gap-2 rounded-md font-body ${
+              isHero ? 'px-3 py-2.5 text-sm' : 'px-2 py-1.5 text-[10px]'
+            } ${item.current ? 'bg-[var(--accent-soft)]' : 'bg-[rgba(13,15,20,0.03)]'}`}
           >
             <span
-              className={`flex h-4 w-4 flex-none items-center justify-center rounded-full text-[8px] font-bold ${
+              className={`flex flex-none items-center justify-center rounded-full font-bold ${
+                isHero ? 'h-5 w-5 text-[10px]' : 'h-4 w-4 text-[8px]'
+              } ${
                 item.done
                   ? 'bg-[var(--mint)] text-[var(--ink)]'
                   : item.current
@@ -66,9 +96,9 @@ function PortalChecklistVisual() {
   )
 }
 
-function SignaturePadVisual() {
+function SignaturePadVisual({ size = 'default' }: VisualProps) {
   return (
-    <VisualFrame>
+    <VisualFrame size={size}>
       <p className="mb-3 font-display text-[10px] font-bold uppercase tracking-wide text-[var(--ink-muted)]">
         Contrat · page 3
       </p>
@@ -93,9 +123,9 @@ function SignaturePadVisual() {
   )
 }
 
-function ReminderToastVisual() {
+function ReminderToastVisual({ size = 'default' }: VisualProps) {
   return (
-    <VisualFrame>
+    <VisualFrame size={size}>
       <div className="rounded-md border border-[rgba(13,15,20,0.06)] bg-[rgba(13,15,20,0.02)] p-2.5">
         <div className="mb-2 flex items-center gap-2 border-b border-[rgba(13,15,20,0.06)] pb-2">
           <div className="flex h-5 w-5 items-center justify-center rounded bg-[var(--accent)]">
@@ -122,9 +152,9 @@ function ReminderToastVisual() {
   )
 }
 
-function DashboardCardsVisual() {
+function DashboardCardsVisual({ size = 'default' }: VisualProps) {
   return (
-    <VisualFrame>
+    <VisualFrame size={size}>
       <div className="mb-3 grid grid-cols-3 gap-2">
         {[
           { k: '3', l: 'En cours' },
@@ -157,9 +187,9 @@ function DashboardCardsVisual() {
   )
 }
 
-function CompanyAutofillVisual() {
+function CompanyAutofillVisual({ size = 'default' }: VisualProps) {
   return (
-    <VisualFrame>
+    <VisualFrame size={size}>
       <p className="mb-2 font-display text-[9px] font-bold uppercase tracking-wide text-[var(--ink-muted)]">
         Recherche d&apos;entreprise
       </p>
@@ -186,9 +216,9 @@ function CompanyAutofillVisual() {
   )
 }
 
-function PaymentStepVisual() {
+function PaymentStepVisual({ size = 'default' }: VisualProps) {
   return (
-    <VisualFrame>
+    <VisualFrame size={size}>
       <div className="mb-3 flex gap-1.5">
         {[true, true, true, false].map((done, i) => (
           <div
@@ -228,9 +258,9 @@ function PaymentStepVisual() {
   )
 }
 
-function BrandedPortalVisual() {
+function BrandedPortalVisual({ size = 'default' }: VisualProps) {
   return (
-    <VisualFrame>
+    <VisualFrame size={size}>
       <div className="rounded-md bg-[var(--ink)] p-2.5 text-[var(--white)]">
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)] font-display text-[10px] font-extrabold">
@@ -258,9 +288,9 @@ function BrandedPortalVisual() {
   )
 }
 
-function AiExtractionVisual() {
+function AiExtractionVisual({ size = 'default' }: VisualProps) {
   return (
-    <VisualFrame>
+    <VisualFrame size={size}>
       <div className="mb-2 flex items-center justify-between">
         <p className="font-display text-[10px] font-bold text-[var(--ink)]">Extraction Kbis</p>
         <span className="rounded-full bg-[var(--mint)]/20 px-1.5 py-0.5 font-display text-[8px] font-bold text-[var(--ink)]">
@@ -294,7 +324,7 @@ function AiExtractionVisual() {
   )
 }
 
-const VISUALS: Record<FeatureVisualId, () => ReactElement> = {
+const VISUALS: Record<FeatureVisualId, (props: VisualProps) => ReactElement> = {
   'portal-checklist': PortalChecklistVisual,
   'signature-pad': SignaturePadVisual,
   'reminder-toast': ReminderToastVisual,
@@ -305,7 +335,13 @@ const VISUALS: Record<FeatureVisualId, () => ReactElement> = {
   'ai-extraction': AiExtractionVisual,
 }
 
-export function FeatureVisual({ id }: { id: FeatureVisualId }) {
+export function FeatureVisual({
+  id,
+  size = 'default',
+}: {
+  id: FeatureVisualId
+  size?: FeatureVisualSize
+}) {
   const Visual = VISUALS[id]
-  return <Visual />
+  return <Visual size={size} />
 }

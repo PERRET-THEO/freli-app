@@ -317,6 +317,37 @@ Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.
   )
 }
 
+export function buildWaitlistConfirmationEmail(params: {
+  firstName: string
+  unsubscribeUrl: string
+  siteUrl: string
+}): string {
+  const name = escapeHtml(params.firstName)
+  const unsubscribeUrl = escapeHtml(params.unsubscribeUrl)
+  const siteUrl = escapeHtml(params.siteUrl)
+
+  const body = `
+<p style="font-family:'DM Sans',Arial,sans-serif;font-size:15px;color:#4A4D5C;line-height:1.85;margin:0 0 20px;">
+Bonjour ${name}, votre inscription est bien enregistrée. Vous recevrez un email dès l’ouverture publique de Freli — l’onboarding client automatisé pour freelances et agences.
+</p>
+<p style="font-family:'DM Sans',Arial,sans-serif;font-size:13px;color:#8A8D9C;line-height:1.7;margin:0 0 20px;">
+Pas de newsletter, pas de relance commerciale : un seul email au lancement.
+</p>
+<p style="font-family:'DM Sans',Arial,sans-serif;font-size:12px;color:#B0ACA3;line-height:1.7;margin:0;">
+Vous pouvez vous désinscrire à tout moment : <a href="${unsubscribeUrl}" style="color:#5B6EF5;text-decoration:underline;">se désinscrire</a>.
+</p>`
+
+  return emailShell(
+    '✦ Liste d’attente',
+    `C’est noté,<br>${name} !`,
+    'Vous serez prévenu·e en avant-première dès l’ouverture.',
+    body,
+    siteUrl,
+    '✦ Découvrir Freli',
+    'Email automatique Freli — ne pas répondre',
+  )
+}
+
 export function buildUserInviteEmail(params: { inviteUrl: string }): string {
   const url = escapeHtml(params.inviteUrl)
 

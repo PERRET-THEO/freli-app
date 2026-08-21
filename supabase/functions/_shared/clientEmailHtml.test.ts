@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 // Ces modules ciblent Deno ; le runner Node doit fournir le global avant import.
 ;(globalThis as { Deno?: unknown }).Deno ??= { env: { get: () => undefined } }
 
-const { buildClientOnboardingEmail, isValidProjectToken } = await import('./clientEmailHtml.ts')
+const { buildClientOnboardingEmail, buildWaitlistConfirmationEmail, isValidProjectToken } = await import('./clientEmailHtml.ts')
 
 const BASE = {
   clientName: 'Marie Dupont',
@@ -87,5 +87,28 @@ describe('buildClientOnboardingEmail — invitation', () => {
       mode: 'invite',
     })
     expect(html).toContain('Marie &amp; Co &lt;b&gt;')
+  })
+})
+
+describe('buildWaitlistConfirmationEmail', () => {
+  it('personnalise le prénom et inclut le lien de désinscription', () => {
+    const html = buildWaitlistConfirmationEmail({
+      firstName: 'Camille',
+      unsubscribeUrl: 'https://lancement.freli.fr/desinscription?token=abc',
+      siteUrl: 'https://www.freli.fr',
+    })
+    expect(html).toContain('Camille')
+    expect(html).toContain('https://lancement.freli.fr/desinscription?token=abc')
+    expect(html).toContain('se désinscrire')
+  })
+
+  it('échappe le prénom', () => {
+    const html = buildWaitlistConfirmationEmail({
+      firstName: '<script>x</script>',
+      unsubscribeUrl: 'https://lancement.freli.fr/desinscription?token=abc',
+      siteUrl: 'https://www.freli.fr',
+    })
+    expect(html).not.toContain('<script>x</script>')
+    expect(html).toContain('&lt;script&gt;')
   })
 })

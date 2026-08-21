@@ -4,13 +4,17 @@ import { AgencySessionProvider, useAgencySession } from './contexts/AgencyContex
 import { AppChromeProvider } from './components/app-shell/AppChromeProvider'
 import { RequireBillingAccess } from './components/billing/RequireBillingAccess'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { CookieConsentBanner } from './components/layout/CookieConsentBanner'
 import { MarketingPageTransition } from './components/layout/MarketingPageTransition'
 import { ScrollToTop } from './components/layout/ScrollToTop'
 import { resolveAuthCallbackPath } from './lib/authCallbackRoute'
+import { isLaunchHost } from './lib/launchSite'
 import { supabase } from './lib/supabase'
 import { ConfirmEmail } from './pages/ConfirmEmail'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { Landing } from './pages/Landing'
+import { LaunchComingSoon } from './pages/LaunchComingSoon'
+import { LaunchUnsubscribe } from './pages/LaunchUnsubscribe'
 import { NotFound } from './pages/NotFound'
 import { ResetPassword } from './pages/ResetPassword'
 import { SignIn } from './pages/SignIn'
@@ -135,6 +139,10 @@ function AppRoot() {
   const location = useLocation()
   const host = typeof window !== 'undefined' ? window.location.hostname : ''
 
+  if (isLaunchHost(host)) {
+    return <LaunchComingSoon />
+  }
+
   if (host === 'app.freli.fr') {
     const authPath = resolveAuthCallbackPath(location.search, location.hash)
     if (authPath) {
@@ -171,12 +179,29 @@ function LandingEntry() {
 }
 
 function App() {
+  const host = typeof window !== 'undefined' ? window.location.hostname : ''
+
+  if (isLaunchHost(host)) {
+    return (
+      <ErrorBoundary>
+        <ScrollToTop />
+        <Routes>
+          <Route path="/desinscription" element={<LaunchUnsubscribe />} />
+          <Route path="*" element={<LaunchComingSoon />} />
+        </Routes>
+      </ErrorBoundary>
+    )
+  }
+
   return (
     <ErrorBoundary>
       <ScrollToTop />
+      <CookieConsentBanner />
       <Routes>
         <Route element={<MarketingPageTransition />}>
           <Route path="/" element={<AppRoot />} />
+          <Route path="/lancement" element={<LaunchComingSoon />} />
+          <Route path="/lancement/desinscription" element={<LaunchUnsubscribe />} />
           <Route
             path="/demo"
             element={

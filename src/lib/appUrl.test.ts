@@ -19,6 +19,11 @@ describe('marketingUrl', () => {
     expect(marketingUrl('/tarifs')).toBe('https://www.freli.fr/tarifs')
   })
 
+  it('returns absolute www.freli.fr URLs on lancement.freli.fr', () => {
+    mockHost('lancement.freli.fr')
+    expect(marketingHomeUrl()).toBe('https://www.freli.fr')
+    expect(marketingUrl('/confidentialite')).toBe('https://www.freli.fr/confidentialite')
+  })
   it('returns relative paths on localhost', () => {
     mockHost('localhost')
     expect(marketingHomeUrl()).toBe('/')
