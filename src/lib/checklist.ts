@@ -3,6 +3,7 @@ import {
   validateConditions,
   type VisibilityCondition,
 } from './checklistConditions'
+import { buildPendingTemplateContractValue } from './contractSignatureValue'
 import { isValidHttpUrl, normalizeUrl, type ChecklistItemConfig } from './checklistFields'
 import { isFreliPortalUrl } from './scheduleEmbed'
 
@@ -426,7 +427,7 @@ export function buildChecklistItemValue(item: DraftChecklistItem): string | null
     return JSON.stringify({ status: 'pending_generation' })
   }
   if (item.contractTemplateId) {
-    return JSON.stringify({ template_id: item.contractTemplateId, status: 'pending' })
+    return buildPendingTemplateContractValue(item.contractTemplateId)
   }
   return null
 }

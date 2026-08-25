@@ -40,6 +40,37 @@ export async function getPortalTemplatePdfUrl(
   return String(data.signedUrl)
 }
 
+export type PortalGeneratedDocumentContract = {
+  signedUrl: string
+  name: string
+  signature_page: number
+  signature_x: number
+  signature_y: number
+  signature_width: number
+  signature_height: number
+}
+
+export async function getPortalGeneratedDocumentPdfUrl(
+  projectToken: string,
+  generatedDocumentId: string,
+): Promise<PortalGeneratedDocumentContract> {
+  const { data, error } = await supabase.functions.invoke('portal-contract', {
+    body: { action: 'getGeneratedDocumentPdfUrl', projectToken, generatedDocumentId },
+  })
+  if (error) throw new Error(error.message)
+  if (data?.error) throw new Error(String(data.error))
+  if (!data?.signedUrl) throw new Error('URL du PDF indisponible.')
+  return {
+    signedUrl: String(data.signedUrl),
+    name: String(data.name ?? 'Contrat'),
+    signature_page: Number(data.signature_page ?? -1),
+    signature_x: Number(data.signature_x ?? 0.7),
+    signature_y: Number(data.signature_y ?? 0.85),
+    signature_width: Number(data.signature_width ?? 0.25),
+    signature_height: Number(data.signature_height ?? 0.08),
+  }
+}
+
 export type SignerIdentity = {
   checklistItemId?: string
   signerName?: string

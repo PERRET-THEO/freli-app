@@ -7,7 +7,15 @@ import { PortalWelcomeHero } from '../components/portal/PortalWelcomeHero'
 import { Button } from '../components/ui'
 import { triggerIntegrations } from '../lib/integrations/triggerIntegrations'
 import type { IntegrationResults } from '../lib/integrations/triggerIntegrations'
-import { getPortalTemplatePdfUrl } from '../lib/contractStorage'
+import {
+  getGeneratedDocumentIdFromSignatureValue,
+  getTemplateIdFromSignatureValue,
+  isContractPendingGeneration,
+} from '../lib/contractSignatureValue'
+import {
+  getPortalGeneratedDocumentPdfUrl,
+  getPortalTemplatePdfUrl,
+} from '../lib/contractStorage'
 import { sendProjectCompletedEmail } from '../lib/resend'
 import { getPaymentState, formatPriceEur } from '../lib/payments'
 import { normalizeBrandColor, DEFAULT_BRAND_COLOR } from '../lib/agencyBranding'
@@ -82,7 +90,7 @@ type ChecklistItemRecord = {
   config: ChecklistItemConfig | null
 }
 
-type LoadedTemplate = {
+type LoadedContractForSigning = {
   id: string
   name: string
   pdf_url: string | null
@@ -163,26 +171,6 @@ function StepCircle({ index, status }: { index: number; status: StepStatus }) {
   return <div className={`${base} bg-[var(--surface-warm)] text-[var(--ink-muted)]`}>{index + 1}</div>
 }
 
-function getTemplateIdFromValue(value: string | null): string | null {
-  if (!value) return null
-  try {
-    const parsed = JSON.parse(value) as { template_id?: string }
-    return parsed.template_id ?? null
-  } catch {
-    return null
-  }
-}
-
-function isContractPendingGeneration(value: string | null): boolean {
-  if (!value) return false
-  try {
-    const parsed = JSON.parse(value) as { status?: string }
-    return parsed.status === 'pending_generation'
-  } catch {
-    return false
-  }
-}
-
 export function ClientPortal() {
   const { token } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -206,7 +194,7 @@ export function ClientPortal() {
   const [showHero, setShowHero] = useState(true)
   const stepRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const [signingItemId, setSigningItemId] = useState<string | null>(null)
-  const [loadedTemplate, setLoadedTemplate] = useState<LoadedTemplate | null>(null)
+  const [loadedTemplate, setLoadedTemplate] = useState<LoadedContractForSigning | null>(null)
   const [templatePdfUrl, setTemplatePdfUrl] = useState<string | null>(null)
   const [integrationResults, setIntegrationResults] = useState<IntegrationResults>({})
   const [integrationsSent, setIntegrationsSent] = useState(false)
@@ -273,18 +261,44 @@ export function ClientPortal() {
   )
 
   useEffect(() => {
-    if (!signingItemId || !project) {
+    if (!signingItemId || !project || !token) {
       setLoadedTemplate(null)
+      setTemplatePdfUrl(null)
       return
     }
     const item = items.find((i) => i.id === signingItemId)
     if (!item) return
 
-    const load = async () => {
-      const templateId = getTemplateIdFromValue(item.value)
-      console.log('Recherche template — template_id depuis value:', templateId)
+    let cancelled = false
 
-      let tpl: LoadedTemplate | null = null
+    const load = async () => {
+      const generatedDocumentId = getGeneratedDocumentIdFromSignatureValue(item.value)
+      if (generatedDocumentId) {
+        try {
+          const contract = await getPortalGeneratedDocumentPdfUrl(token, generatedDocumentId)
+          if (cancelled) return
+          setLoadedTemplate({
+            id: generatedDocumentId,
+            name: contract.name,
+            pdf_url: contract.signedUrl,
+            signature_page: contract.signature_page,
+            signature_x: contract.signature_x,
+            signature_y: contract.signature_y,
+            signature_width: contract.signature_width,
+            signature_height: contract.signature_height,
+          })
+          setTemplatePdfUrl(contract.signedUrl)
+        } catch {
+          if (!cancelled) {
+            setLoadedTemplate(null)
+            setTemplatePdfUrl(null)
+          }
+        }
+        return
+      }
+
+      const templateId = getTemplateIdFromSignatureValue(item.value)
+      let tpl: LoadedContractForSigning | null = null
 
       if (templateId) {
         const { data } = await supabase
@@ -292,33 +306,43 @@ export function ClientPortal() {
           .select('id, name, pdf_url, signature_page, signature_x, signature_y, signature_width, signature_height')
           .eq('id', templateId)
           .maybeSingle()
-        tpl = data as LoadedTemplate | null
+        tpl = data as LoadedContractForSigning | null
       }
 
       if (!tpl && project.agency_id) {
-        console.log('Fallback: chargement template par défaut pour agency_id:', project.agency_id)
         const { data } = await supabase
           .from('contract_templates')
           .select('id, name, pdf_url, signature_page, signature_x, signature_y, signature_width, signature_height')
           .eq('agency_id', project.agency_id)
           .eq('is_default', true)
           .maybeSingle()
-        tpl = data as LoadedTemplate | null
+        tpl = data as LoadedContractForSigning | null
       }
 
-      console.log('Template chargé:', tpl)
-      console.log('PDF URL:', tpl?.pdf_url)
+      if (cancelled) return
       setLoadedTemplate(tpl)
     }
 
-    load()
-  }, [signingItemId, items, project])
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [signingItemId, items, project, token])
 
   useEffect(() => {
     if (!loadedTemplate?.id || !token) {
-      setTemplatePdfUrl(null)
+      if (!getGeneratedDocumentIdFromSignatureValue(signingItem?.value ?? null)) {
+        setTemplatePdfUrl(null)
+      }
       return
     }
+
+    const generatedDocumentId = getGeneratedDocumentIdFromSignatureValue(signingItem?.value ?? null)
+    if (generatedDocumentId) {
+      return
+    }
+
     let cancelled = false
     void getPortalTemplatePdfUrl(token, loadedTemplate.id)
       .then((url) => {
@@ -330,7 +354,7 @@ export function ClientPortal() {
     return () => {
       cancelled = true
     }
-  }, [loadedTemplate, token])
+  }, [loadedTemplate, token, signingItem?.value])
 
   useEffect(() => {
     if (!openStepId && firstIncompleteId) {

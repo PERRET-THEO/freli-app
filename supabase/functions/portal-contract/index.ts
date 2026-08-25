@@ -8,6 +8,7 @@ const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 type Body =
   | { action: 'getTemplatePdfUrl'; projectToken: string; templateId: string }
+  | { action: 'getGeneratedDocumentPdfUrl'; projectToken: string; generatedDocumentId: string }
   | {
       action: 'uploadSigned'
       projectToken: string
@@ -16,6 +17,20 @@ type Body =
       signerName?: string
       signerEmail?: string
     }
+
+type GeneratedDocumentRow = {
+  id: string
+  project_id: string
+  agency_id: string
+  status: string
+  pdf_storage_path: string | null
+  current_version: { title?: string } | null
+  signature_page: number | null
+  signature_x: number | null
+  signature_y: number | null
+  signature_width: number | null
+  signature_height: number | null
+}
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes)
@@ -42,6 +57,16 @@ function storagePathFromPdfUrl(pdfUrl: string): string | null {
     return pdfUrl.slice(signedIdx + signedMarker.length).split('?')[0] ?? null
   }
   return pdfUrl.slice(idx + marker.length)
+}
+
+function parseGeneratedDocumentIdFromValue(value: string | null): string | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as { generated_document_id?: string }
+    return parsed.generated_document_id ?? null
+  } catch {
+    return null
+  }
 }
 
 async function resolveProjectByToken(projectToken: string) {
@@ -72,6 +97,37 @@ async function assertTemplateAccess(
 
   if ((linkedCount ?? 0) === 0 && !template.is_default) return null
   return template
+}
+
+async function assertGeneratedDocumentAccess(
+  generatedDocumentId: string,
+  projectId: string,
+): Promise<GeneratedDocumentRow | null> {
+  const { data: document, error } = await supabase
+    .from('generated_documents')
+    .select(
+      'id, project_id, agency_id, status, pdf_storage_path, current_version, signature_page, signature_x, signature_y, signature_width, signature_height',
+    )
+    .eq('id', generatedDocumentId)
+    .single()
+  if (error || !document) return null
+  if (document.project_id !== projectId) return null
+  if (document.status !== 'finalized' || !document.pdf_storage_path) return null
+
+  const { data: checklistItems, error: checklistError } = await supabase
+    .from('checklist_items')
+    .select('id, value')
+    .eq('project_id', projectId)
+    .eq('type', 'signature')
+
+  if (checklistError || !checklistItems?.length) return null
+
+  const linked = checklistItems.some(
+    (item) => parseGeneratedDocumentIdFromValue(item.value as string | null) === generatedDocumentId,
+  )
+  if (!linked) return null
+
+  return document as GeneratedDocumentRow
 }
 
 serve(async (req) => {
@@ -106,6 +162,33 @@ serve(async (req) => {
       if (error || !data?.signedUrl) throw new Error(error?.message ?? 'Signed URL failed')
 
       return jsonResponse({ signedUrl: data.signedUrl })
+    }
+
+    if (body.action === 'getGeneratedDocumentPdfUrl') {
+      if (!body.generatedDocumentId) {
+        return jsonResponse({ error: 'Missing generatedDocumentId' }, 400)
+      }
+
+      const document = await assertGeneratedDocumentAccess(body.generatedDocumentId, project.id)
+      if (!document?.pdf_storage_path) {
+        return jsonResponse({ error: 'Document not found' }, 404)
+      }
+
+      const { data, error } = await supabase.storage
+        .from('contracts')
+        .createSignedUrl(document.pdf_storage_path, 3600)
+      if (error || !data?.signedUrl) throw new Error(error?.message ?? 'Signed URL failed')
+
+      const version = document.current_version as { title?: string } | null
+      return jsonResponse({
+        signedUrl: data.signedUrl,
+        name: version?.title?.slice(0, 120) ?? 'Contrat',
+        signature_page: document.signature_page ?? -1,
+        signature_x: document.signature_x ?? 0.7,
+        signature_y: document.signature_y ?? 0.85,
+        signature_width: document.signature_width ?? 0.25,
+        signature_height: document.signature_height ?? 0.08,
+      })
     }
 
     if (body.action === 'uploadSigned') {

@@ -23,7 +23,8 @@ type ContractFinalizeStepProps = {
   loadingMessage: string | null
   error: string | null
   onRegenerate: () => void
-  onContractFinalized: (contractTemplateId: string) => void
+  onContractFinalized: (generatedDocumentId: string) => void
+  onPdfCreated?: (documentId: string) => void
   onBackToChecklist: () => void
 }
 
@@ -45,10 +46,11 @@ export function ContractFinalizeStep({
   error,
   onRegenerate,
   onContractFinalized,
+  onPdfCreated,
   onBackToChecklist,
 }: ContractFinalizeStepProps) {
   return (
-    <div className="mt-6 min-w-0">
+    <div className="mt-6 w-full min-w-0">
       <p className="break-words text-sm font-body text-[var(--ink-muted)]">
         Tant que l&apos;invitation n&apos;est pas envoyée, vous pouvez ajuster la checklist
         et régénérer le contrat. Relisez-le puis finalisez-le avant l&apos;envoi à{' '}
@@ -135,16 +137,26 @@ export function ContractFinalizeStep({
       {generatedDocuments.length > 0 ? (
         <div className="mt-4 space-y-4">
           {generatedDocuments.map((doc) => (
-            <GeneratedDocumentEditor
+            <div
               key={doc.id}
-              document={doc}
-              onFinalized={onContractFinalized}
-              onRegenerate={
-                !generatedToken && !contractFinalized ? onRegenerate : undefined
+              className={
+                doc.status === 'draft'
+                  ? 'w-full min-w-0 pb-[calc(7.5rem+var(--mobile-nav-height,3.75rem))] md:pb-0'
+                  : 'w-full min-w-0'
               }
-              regenerating={regenerating}
-              regenerateDisabled={loading || contractFinalized || Boolean(generatedToken)}
-            />
+            >
+              <GeneratedDocumentEditor
+                document={doc}
+                onFinalized={onContractFinalized}
+                onPdfCreated={onPdfCreated}
+                onRegenerate={
+                  !generatedToken && !contractFinalized ? onRegenerate : undefined
+                }
+                regenerating={regenerating}
+                regenerateDisabled={loading || contractFinalized || Boolean(generatedToken)}
+                signatureConfirmLabel="Enregistrer la position et envoyer au client"
+              />
+            </div>
           ))}
         </div>
       ) : (

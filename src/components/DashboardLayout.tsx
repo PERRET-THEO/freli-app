@@ -8,7 +8,7 @@ type DashboardLayoutProps = {
   children: ReactNode
   title?: string
   subtitle?: string
-  maxWidth?: '4xl' | '5xl' | '7xl'
+  maxWidth?: '4xl' | '5xl' | '7xl' | 'full'
   loading?: boolean
   skeleton?: ReactNode
 }
@@ -17,6 +17,7 @@ const maxWidthClass: Record<NonNullable<DashboardLayoutProps['maxWidth']>, strin
   '4xl': 'max-w-4xl',
   '5xl': 'max-w-5xl',
   '7xl': 'max-w-7xl',
+  full: 'w-full max-w-none md:w-[calc(100%-var(--sidebar-current-width))]',
 }
 
 export function DashboardLayout({

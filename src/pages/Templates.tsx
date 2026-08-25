@@ -296,9 +296,14 @@ export function Templates() {
         .select('*')
         .eq('agency_id', agency.id)
         .order('created_at', { ascending: false })
+      // Exclure les PDF générés par IA (préfixe generated/) — artefacts projet uniquement.
+      const uploadedOnly = ((data ?? []) as ContractTemplate[]).filter((row) => {
+        const path = row.pdf_url ?? ''
+        return !path.includes('/generated/') && !path.startsWith('generated/')
+      })
       setTemplates(
         Array.from(
-          new Map(((data ?? []) as ContractTemplate[]).map((row) => [row.id, row])).values(),
+          new Map(uploadedOnly.map((row) => [row.id, row])).values(),
         ),
       )
     } finally {

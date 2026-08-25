@@ -69,8 +69,28 @@ function MobileMoreMenu() {
 
 /** In-flow bottom nav (parent provides shrink-0). Avoids iOS standalone fixed-bottom gap. */
 export function MobileBottomNav() {
+  const navRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const el = navRef.current
+    if (!el) return
+
+    const syncHeight = () => {
+      document.documentElement.style.setProperty('--mobile-nav-height', `${el.offsetHeight}px`)
+    }
+    syncHeight()
+
+    const observer = new ResizeObserver(syncHeight)
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+      document.documentElement.style.removeProperty('--mobile-nav-height')
+    }
+  }, [])
+
   return (
     <nav
+      ref={navRef}
       className="border-t border-[var(--nav-border)] bg-[var(--nav-bg)] px-1 pb-[max(0.5rem,var(--safe-bottom))] pt-2"
       aria-label="Navigation mobile"
     >

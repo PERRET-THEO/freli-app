@@ -194,7 +194,7 @@ export function ClientDetail() {
           .in('project_id', projectIds),
         supabase
           .from('generated_documents')
-          .select('id, project_id, status, created_at, finalized_at, brief')
+          .select('id, project_id, status, created_at, finalized_at, brief, current_version')
           .in('project_id', projectIds)
           .order('created_at', { ascending: false }),
       ])
@@ -218,6 +218,7 @@ export function ClientDetail() {
           created_at: string
           finalized_at: string | null
           brief: string
+          current_version?: { title?: string } | null
         }>,
       }),
     )

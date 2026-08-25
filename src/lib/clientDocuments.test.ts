@@ -35,6 +35,7 @@ describe('mapClientDocuments', () => {
           created_at: '2026-01-03T00:00:00.000Z',
           finalized_at: '2026-01-03T02:00:00.000Z',
           brief: 'Proposition site vitrine',
+          current_version: { title: 'Contrat prestation web' },
         },
       ],
     })
@@ -44,5 +45,7 @@ describe('mapClientDocuments', () => {
     expect(groups.files).toHaveLength(1)
     expect(groups.ai).toHaveLength(1)
     expect(items[0]?.kind).toBe('ai_document')
+    expect(items[0]?.title).toBe('Contrat prestation web')
+    expect(items[0]?.statusLabel).toBe('Finalisé (projet)')
   })
 })

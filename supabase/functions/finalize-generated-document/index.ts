@@ -1,5 +1,6 @@
 /**
- * Finalisation d'un document généré : rendu PDF stylé + entrée contract_templates.
+ * Finalisation d'un document généré : rendu PDF stylé, stocké sur le projet.
+ * Ne crée plus d'entrée dans contract_templates (bibliothèque uploadée).
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -116,38 +117,26 @@ serve(async (req) => {
       .upload(filePath, pdfBytes, { contentType: 'application/pdf', upsert: false })
     if (uploadError) throw new Error(`Upload PDF échoué : ${uploadError.message}`)
 
-    const { data: template, error: templateError } = await supabase
-      .from('contract_templates')
-      .insert({
-        agency_id: document.agency_id,
-        name: version.title.slice(0, 120),
-        pdf_url: filePath,
-        is_default: false,
+    const finalizedAt = new Date().toISOString()
+    const { error: updateError } = await supabase
+      .from('generated_documents')
+      .update({
+        status: 'finalized',
+        contract_template_id: null,
+        finalized_at: finalizedAt,
+        pdf_storage_path: filePath,
         signature_page: -1,
         signature_x: HTML_SIGNATURE_X,
         signature_y: HTML_SIGNATURE_Y,
         signature_width: HTML_SIGNATURE_WIDTH,
         signature_height: HTML_SIGNATURE_HEIGHT,
       })
-      .select('id')
-      .single()
-    if (templateError || !template) {
-      throw new Error(templateError?.message ?? 'Création du template impossible')
-    }
-
-    const { error: updateError } = await supabase
-      .from('generated_documents')
-      .update({
-        status: 'finalized',
-        contract_template_id: template.id,
-        finalized_at: new Date().toISOString(),
-      })
       .eq('id', document.id)
     if (updateError) throw new Error(updateError.message)
 
     return jsonResponse({
       success: true,
-      contractTemplateId: template.id,
+      documentId: document.id,
       storagePath: filePath,
       renderer,
     })

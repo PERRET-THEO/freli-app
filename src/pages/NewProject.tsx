@@ -249,15 +249,18 @@ export function NewProject() {
     setStep(2)
   }
 
-  const linkContractToChecklistItem = async (
+  const linkGeneratedDocumentToChecklistItem = async (
     checklistItemId: string,
-    contractTemplateId: string,
+    generatedDocumentId: string,
   ) => {
     const { error: updateError } = await supabase
       .from('checklist_items')
       .update({
-        contract_template_id: contractTemplateId,
-        value: JSON.stringify({ template_id: contractTemplateId, status: 'pending' }),
+        contract_template_id: null,
+        value: JSON.stringify({
+          generated_document_id: generatedDocumentId,
+          status: 'pending',
+        }),
       })
       .eq('id', checklistItemId)
     if (updateError) throw new Error(updateError.message)
@@ -565,14 +568,14 @@ export function NewProject() {
     }
   }
 
-  const handleContractFinalized = async (contractTemplateId: string) => {
+  const handleContractFinalized = async (generatedDocumentId: string) => {
     if (!createdProjectId || pendingContractLinks.length === 0) return
 
     setLoading(true)
     setError(null)
     try {
       for (const link of pendingContractLinks) {
-        await linkContractToChecklistItem(link.checklistItemId, contractTemplateId)
+        await linkGeneratedDocumentToChecklistItem(link.checklistItemId, generatedDocumentId)
       }
       setContractFinalized(true)
 
@@ -634,9 +637,13 @@ export function NewProject() {
   }
 
   return (
-    <DashboardLayout title="Nouveau projet" subtitle={stepSubtitle} maxWidth="4xl">
-      <Card>
-        <div className="min-w-0">
+    <DashboardLayout
+      title="Nouveau projet"
+      subtitle={stepSubtitle}
+      maxWidth="full"
+    >
+      <Card className="w-full min-w-0">
+        <div className="min-w-0 w-full">
         <div className="flex flex-wrap items-center justify-center gap-3">
           {renderStepIndicator(1, 'Client')}
           <span className="text-sm text-[var(--ink-muted)]">→</span>
@@ -736,6 +743,11 @@ export function NewProject() {
             error={error}
             onRegenerate={handleRegenerateContract}
             onContractFinalized={handleContractFinalized}
+            onPdfCreated={async () => {
+              if (!createdProjectId) return
+              const docs = await fetchProjectGeneratedDocuments(createdProjectId)
+              setGeneratedDocuments(docs)
+            }}
             onBackToChecklist={() => setStep(2)}
           />
         )}

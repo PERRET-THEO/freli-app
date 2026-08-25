@@ -31,6 +31,7 @@ type GeneratedDocRow = {
   created_at: string
   finalized_at: string | null
   brief: string
+  current_version?: { title?: string } | null
 }
 
 function filePublicUrl(path: string): string {
@@ -75,11 +76,14 @@ export function mapClientDocuments(input: {
 
   for (const row of input.generated) {
     const briefPreview = row.brief.trim().slice(0, 48)
+    const titleFromVersion =
+      row.current_version?.title?.trim() ||
+      (briefPreview ? `Proposition IA — ${briefPreview}` : 'Proposition / contrat IA')
     items.push({
       id: `ai-${row.id}`,
       kind: 'ai_document',
-      title: briefPreview ? `Proposition IA — ${briefPreview}` : 'Proposition / contrat IA',
-      statusLabel: row.status === 'finalized' ? 'Finalisé' : 'Brouillon',
+      title: titleFromVersion,
+      statusLabel: row.status === 'finalized' ? 'Finalisé (projet)' : 'Brouillon',
       occurredAt: row.finalized_at ?? row.created_at,
       projectId: row.project_id,
       projectName: projectName.get(row.project_id) ?? 'Projet',

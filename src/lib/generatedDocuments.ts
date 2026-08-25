@@ -23,6 +23,13 @@ export type GeneratedDocumentRecord = {
   current_version: DocumentVersion
   status: 'draft' | 'finalized'
   contract_template_id: string | null
+  pdf_storage_path: string | null
+  signature_page: number | null
+  signature_x: number | null
+  signature_y: number | null
+  signature_width: number | null
+  signature_height: number | null
+  signed_storage_path: string | null
   created_at: string
   finalized_at: string | null
 }
@@ -39,7 +46,7 @@ export type AgencyDocumentModel = {
 export const MAX_REFERENCE_MODELS = 3
 
 const GENERATED_SELECT =
-  'id, project_id, brief, ai_version, current_version, status, contract_template_id, created_at, finalized_at'
+  'id, project_id, brief, ai_version, current_version, status, contract_template_id, pdf_storage_path, signature_page, signature_x, signature_y, signature_width, signature_height, signed_storage_path, created_at, finalized_at'
 
 export async function fetchProjectGeneratedDocuments(
   projectId: string,
@@ -93,13 +100,40 @@ export async function saveCurrentVersion(
 
 export async function finalizeGeneratedDocument(
   documentId: string,
-): Promise<{ contractTemplateId: string }> {
+): Promise<{ documentId: string; storagePath: string | null }> {
   const { data, error } = await supabase.functions.invoke('finalize-generated-document', {
     body: { documentId },
   })
   if (error) throw new Error(error.message)
   if (data?.error) throw new Error(String(data.error))
-  return { contractTemplateId: String(data.contractTemplateId) }
+  return {
+    documentId: String(data.documentId ?? documentId),
+    storagePath: data?.storagePath ? String(data.storagePath) : null,
+  }
+}
+
+export async function updateGeneratedDocumentSignature(
+  documentId: string,
+  position: {
+    signature_page: number
+    signature_x: number
+    signature_y: number
+    signature_width: number
+    signature_height: number
+  },
+): Promise<void> {
+  const { error } = await supabase
+    .from('generated_documents')
+    .update({
+      signature_page: position.signature_page,
+      signature_x: position.signature_x,
+      signature_y: position.signature_y,
+      signature_width: position.signature_width,
+      signature_height: position.signature_height,
+    })
+    .eq('id', documentId)
+    .eq('status', 'finalized')
+  if (error) throw new Error(error.message)
 }
 
 /** Aperçu HTML du contrat avant finalisation PDF. */
