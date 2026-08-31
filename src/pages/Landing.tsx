@@ -1,6 +1,18 @@
 import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
+import {
+  Frown,
+  Link2,
+  Mail,
+  Rocket,
+  Settings2,
+  Sparkles,
+  Timer,
+  Webhook,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react'
 import { Navbar } from '../components/layout/Navbar'
 import { FeatureVisual, type FeatureVisualId } from '../components/landing/FeatureVisuals'
 import { Reveal, RevealStagger, RevealStaggerItem } from '../components/landing/Reveal'
@@ -20,14 +32,14 @@ type TimelineStep = {
   title: string
   text: string
   time: string
-  icon: string
+  icon: LucideIcon
   mock: string
 }
 
-const stats = [
-  { icon: '⏱️', value: '−3h', label: 'Gagnées par nouveau client' },
-  { icon: '✉️', value: '0', label: 'Relance manuelle à envoyer' },
-  { icon: '⚡', value: '2 min', label: 'Pour lancer un onboarding' },
+const stats: { icon: LucideIcon; value: string; label: string }[] = [
+  { icon: Timer, value: '−3h', label: 'Gagnées par nouveau client' },
+  { icon: Mail, value: '0', label: 'Relance manuelle à envoyer' },
+  { icon: Zap, value: '2 min', label: 'Pour lancer un onboarding' },
 ]
 
 const timeSavingSteps: TimelineStep[] = [
@@ -36,7 +48,7 @@ const timeSavingSteps: TimelineStep[] = [
     title: 'Créez le projet',
     text: "Recherchez l'entreprise par nom, SIREN ou SIRET : Freli préremplit raison sociale, adresse, NAF et TVA. Choisissez les documents à collecter — le portail est généré automatiquement.",
     time: '30 sec',
-    icon: '✨',
+    icon: Sparkles,
     mock: 'Nouveau projet',
   },
   {
@@ -44,7 +56,7 @@ const timeSavingSteps: TimelineStep[] = [
     title: 'Envoyez le lien',
     text: "Plus de chaînes d'emails. Votre client remplit formulaire, fichiers et signature au même endroit.",
     time: '1 clic',
-    icon: '🔗',
+    icon: Link2,
     mock: 'freli.fr/p/studio-nova',
   },
   {
@@ -52,7 +64,7 @@ const timeSavingSteps: TimelineStep[] = [
     title: 'Laissez Freli opérer',
     text: "Freli surveille, relance automatiquement et vous prévient seulement quand tout est prêt.",
     time: '0 effort',
-    icon: '⚙️',
+    icon: Settings2,
     mock: 'Tout est prêt ✓',
   },
 ]
@@ -95,7 +107,7 @@ const detailedFeatures: {
   {
     title: 'Autofill entreprise officiel',
     tag: 'Données officielles',
-    text: "Recherchez par nom, SIREN ou SIRET via l'API Recherche d'Entreprises (data.gouv). Freli préremplit le profil agence et la fiche client — raison sociale, adresse, NAF, TVA. Saisie manuelle disponible si l'API est indisponible.",
+    text: "Recherchez par nom, SIREN ou SIRET. Freli préremplit le profil agence et la fiche client — raison sociale, adresse, NAF, TVA. Saisie manuelle disponible si l'API est indisponible.",
     gain: 'Gain : plus de copier-coller Kbis',
     visual: 'company-autofill',
   },
@@ -122,7 +134,13 @@ const detailedFeatures: {
   },
 ]
 
-const integrations = [
+const integrations: {
+  name: string
+  logo: string | null
+  icon?: LucideIcon
+  logoClassName: string
+  text: string
+}[] = [
   {
     name: 'Stripe',
     logo: '/logos/stripe.svg',
@@ -138,25 +156,25 @@ const integrations = [
   {
     name: 'Webhooks',
     logo: null,
-    icon: '🔗',
+    icon: Webhook,
     logoClassName: '',
-    text: "Direct : Zapier, Make, n8n, Slack. Via automatisateur : Notion, Airtable, CRM ou compta (Pennylane, Tiime, Indy). Événements : projet créé, terminé, paiement reçu, relance envoyée.",
+    text: "Connectez Zapier, Make, n8n ou Slack — et via eux Notion, Airtable, CRM ou compta. Déclenchés à chaque étape clé de l'onboarding.",
   },
 ]
 
 const ecosystemTools = [
-  { name: 'Zapier', logo: '/logos/zapier.svg', className: 'h-6 w-auto', chip: 'dark' as const, via: null as string | null },
-  { name: 'Make', logo: '/logos/make.svg', className: 'h-6 w-auto', chip: 'light' as const, via: null },
-  { name: 'n8n', logo: '/logos/n8n.svg', className: 'h-6 w-auto', chip: 'dark' as const, via: null },
-  { name: 'Slack', logo: '/logos/slack.svg', className: 'h-7 w-7', chip: 'dark' as const, via: null },
-  { name: 'Notion', logo: '/logos/notion.png', className: 'h-6 w-6', chip: 'light' as const, via: 'via Zapier/Make' },
-  { name: 'Airtable', logo: '/logos/airtable.png', className: 'h-7 w-7', chip: 'dark' as const, via: 'via Zapier/Make' },
+  { name: 'Zapier', logo: '/logos/zapier.svg', className: 'h-5 w-auto sm:h-6', chip: 'dark' as const },
+  { name: 'Make', logo: '/logos/make.svg', className: 'h-5 w-auto sm:h-6', chip: 'light' as const },
+  { name: 'n8n', logo: '/logos/n8n.svg', className: 'h-5 w-auto sm:h-6', chip: 'dark' as const },
+  { name: 'Slack', logo: '/logos/slack.svg', className: 'h-6 w-6 sm:h-7 sm:w-7', chip: 'dark' as const },
+  { name: 'Notion', logo: '/logos/notion.png', className: 'h-6 w-6 sm:h-7 sm:w-7', chip: 'light' as const },
+  { name: 'Airtable', logo: '/logos/airtable.png', className: 'h-6 w-6 sm:h-7 sm:w-7', chip: 'dark' as const },
 ]
 
 const comparison = {
   before: {
     title: 'Sans Freli',
-    icon: '😮‍💨',
+    icon: Frown,
     items: [
       'Vous envoyez 5 emails pour collecter les infos',
       'Vous jonglez avec Google Forms, Drive, DocuSign',
@@ -166,7 +184,7 @@ const comparison = {
   },
   after: {
     title: 'Avec Freli',
-    icon: '🚀',
+    icon: Rocket,
     items: [
       "Vous envoyez 1 seul lien d'onboarding",
       'Tout est centralisé dans un portail unique',
@@ -226,8 +244,9 @@ export function Landing() {
       <main className="mx-auto max-w-6xl px-4 pb-24 pt-20 sm:px-6">
         <div className="mx-auto max-w-3xl text-center">
           <Reveal immediate>
-            <span className="inline-flex rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs font-display font-bold uppercase tracking-wide text-[var(--accent)]">
-              ⏱️ Gagnez 3h par client
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs font-display font-bold uppercase tracking-wide text-[var(--accent)]">
+              <Timer className="h-3.5 w-3.5" aria-hidden />
+              Gagnez 3h par client
             </span>
           </Reveal>
           <Reveal immediate delay={0.07}>
@@ -263,7 +282,9 @@ export function Landing() {
           {stats.map((stat) => (
             <RevealStaggerItem key={stat.label}>
               <Card className="bg-[var(--white)] p-6 text-center transition-transform duration-200 hover:-translate-y-0.5">
-                <p className="text-2xl">{stat.icon}</p>
+                <div className="mx-auto mb-3 inline-flex h-10 w-10 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-soft)] text-[var(--accent)]">
+                  <stat.icon className="h-5 w-5" aria-hidden />
+                </div>
                 <p className="text-[36px] font-display font-extrabold leading-none tracking-tight text-[var(--ink)]">
                   {stat.value}
                 </p>
@@ -303,7 +324,7 @@ export function Landing() {
                 {timeSavingSteps.map((s, idx) => (
                   <div key={s.step} className="relative flex flex-col items-center md:items-stretch">
                     <div className="relative z-10 mx-auto flex h-[92px] w-[92px] items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent)] to-[#8B9BFF] shadow-[0_12px_32px_rgba(90,110,255,0.35)] ring-4 ring-[var(--ink)]">
-                      <span className="font-display text-4xl">{s.icon}</span>
+                      <s.icon className="h-8 w-8 text-[var(--white)]" aria-hidden />
                       <span className="absolute -right-2 -top-2 rounded-full bg-[var(--white)] px-2 py-[2px] font-display text-[11px] font-extrabold tracking-tight text-[var(--accent)] shadow">
                         {s.step}
                       </span>
@@ -311,8 +332,9 @@ export function Landing() {
 
                     <div className="mt-5 rounded-[var(--radius-lg)] border border-[rgba(255,255,255,0.08)] bg-gradient-to-b from-[rgba(255,255,255,0.04)] to-[rgba(255,255,255,0.02)] p-5 backdrop-blur-sm">
                       <div className="flex items-center justify-between">
-                        <span className="rounded-full bg-[var(--accent-soft)] px-2.5 py-[3px] font-display text-[11px] font-bold uppercase tracking-wide text-[var(--accent)]">
-                          ⏱ {s.time}
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-soft)] px-2.5 py-[3px] font-display text-[11px] font-bold uppercase tracking-wide text-[var(--accent)]">
+                          <Timer className="h-3 w-3" aria-hidden />
+                          {s.time}
                         </span>
                         <span className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-[rgba(253,252,250,0.4)]">
                           Étape {idx + 1}/3
@@ -688,7 +710,9 @@ export function Landing() {
             <div className="mt-8 grid gap-6 md:grid-cols-2 md:gap-8">
               <div className="rounded-[var(--radius-lg)] border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.25)] p-5 text-left">
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">{comparison.before.icon}</span>
+                  <div className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--amber)]/20 text-[var(--amber)]">
+                    <comparison.before.icon className="h-4 w-4" aria-hidden />
+                  </div>
                   <h3 className="font-display text-lg font-bold text-[var(--white)]">
                     {comparison.before.title}
                   </h3>
@@ -710,7 +734,9 @@ export function Landing() {
 
               <div className="rounded-[var(--radius-lg)] border border-[var(--accent)]/40 bg-gradient-to-br from-[rgba(90,110,255,0.18)] to-[rgba(0,0,0,0.35)] p-5 text-left shadow-[0_8px_32px_rgba(90,110,255,0.15)]">
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">{comparison.after.icon}</span>
+                  <div className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-soft)] text-[var(--accent)]">
+                    <comparison.after.icon className="h-4 w-4" aria-hidden />
+                  </div>
                   <h3 className="font-display text-lg font-bold text-[var(--white)]">
                     {comparison.after.title}
                   </h3>
@@ -796,8 +822,8 @@ export function Landing() {
           </Reveal>
           <RevealStagger className="mt-12 grid gap-6 md:mt-14 md:grid-cols-3 md:gap-8">
             {integrations.map((item) => (
-              <RevealStaggerItem key={item.name}>
-                <div className="rounded-[var(--radius-lg)] border border-[rgba(255,255,255,0.06)] bg-[var(--ink)] p-6 text-left shadow-[0_2px_16px_rgba(0,0,0,0.25)] transition-transform duration-200 hover:-translate-y-0.5 sm:p-7">
+              <RevealStaggerItem key={item.name} className="h-full">
+                <div className="flex h-full flex-col rounded-[var(--radius-lg)] border border-[rgba(255,255,255,0.06)] bg-[var(--ink)] p-6 text-left shadow-[0_2px_16px_rgba(0,0,0,0.25)] transition-transform duration-200 hover:-translate-y-0.5 sm:p-7">
                   <div className="flex h-10 items-center">
                     {item.logo ? (
                       <img
@@ -806,11 +832,11 @@ export function Landing() {
                         className={item.logoClassName}
                         loading="lazy"
                       />
-                    ) : (
-                      <span className="text-3xl" aria-hidden>
-                        {item.icon}
-                      </span>
-                    )}
+                    ) : item.icon ? (
+                      <div className="inline-flex h-10 w-10 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-soft)] text-[var(--accent)]">
+                        <item.icon className="h-5 w-5" aria-hidden />
+                      </div>
+                    ) : null}
                   </div>
                   <h3 className="mt-4 font-display text-xl font-bold text-[var(--white)]">{item.name}</h3>
                   <p className="mt-3 text-sm font-body leading-relaxed text-[rgba(253,252,250,0.78)]">
@@ -825,34 +851,23 @@ export function Landing() {
               <p className="font-display text-xs font-bold uppercase tracking-[0.18em] text-[rgba(253,252,250,0.5)]">
                 Compatible avec
               </p>
-              <div className="mt-5 flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
                 {ecosystemTools.map((tool) => (
                   <span
                     key={tool.name}
-                    className={`inline-flex flex-col items-center justify-center gap-1 rounded-full border px-4 py-2 transition-transform duration-200 hover:-translate-y-0.5 ${
+                    className={`inline-flex h-11 items-center justify-center rounded-full border px-4 shadow-[0_1px_0_rgba(255,255,255,0.04)] transition-transform duration-200 hover:-translate-y-0.5 sm:h-12 sm:px-5 ${
                       tool.chip === 'light'
-                        ? 'border-[rgba(255,255,255,0.2)] bg-[var(--white)]'
-                        : 'border-[rgba(255,255,255,0.1)] bg-[var(--ink)]'
+                        ? 'border-[rgba(255,255,255,0.18)] bg-[var(--white)]'
+                        : 'border-[rgba(255,255,255,0.12)] bg-[rgba(0,0,0,0.35)]'
                     }`}
-                    title={tool.via ? `${tool.name} (${tool.via})` : tool.name}
+                    title={tool.name}
                   >
                     <img
                       src={tool.logo}
                       alt={tool.name}
-                      className={tool.className}
+                      className={`${tool.className} object-contain`}
                       loading="lazy"
                     />
-                    {tool.via ? (
-                      <span
-                        className={`text-[10px] font-body leading-none ${
-                          tool.chip === 'light' ? 'text-[var(--ink-muted)]' : 'text-[rgba(253,252,250,0.55)]'
-                        }`}
-                      >
-                        {tool.via}
-                      </span>
-                    ) : (
-                      <span className="sr-only">{tool.name}</span>
-                    )}
                   </span>
                 ))}
               </div>

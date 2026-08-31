@@ -11,6 +11,6 @@ Downloaded from each vendor's official brand kit or CDN. Not from third-party lo
 | `make.svg` | Make Contentful CDN (`images.ctfassets.net/.../Make-Logo-RGB.svg`) via make.com |
 | `slack.svg` | Slack marketing CDN (`a.slack-edge.com/.../logo.svg`) |
 | `notion.png` | Notion (`notion.so/images/logo-ios.png`) |
-| `airtable.png` | Airtable favicon/apple-touch (`airtable.com/images/favicon/...`) |
+| `airtable.png` | Airtable favicon/apple-touch (`airtable.com/images/favicon/...`), white background removed for dark UI |
 
 Usage of these marks remains subject to each vendor's trademark / brand guidelines.
