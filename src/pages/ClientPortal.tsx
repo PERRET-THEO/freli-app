@@ -370,27 +370,35 @@ export function ClientPortal() {
         return
       }
 
+      // Project only — branding comes from agency_portal_public (anon-safe view).
+      // Embedding agencies(...) fails for portal visitors: agencies RLS is members-only.
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
-        .select('id, client_name, client_email, status, token, agency_id, price, payment_status, stripe_checkout_url, agencies(logo_url, name, brand_color, portal_welcome_message, tagline, contact_email, contact_phone, portal_help_title, portal_help_text, portal_availability, portfolio_url, portfolio_label)')
+        .select('id, client_name, client_email, status, token, agency_id, price, payment_status, stripe_checkout_url')
         .eq('token', token)
         .maybeSingle()
 
-      let loadedProject: ProjectRecord
       if (projectError || !projectData) {
-        const fallback = await supabase
-          .from('projects')
-          .select('id, client_name, client_email, status, token, agency_id, price, payment_status, stripe_checkout_url, agencies(logo_url, name, brand_color, portal_welcome_message, tagline, contact_email, contact_phone)')
-          .eq('token', token)
+        setError('Projet introuvable pour ce lien.')
+        setLoading(false)
+        return
+      }
+
+      let agencyBranding: AgencyPortalRelation | null = null
+      if (projectData.agency_id) {
+        const { data: branding } = await supabase
+          .from('agency_portal_public')
+          .select(
+            'logo_url, name, brand_color, portal_welcome_message, tagline, contact_email, contact_phone, portal_help_title, portal_help_text, portal_availability, portfolio_url, portfolio_label',
+          )
+          .eq('id', projectData.agency_id)
           .maybeSingle()
-        if (fallback.error || !fallback.data) {
-          setError('Projet introuvable pour ce lien.')
-          setLoading(false)
-          return
-        }
-        loadedProject = fallback.data as ProjectRecord
-      } else {
-        loadedProject = projectData as ProjectRecord
+        if (branding) agencyBranding = branding as AgencyPortalRelation
+      }
+
+      const loadedProject: ProjectRecord = {
+        ...(projectData as ProjectRecord),
+        agencies: agencyBranding,
       }
       setProject(loadedProject)
 
@@ -420,7 +428,6 @@ export function ClientPortal() {
       const drafts = readDrafts(token)
       const restorable = countRestorableDrafts(initialTextValues, drafts, openInputIds)
 
-      setProject(projectData)
       const parsedItems = (checklistData ?? []) as ChecklistItemRecord[]
       setItems(parsedItems)
       setTextValues(mergeDraftsIntoValues(initialTextValues, drafts, openInputIds))
@@ -867,12 +874,16 @@ export function ClientPortal() {
             return (
               <div key={item.id} ref={(el) => { stepRefs.current[item.id] = el }} className="relative">
                 {!isLast && (
-                  <div className="absolute left-[17px] top-10 w-0.5 bg-[var(--border)] transition-colors duration-300" style={{ bottom: 0, backgroundColor: item.completed ? 'var(--mint)' : undefined }} />
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute left-[17px] top-10 z-0 w-0.5 bg-[var(--border)] transition-colors duration-300"
+                    style={{ bottom: 0, backgroundColor: item.completed ? 'var(--mint)' : undefined }}
+                  />
                 )}
 
                 <button
                   type="button"
-                  className="group relative flex w-full items-start gap-4 py-3 text-left"
+                  className="group relative z-10 flex w-full items-start gap-4 py-3 text-left"
                   onClick={() => { if (!item.completed) setOpenStepId(isOpen ? null : item.id) }}
                 >
                   <StepCircle index={index} status={status} />
@@ -895,8 +906,8 @@ export function ClientPortal() {
                   </div>
                 </button>
 
-                <div className={`overflow-hidden pl-0 transition-all duration-300 ease-in-out sm:pl-[52px] ${isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                  <div className="pb-6 pr-1">
+                <div className={`relative z-10 overflow-hidden pl-0 transition-all duration-300 ease-in-out sm:pl-[52px] ${isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                  <div className="bg-[var(--surface)] pb-6 pr-1 sm:bg-transparent">
                     {isRejected(item) && item.review_note ? (
                       <div className="mb-3 rounded-[var(--radius-sm)] border border-[var(--amber)]/50 bg-[var(--amber-soft)] p-3">
                         <p className="font-body text-sm font-medium text-[var(--ink)]">
