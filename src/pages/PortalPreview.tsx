@@ -4,6 +4,7 @@ import { Button } from '../components/ui'
 import { PortalContactLinks } from '../components/portal/PortalContactLinks'
 import { PortalPortfolioLink } from '../components/portal/PortalPortfolioLink'
 import { DEFAULT_BRAND_COLOR, normalizeBrandColor, readPortalPreview } from '../lib/agencyBranding'
+import { marketingHomeUrl } from '../lib/appUrl'
 import { agencyInitials, portalThemeStyle } from '../lib/portalTheme'
 import {
   DEFAULT_PORTAL_HELP_TITLE,
@@ -174,7 +175,14 @@ export function PortalPreview() {
           ) : null}
 
           <p className="mt-8 pb-8 text-center font-body text-xs text-[var(--ink-muted)]">
-            Propulsé par <span className="font-display font-bold text-[var(--ink)]">Freli</span>
+            Propulsé par{' '}
+            <a
+              href={marketingHomeUrl()}
+              className="font-display font-bold text-[var(--ink)] underline-offset-2 transition hover:text-[var(--portal-accent,var(--accent))] hover:underline"
+              aria-label="Freli — Accueil"
+            >
+              Freli
+            </a>
           </p>
         </main>
       </div>

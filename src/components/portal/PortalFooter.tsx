@@ -1,3 +1,4 @@
+import { marketingHomeUrl } from '../../lib/appUrl'
 import { PortalContactLinks } from './PortalContactLinks'
 
 type PortalFooterProps = {
@@ -41,7 +42,14 @@ export function PortalFooter({
         </div>
       ) : null}
       <p className="font-body text-xs text-[var(--ink-muted)]">
-        Propulsé par{' '}<span className="font-display font-bold text-[var(--ink)]">Freli</span>
+        Propulsé par{' '}
+        <a
+          href={marketingHomeUrl()}
+          className="font-display font-bold text-[var(--ink)] underline-offset-2 transition hover:text-[var(--portal-accent,var(--accent))] hover:underline"
+          aria-label="Freli — Accueil"
+        >
+          Freli
+        </a>
       </p>
     </footer>
   )
