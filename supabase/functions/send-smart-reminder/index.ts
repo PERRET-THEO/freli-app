@@ -9,7 +9,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'npm:resend'
 import { getResendFrom, assertResendOk, isDevMode } from '../_shared/email.ts'
 import { buildSmartReminderEmail } from '../_shared/clientEmailHtml.ts'
-import { corsHeaders, getAuthenticatedUser, assertUserIsAgencyMember, jsonResponse } from '../_shared/functionAuth.ts'
+import {
+  corsHeaders,
+  getAuthenticatedUser,
+  assertUserIsAgencyMember,
+  isInternalRequest,
+  jsonResponse,
+} from '../_shared/functionAuth.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -31,9 +37,6 @@ serve(async (req) => {
   }
 
   try {
-    const user = await getAuthenticatedUser(req)
-    if (!user) return jsonResponse({ error: 'Unauthorized' }, 401)
-
     const requestBody = (await req.json()) as Body
     if (!requestBody.reminderId) return jsonResponse({ error: 'reminderId requis' }, 400)
 
@@ -46,8 +49,12 @@ serve(async (req) => {
       .single()
     if (reminderError || !reminder) return jsonResponse({ error: 'Relance introuvable' }, 404)
 
-    const memberDenied = await assertUserIsAgencyMember(supabase, user.id, reminder.agency_id)
-    if (memberDenied) return jsonResponse({ error: memberDenied.error }, memberDenied.status)
+    if (!isInternalRequest(req)) {
+      const user = await getAuthenticatedUser(req)
+      if (!user) return jsonResponse({ error: 'Unauthorized' }, 401)
+      const memberDenied = await assertUserIsAgencyMember(supabase, user.id, reminder.agency_id)
+      if (memberDenied) return jsonResponse({ error: memberDenied.error }, memberDenied.status)
+    }
 
     const agencyRel = reminder.agencies as
       | { name?: string }
@@ -77,6 +84,7 @@ serve(async (req) => {
     let resendEmailId: string | null = null
     if (isDevMode()) {
       console.log('MODE DEV — Relance IA simulée pour:', project.client_email, subject)
+      resendEmailId = `dev-sim-${reminder.id}`
     } else {
       const sendResult = await resend.emails.send({
         from: getResendFrom(),
@@ -90,7 +98,13 @@ serve(async (req) => {
 
     await supabase
       .from('smart_reminders')
-      .update({ subject, body: bodyText, status: 'sent', sent_at: now, resend_email_id: resendEmailId })
+      .update({
+        subject,
+        body: bodyText,
+        status: 'sent',
+        sent_at: now,
+        resend_email_id: isDevMode() ? null : resendEmailId,
+      })
       .eq('id', reminder.id)
     await supabase
       .from('projects')
@@ -99,7 +113,7 @@ serve(async (req) => {
     await supabase.from('project_reminder_logs').insert({
       project_id: reminder.project_id,
       agency_id: reminder.agency_id,
-      source: 'manual',
+      source: isInternalRequest(req) ? 'auto' : 'manual',
       recipient_email: project.client_email,
     })
     if (resendEmailId) {

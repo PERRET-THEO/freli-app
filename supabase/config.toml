@@ -86,8 +86,12 @@ verify_jwt = false
 [functions.generate-smart-reminder]
 verify_jwt = false
 
-# IA — envoi d'un brouillon de relance validé (dashboard agence)
+# IA — envoi d'un brouillon (dashboard JWT, ou cron interne via secret)
 [functions.send-smart-reminder]
+verify_jwt = false
+
+# IA — génération manuelle depuis la fiche projet (JWT agence)
+[functions.request-smart-reminder]
 verify_jwt = true
 
 # IA — analyse d'un modèle de référence de contrat (dashboard agence)

@@ -5,8 +5,10 @@ name: Relances automatiques
 
 on:
   schedule:
-    # 08:00 UTC ≈ 09h Paris (hiver) / 10h Paris (été)
-    - cron: '0 8 * * *'
+    # Plusieurs passes/jour pour que la génération hors fenêtre puis l'envoi
+    # auto (dans ai_reminder_send_hour_*) puissent aboutir le même jour.
+    # 07 / 12 / 16 UTC ≈ 09–18h Paris selon l'heure d'été.
+    - cron: '0 7,12,16 * * *'
   workflow_dispatch: {}
 
 jobs:

@@ -5,13 +5,16 @@ import {
   BEHAVIOR_LABELS,
   dismissSmartReminder,
   fetchProjectSmartReminders,
+  requestSmartReminder,
   sendSmartReminder,
   type SmartReminderRecord,
 } from '../../lib/smartReminders'
 
 type SmartRemindersPanelProps = {
   projectId: string
+  aiEnabled?: boolean
   onSent?: () => void
+  onRequestGenerate?: () => void | Promise<void>
 }
 
 function DraftCard({
@@ -94,9 +97,16 @@ function DraftCard({
   )
 }
 
-export function SmartRemindersPanel({ projectId, onSent }: SmartRemindersPanelProps) {
+export function SmartRemindersPanel({
+  projectId,
+  aiEnabled = true,
+  onSent,
+  onRequestGenerate,
+}: SmartRemindersPanelProps) {
   const [reminders, setReminders] = useState<SmartReminderRecord[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [generateError, setGenerateError] = useState<string | null>(null)
 
   const load = async () => {
     try {
@@ -118,7 +128,28 @@ export function SmartRemindersPanel({ projectId, onSent }: SmartRemindersPanelPr
     onSent?.()
   }
 
-  if (!loaded || reminders.length === 0) return null
+  const handleGenerateNow = async () => {
+    setGenerating(true)
+    setGenerateError(null)
+    try {
+      if (onRequestGenerate) {
+        await onRequestGenerate()
+      } else {
+        await requestSmartReminder(projectId)
+      }
+      await load()
+      onSent?.()
+    } catch (reason) {
+      setGenerateError(
+        reason instanceof Error ? reason.message : 'Impossible de générer la relance IA.',
+      )
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  if (!aiEnabled) return null
+  if (!loaded) return null
 
   const drafts = reminders.filter((r) => r.status === 'draft')
   const sent = reminders.filter((r) => r.status === 'sent')
@@ -126,11 +157,12 @@ export function SmartRemindersPanel({ projectId, onSent }: SmartRemindersPanelPr
   return (
     <Card>
       <h2 className="font-display text-xl font-semibold text-[var(--ink)]">
-        ✨ Relances intelligentes
+        Relances intelligentes
       </h2>
       <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">
-        Contenu rédigé par l&apos;IA selon le comportement du client. Le déclenchement suit vos
-        règles de relance, jamais une décision opaque.
+        Contenu adapté au comportement email et portail du client (non ouvert, ouvert/cliqué,
+        étape bloquante). Le déclenchement suit vos règles de délai — l&apos;IA ne rédige que le
+        contenu.
       </p>
 
       {drafts.length > 0 ? (
@@ -139,10 +171,28 @@ export function SmartRemindersPanel({ projectId, onSent }: SmartRemindersPanelPr
             <DraftCard key={reminder.id} reminder={reminder} onProcessed={handleProcessed} />
           ))}
         </div>
-      ) : null}
+      ) : (
+        <div className="mt-4 rounded-[var(--radius-sm)] border border-dashed border-[var(--border)] bg-[var(--surface-warm)]/50 p-4">
+          <p className="text-sm font-body text-[var(--ink-soft)]">
+            Aucune relance IA en attente. La prochaine sera générée automatiquement après le délai
+            configuré, ou vous pouvez en créer une maintenant.
+          </p>
+          <Button
+            className="mt-3"
+            variant="secondary"
+            onClick={handleGenerateNow}
+            disabled={generating}
+          >
+            {generating ? 'Génération…' : 'Générer maintenant'}
+          </Button>
+          {generateError ? (
+            <p className="mt-2 text-xs font-body text-[var(--amber)]">{generateError}</p>
+          ) : null}
+        </div>
+      )}
 
       {sent.length > 0 ? (
-        <div className={drafts.length > 0 ? 'mt-5 border-t border-[var(--border)] pt-4' : 'mt-4'}>
+        <div className="mt-5 border-t border-[var(--border)] pt-4">
           <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Relances IA envoyées</p>
           <ul className="mt-2 space-y-2">
             {sent.map((reminder) => (

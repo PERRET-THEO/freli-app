@@ -8,6 +8,7 @@ import { ContractGeneratorPanel } from '../components/contracts/ContractGenerato
 import { ClientContactBlock } from '../components/client/ClientContactBlock'
 import { Badge, Button, Card } from '../components/ui'
 import { sendProjectReminderEmail } from '../lib/resend'
+import { requestSmartReminder } from '../lib/smartReminders'
 import { sendPaymentLink } from '../lib/stripePayment'
 import { syncProjectDriveFolder } from '../lib/googleDriveConnect'
 import { openStripeExpressDashboard } from '../lib/stripeConnectDashboard'
@@ -97,6 +98,8 @@ export function ProjectDetail() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [aiContractsEnabled, setAiContractsEnabled] = useState(false)
+  const [aiRemindersEnabled, setAiRemindersEnabled] = useState(false)
+  const [smartRemindersKey, setSmartRemindersKey] = useState(0)
 
   const loadProject = useCallback(async () => {
     if (!id) {
@@ -119,6 +122,7 @@ export function ProjectDetail() {
 
     const aiFlags = await fetchAgencyAiFlags(projectData.agency_id)
     setAiContractsEnabled(aiFlags.ai_contracts_enabled === true)
+    setAiRemindersEnabled(aiFlags.ai_reminders_enabled === true)
 
     const { data: checklistData, error: checklistError } = await supabase
       .from('checklist_items')
@@ -185,8 +189,24 @@ export function ProjectDetail() {
     setReminderFeedback(null)
     setError(null)
     try {
-      await sendProjectReminderEmail({ projectId: project.id })
-      setReminderFeedback('Relance envoyée au client.')
+      if (aiRemindersEnabled) {
+        const result = await requestSmartReminder(project.id)
+        setSmartRemindersKey((key) => key + 1)
+        if (result.status === 'sent') {
+          setReminderFeedback('Relance intelligente envoyée au client.')
+        } else if (result.existing) {
+          setReminderFeedback(
+            'Un brouillon de relance IA est déjà prêt ci-dessous — validez-le pour l’envoyer.',
+          )
+        } else {
+          setReminderFeedback(
+            'Brouillon de relance IA généré — validez-le dans la section Relances intelligentes.',
+          )
+        }
+      } else {
+        await sendProjectReminderEmail({ projectId: project.id })
+        setReminderFeedback('Relance envoyée au client.')
+      }
       await loadProject()
     } catch (reason: unknown) {
       const exactError =
@@ -362,7 +382,13 @@ export function ProjectDetail() {
               )}
 
               <Button className="mt-3" onClick={handleSendReminder} disabled={reminderDisabled}>
-                {sendingReminder ? 'Envoi…' : 'Envoyer une relance'}
+                {sendingReminder
+                  ? aiRemindersEnabled
+                    ? 'Génération…'
+                    : 'Envoi…'
+                  : aiRemindersEnabled
+                    ? 'Générer une relance IA'
+                    : 'Envoyer une relance'}
               </Button>
               {allSettled ? (
                 <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
@@ -514,13 +540,22 @@ export function ProjectDetail() {
             items={items}
             signatureProofs={signatureProofs}
             onReviewed={loadProject}
+            aiRemindersEnabled={aiRemindersEnabled}
           />
         ) : null}
       </div>
 
       {project ? (
         <div className="mt-4 space-y-4">
-          <SmartRemindersPanel projectId={project.id} onSent={loadProject} />
+          <SmartRemindersPanel
+            key={smartRemindersKey}
+            projectId={project.id}
+            aiEnabled={aiRemindersEnabled}
+            onSent={loadProject}
+            onRequestGenerate={async () => {
+              await handleSendReminder()
+            }}
+          />
           <ExtractionReviewPanel projectId={project.id} />
           <ContractGeneratorPanel
             projectId={project.id}

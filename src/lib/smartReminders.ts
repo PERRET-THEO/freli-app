@@ -19,7 +19,7 @@ export type SmartReminderRecord = {
 
 export const BEHAVIOR_LABELS: Record<SmartReminderBehavior, string> = {
   not_opened: 'Email non ouvert',
-  opened_not_clicked: 'Ouvert sans visite du portail',
+  opened_not_clicked: 'Ouvert ou cliqué, parcours non terminé',
   stuck_on_step: 'Bloqué sur une étape',
 }
 
@@ -76,4 +76,36 @@ export async function dismissSmartReminder(reminderId: string): Promise<void> {
     .update({ status: 'dismissed' })
     .eq('id', reminderId)
   if (error) throw new Error(error.message)
+}
+
+export type RequestSmartReminderResult = {
+  reminderId?: string
+  status: 'draft' | 'sent'
+  existing?: boolean
+  previewRequired?: boolean
+  behaviorCategory?: SmartReminderBehavior
+  message?: string
+}
+
+/** Génère (ou récupère) une relance IA pour un projet — bouton Relancer / CTA panel. */
+export async function requestSmartReminder(
+  projectId: string,
+  options?: { forceRefresh?: boolean },
+): Promise<RequestSmartReminderResult> {
+  const { data, error } = await supabase.functions.invoke('request-smart-reminder', {
+    body: { projectId, forceRefresh: options?.forceRefresh === true },
+  })
+  if (error) throw new Error(error.message)
+  if (data?.error) throw new Error(String(data.error))
+  if (data?.skipped) {
+    throw new Error(String(data.reason ?? 'Génération IA indisponible (add-on ou crédits).'))
+  }
+  return {
+    reminderId: typeof data?.reminderId === 'string' ? data.reminderId : undefined,
+    status: data?.status === 'sent' ? 'sent' : 'draft',
+    existing: data?.existing === true,
+    previewRequired: data?.previewRequired === true,
+    behaviorCategory: data?.behaviorCategory as SmartReminderBehavior | undefined,
+    message: typeof data?.message === 'string' ? data.message : undefined,
+  }
 }

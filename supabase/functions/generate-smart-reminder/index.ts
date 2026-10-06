@@ -3,6 +3,7 @@
  *
  * La décision d'envoyer (timing, plafond, catégorie) est déterministe
  * (smart-reminders-batch). Ici : rédaction via mistral-small-latest.
+ * L'envoi auto n'a lieu que dans la fenêtre horaire Paris de l'agence.
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -21,6 +22,7 @@ import { getPendingVisibleItems } from '../_shared/checklistVisibility.ts'
 import { REMINDER_JSON_SCHEMA } from '../_shared/documentSchemas.ts'
 import { assertAiAddonActive, consumeAiCredit } from '../_shared/aiEntitlements.ts'
 import { parseReminderPayload, REMINDER_PROMPT_VERSION } from '../_shared/aiValidation.ts'
+import { isWithinParisSendWindow } from '../_shared/smartReminderBehavior.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -48,7 +50,7 @@ const BEHAVIOR_INSTRUCTIONS: Record<BehaviorCategory, string> = {
   not_opened:
     "Le client n'a pas ouvert les emails précédents (signal Resend). Rédige un OBJET très différent des objets habituels de rappel (pas de mot « rappel »), qui attire l'attention. Le corps doit être court et direct.",
   opened_not_clicked:
-    "Le client a ouvert les emails mais n'a pas cliqué vers son espace d'onboarding (ou ne l'a pas visité). Mets en avant un bénéfice concret (gain de temps, projet qui démarre plus vite) et rassure (« cela ne prend que quelques minutes », lien direct, aucune création de compte).",
+    "Le client a ouvert ou cliqué dans les emails mais n'a pas terminé son onboarding (portail non visité ou parcours inachevé). Mets en avant un bénéfice concret (gain de temps, projet qui démarre plus vite) et rassure (« cela ne prend que quelques minutes », lien direct, aucune création de compte).",
   stuck_on_step:
     "Le client a commencé son parcours mais est bloqué sur une étape précise. Cible UNIQUEMENT cette étape : dis-lui explicitement qu'il ne lui reste que cette action et rassure sur sa simplicité.",
 }
@@ -60,6 +62,54 @@ Règles impératives :
 - "body" : corps en français, 60 à 120 mots, texte brut (pas de HTML, pas de markdown). Sépare les paragraphes par une ligne vide. Ne mets PAS de formule d'appel à l'action avec lien : le bouton est ajouté automatiquement sous ton texte. Termine par une formule de politesse simple signée du nom de l'agence.
 - INTERDICTION ABSOLUE de promettre quoi que ce soit d'ordre commercial ou financier : aucune remise, aucun geste commercial, aucun délai contractuel, aucun engagement au nom de l'agence.
 - N'invente aucune information sur le projet : utilise uniquement les éléments fournis.`
+
+async function markReminderSent(params: {
+  reminderId: string
+  projectId: string
+  agencyId: string
+  clientEmail: string
+  subject: string
+  bodyText: string
+  resendEmailId: string | null
+  simulated?: boolean
+}): Promise<string> {
+  const now = new Date().toISOString()
+  await supabase
+    .from('smart_reminders')
+    .update({
+      subject: params.subject,
+      body: params.bodyText,
+      status: 'sent',
+      sent_at: now,
+      resend_email_id: params.resendEmailId,
+    })
+    .eq('id', params.reminderId)
+  await supabase
+    .from('projects')
+    .update({ last_reminder_sent_at: now })
+    .eq('id', params.projectId)
+  await supabase.from('project_reminder_logs').insert({
+    project_id: params.projectId,
+    agency_id: params.agencyId,
+    source: 'auto',
+    recipient_email: params.clientEmail,
+  })
+  if (params.resendEmailId) {
+    await supabase.from('email_events').insert({
+      project_id: params.projectId,
+      resend_email_id: params.resendEmailId,
+      event_type: 'sent',
+    })
+  } else if (params.simulated) {
+    // DEV : id synthétique pour que la catégorisation future voie un envoi.
+    await supabase.from('email_events').insert({
+      project_id: params.projectId,
+      resend_email_id: `dev-sim-${params.reminderId}`,
+      event_type: 'sent',
+    })
+  }
+  return now
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -85,7 +135,7 @@ serve(async (req) => {
     const { data: project, error: projectError } = await supabase
       .from('projects')
       .select(
-        'id, token, client_name, client_email, agency_id, agencies(name, ai_reminders_enabled, ai_reminder_tone, ai_reminder_auto_send)',
+        'id, token, client_name, client_email, agency_id, agencies(name, ai_reminders_enabled, ai_reminder_tone, ai_reminder_auto_send, ai_reminder_send_hour_start, ai_reminder_send_hour_end)',
       )
       .eq('id', body.projectId)
       .single()
@@ -119,6 +169,11 @@ serve(async (req) => {
         ? agency.ai_reminder_tone
         : 'professional'
     const autoSend = agency.ai_reminder_auto_send === true
+    const sendHourStart =
+      typeof agency.ai_reminder_send_hour_start === 'number' ? agency.ai_reminder_send_hour_start : 9
+    const sendHourEnd =
+      typeof agency.ai_reminder_send_hour_end === 'number' ? agency.ai_reminder_send_hour_end : 19
+    const withinSendWindow = isWithinParisSendWindow(new Date(), sendHourStart, sendHourEnd)
 
     const firstName = project.client_name.trim().split(/\s+/)[0] ?? project.client_name
 
@@ -132,9 +187,6 @@ serve(async (req) => {
       contextLines.push(`Étape bloquante : « ${body.blockingStepLabel} »`)
     }
 
-    // Nommer les étapes manquantes évite les relances vagues « il reste des
-    // choses ». La liste complète sert à écarter les étapes conditionnelles
-    // non déclenchées, qu'on ne doit pas réclamer.
     const { data: allRows } = await supabase
       .from('checklist_items')
       .select('label, completed, value, review_note, review_status, config')
@@ -190,14 +242,14 @@ serve(async (req) => {
     const subject = parsed.subject
     const bodyText = parsed.body
 
-    // Première relance du projet : toujours brouillon (preview humain obligatoire).
+    // Première relance : toujours brouillon. Hors fenêtre Paris : brouillon aussi.
     const { count: priorSent } = await supabase
       .from('smart_reminders')
       .select('id', { count: 'exact', head: true })
       .eq('project_id', project.id)
       .eq('status', 'sent')
     const requirePreview = (priorSent ?? 0) === 0
-    const willAutoSend = autoSend && !requirePreview
+    const willAutoSend = autoSend && !requirePreview && withinSendWindow
 
     const { data: reminder, error: insertError } = await supabase
       .from('smart_reminders')
@@ -221,16 +273,23 @@ serve(async (req) => {
         reminderId: reminder.id,
         status: 'draft',
         previewRequired: requirePreview,
+        deferredOutsideWindow: autoSend && !requirePreview && !withinSendWindow,
       })
     }
 
     const portalUrl = `${appUrl}/p/${project.token}`
     if (isDevMode()) {
       console.log('MODE DEV — Relance IA simulée pour:', project.client_email, subject)
-      await supabase
-        .from('smart_reminders')
-        .update({ status: 'sent', sent_at: new Date().toISOString() })
-        .eq('id', reminder.id)
+      await markReminderSent({
+        reminderId: reminder.id,
+        projectId: project.id,
+        agencyId: project.agency_id,
+        clientEmail: project.client_email,
+        subject,
+        bodyText,
+        resendEmailId: null,
+        simulated: true,
+      })
       return jsonResponse({ reminderId: reminder.id, status: 'sent', simulated: true })
     }
 
@@ -243,28 +302,15 @@ serve(async (req) => {
     assertResendOk(sendResult)
     const resendEmailId = (sendResult.data as { id?: string } | null)?.id ?? null
 
-    const now = new Date().toISOString()
-    await supabase
-      .from('smart_reminders')
-      .update({ status: 'sent', sent_at: now, resend_email_id: resendEmailId })
-      .eq('id', reminder.id)
-    await supabase
-      .from('projects')
-      .update({ last_reminder_sent_at: now })
-      .eq('id', project.id)
-    await supabase.from('project_reminder_logs').insert({
-      project_id: project.id,
-      agency_id: project.agency_id,
-      source: 'auto',
-      recipient_email: project.client_email,
+    await markReminderSent({
+      reminderId: reminder.id,
+      projectId: project.id,
+      agencyId: project.agency_id,
+      clientEmail: project.client_email,
+      subject,
+      bodyText,
+      resendEmailId,
     })
-    if (resendEmailId) {
-      await supabase.from('email_events').insert({
-        project_id: project.id,
-        resend_email_id: resendEmailId,
-        event_type: 'sent',
-      })
-    }
 
     return jsonResponse({ reminderId: reminder.id, status: 'sent' })
   } catch (error) {

@@ -106,9 +106,12 @@ export function ReminderSettingsPanel({
         <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Comment ça marche</p>
         <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-xs font-body leading-relaxed text-[var(--ink-muted)]">
           <li>Freli surveille les projets non terminés avec une checklist incomplète.</li>
-          <li>Après le délai choisi, un email de relance part automatiquement au client.</li>
+          <li>Après le délai choisi, une relance part automatiquement (template classique, ou IA si le module est activé).</li>
           <li>Une nouvelle relance auto n&apos;est envoyée qu&apos;après le même délai.</li>
-          <li>Vous pouvez toujours relancer manuellement depuis la fiche projet.</li>
+          <li>
+            Vous pouvez toujours relancer manuellement depuis la fiche projet
+            {aiEnabled ? ' — le bouton utilise alors l’IA' : ''}.
+          </li>
         </ol>
       </div>
 
@@ -125,8 +128,10 @@ export function ReminderSettingsPanel({
           </span>
           <span className="mt-0.5 block text-xs font-body text-[var(--ink-muted)]">
             {enabled
-              ? 'Freli enverra des emails de relance sans action de votre part.'
-              : 'Seules les relances manuelles depuis la fiche projet seront possibles.'}
+              ? aiEnabled
+                ? 'Freli générera des relances IA selon le délai (brouillon ou envoi auto selon vos réglages ci-dessous).'
+                : 'Freli enverra des emails de relance sans action de votre part.'
+              : 'Aucune relance automatique (classique ou IA). Seules les relances manuelles depuis la fiche projet seront possibles.'}
           </span>
         </span>
       </label>
@@ -173,10 +178,14 @@ export function ReminderSettingsPanel({
           </span>
         </div>
         <p className="mt-1 text-xs font-body leading-relaxed text-[var(--ink-muted)]">
-          Le contenu des relances s&apos;adapte au comportement email du client (non ouvert, ouvert
-          sans clic vers le portail, étape bloquante). Le déclenchement reste basé sur le délai
-          ci-dessus et sur des règles vérifiables — l&apos;IA ne rédige que le contenu.
+          Le contenu des relances s&apos;adapte au comportement email et portail du client (non
+          ouvert, ouvert ou cliqué sans finir, étape bloquante). Ce n&apos;est pas une réponse aux
+          emails du client : l&apos;IA rédige uniquement le contenu ; le déclenchement reste basé
+          sur le délai ci-dessus.
           {!aiEnabled ? ' Activez le module dans la section « Intelligence artificielle ».' : ''}
+          {aiEnabled && !aiAutoSend
+            ? ' Les relances partent en brouillon sur chaque fiche projet (bandeau dashboard) à valider avant envoi.'
+            : ''}
         </p>
 
         <div className={aiEnabled ? 'mt-4 space-y-4' : 'pointer-events-none mt-4 space-y-4 opacity-50'}>

@@ -35,7 +35,7 @@ const MODULES: Array<{
     key: 'reminders',
     title: 'Relances intelligentes',
     description:
-      'Le contenu des relances s’adapte au comportement email du client (non ouvert, ouvert sans clic, étape bloquante — signaux Resend + portail Freli). Le déclenchement reste basé sur vos règles.',
+      'Le contenu des relances s’adapte au comportement email/portail (non ouvert, ouvert ou cliqué, étape bloquante). Le bouton « Relancer » sur la fiche projet utilise ce circuit. Sans add-on ou crédits, aucune relance auto ne part (pas de retour silencieux au template classique).',
   },
   {
     key: 'contracts',
@@ -99,6 +99,9 @@ export function AiModulesPanel({
           </p>
           <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
             1 crédit = 1 extraction, 1 relance générée ou 1 génération / analyse de contrat.
+            {creditsBalance === 0
+              ? ' Crédits épuisés : les relances IA (auto et manuelles) sont en pause jusqu’au renouvellement.'
+              : ''}
           </p>
         </div>
       )}

@@ -3,6 +3,7 @@ import { Card } from '../ui'
 import { supabase } from '../../lib/supabase'
 import { formatRelative } from '../../lib/formatRelative'
 import { sendProjectReminderEmail } from '../../lib/resend'
+import { requestSmartReminder } from '../../lib/smartReminders'
 import { describeDevice, shortHash, type SignatureProof } from '../../lib/signatureProof'
 import { getVisibleItems, hasStoredCondition } from '../../lib/checklistConditions'
 import type { ChecklistItemConfig } from '../../lib/checklistFields'
@@ -35,6 +36,8 @@ type ChecklistReviewPanelProps = {
   items: ReviewPanelItem[]
   signatureProofs: Record<string, SignatureProof>
   onReviewed: () => void | Promise<void>
+  /** Si true, la notification de correction passe par le circuit relances IA. */
+  aiRemindersEnabled?: boolean
 }
 
 function SignatureProofBlock({ proof }: { proof: SignatureProof }) {
@@ -141,6 +144,7 @@ function ReviewRow({
   item,
   signatureProof,
   hidden,
+  aiRemindersEnabled,
   onReviewed,
 }: {
   projectId: string
@@ -148,6 +152,7 @@ function ReviewRow({
   signatureProof?: SignatureProof
   /** Étape conditionnelle non déclenchée : le client ne la voit pas. */
   hidden: boolean
+  aiRemindersEnabled?: boolean
   onReviewed: () => void | Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
@@ -184,8 +189,17 @@ function ReviewRow({
       setNote('')
       // L'étape se rouvre côté client : sans email il ne saurait pas qu'on l'attend.
       try {
-        await sendProjectReminderEmail({ projectId })
-        setFeedback('Correction demandée — le client a été prévenu par email.')
+        if (aiRemindersEnabled) {
+          const result = await requestSmartReminder(projectId, { forceRefresh: true })
+          setFeedback(
+            result.status === 'sent'
+              ? 'Correction demandée — relance IA envoyée au client.'
+              : 'Correction demandée — brouillon de relance IA prêt à valider.',
+          )
+        } else {
+          await sendProjectReminderEmail({ projectId })
+          setFeedback('Correction demandée — le client a été prévenu par email.')
+        }
       } catch {
         setFeedback('Correction demandée. Email non envoyé — relancez le client manuellement.')
       }
@@ -325,6 +339,7 @@ export function ChecklistReviewPanel({
   items,
   signatureProofs,
   onReviewed,
+  aiRemindersEnabled = false,
 }: ChecklistReviewPanelProps) {
   const visibleIds = new Set(getVisibleItems(items).map((item) => item.id))
   const awaitingCount = items.filter(
@@ -363,6 +378,7 @@ export function ChecklistReviewPanel({
             item={item}
             signatureProof={signatureProofs[item.id]}
             hidden={!visibleIds.has(item.id)}
+            aiRemindersEnabled={aiRemindersEnabled}
             onReviewed={onReviewed}
           />
         ))}
