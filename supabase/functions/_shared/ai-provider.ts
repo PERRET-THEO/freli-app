@@ -1,19 +1,34 @@
 /**
- * Couche d'abstraction Mistral AI pour les Edge Functions Freli.
+ * Couche d'abstraction Google Gemini pour les Edge Functions Freli.
  *
- * Tous les appels IA passent par ce module : la clé API (MISTRAL_API_KEY)
- * ne quitte jamais le serveur. Permet de changer de modèle ou de fournisseur
- * sans réécrire la logique métier des Edge Functions.
+ * Point d’entrée unique : chatJsonSchema, runOcr, logAiUsage, MODEL_*.
+ * La clé (GEMINI_API_KEY) ne quitte jamais le serveur.
  */
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { mistralJsonSchema } from './documentSchemas.ts'
 
-export const MODEL_OCR = 'mistral-ocr-latest'
-export const MODEL_SMALL = 'mistral-small-latest'
-export const MODEL_LARGE = 'mistral-large-latest'
-export const MODEL_PIXTRAL = 'pixtral-large-latest' // vision-langage (fallback F1)
+// ---------------------------------------------------------------------------
+// Modèles (alias stables pour les edges métier)
+// ---------------------------------------------------------------------------
 
-const DEFAULT_API_BASE = 'https://api.mistral.ai/v1'
+/** Modèle Gemini par défaut — surchargeable via secret GEMINI_MODEL. */
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash'
+
+export const MODEL_SMALL = DEFAULT_GEMINI_MODEL
+export const MODEL_LARGE = DEFAULT_GEMINI_MODEL
+export const MODEL_OCR = DEFAULT_GEMINI_MODEL
+/** Vision / fallback extraction (ex-Pixtral). */
+export const MODEL_VISION = DEFAULT_GEMINI_MODEL
+/** @deprecated Alias historique — préférer MODEL_VISION. */
+export const MODEL_PIXTRAL = MODEL_VISION
+
+const DEFAULT_API_BASE = 'https://generativelanguage.googleapis.com/v1beta'
+const DEFAULT_MAX_OUTPUT_TOKENS = 8192
+const DEFAULT_TIMEOUT_MS = 90_000
+const OCR_TIMEOUT_MS = 120_000
+
+// ---------------------------------------------------------------------------
+// Types publics
+// ---------------------------------------------------------------------------
 
 export interface AiCallResult {
   text: string
@@ -31,39 +46,127 @@ export interface AiUsageContext {
 
 export interface OcrResult {
   markdown: string
-  pages: Array<{ index: number; markdown: string; header?: string; footer?: string; blocks?: unknown[] }>
+  pages: Array<{
+    index: number
+    markdown: string
+    header?: string
+    footer?: string
+    blocks?: unknown[]
+  }>
   documentAnnotation: string | null
   model: string
   durationMs: number
 }
 
+// ---------------------------------------------------------------------------
+// Config / auth
+// ---------------------------------------------------------------------------
+
 function getApiBase(): string {
-  return (Deno.env.get('MISTRAL_API_BASE_URL') ?? DEFAULT_API_BASE).replace(/\/$/, '')
+  return (Deno.env.get('GEMINI_API_BASE_URL') ?? DEFAULT_API_BASE).replace(/\/$/, '')
 }
 
 function getApiKey(): string {
   const isDev =
     Deno.env.get('ENVIRONMENT') === 'development' || Deno.env.get('DENO_ENV') === 'development'
-  const devKey = Deno.env.get('MISTRAL_API_KEY_DEV') ?? ''
-  const prodKey = Deno.env.get('MISTRAL_API_KEY') ?? ''
+  const devKey = Deno.env.get('GEMINI_API_KEY_DEV') ?? ''
+  const prodKey = Deno.env.get('GEMINI_API_KEY') ?? ''
   const key = isDev && devKey ? devKey : prodKey || devKey
-  if (!key) throw new Error('MISTRAL_API_KEY non configurée (supabase secrets set)')
+  if (!key) {
+    throw new Error('GEMINI_API_KEY non configurée (supabase secrets set GEMINI_API_KEY=...)')
+  }
   return key
 }
 
-function dataUrlForDocument(mediaType: string, base64: string): Record<string, string> {
-  const dataUrl = `data:${mediaType};base64,${base64}`
-  if (mediaType === 'application/pdf') {
-    return { type: 'document_url', document_url: dataUrl }
+function resolveModel(requested: string): string {
+  const override = Deno.env.get('GEMINI_MODEL')?.trim()
+  if (override) return override
+  // Anciens ids Mistral encore présents dans des logs / configs → modèle Gemini courant
+  if (requested.startsWith('mistral-') || requested.startsWith('pixtral-')) {
+    return DEFAULT_GEMINI_MODEL
   }
-  return { type: 'image_url', image_url: dataUrl }
+  return requested
+}
+
+// ---------------------------------------------------------------------------
+// Schémas JSON → Gemini
+// ---------------------------------------------------------------------------
+
+/**
+ * Adapte un JSON Schema (types union `["string","null"]`, etc.)
+ * vers le sous-ensemble attendu par Gemini `responseSchema`.
+ * Exporté pour les tests unitaires.
+ */
+export function normalizeSchemaForGemini(schema: Record<string, unknown>): Record<string, unknown> {
+  const visit = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(visit)
+    if (!node || typeof node !== 'object') return node
+    const obj = node as Record<string, unknown>
+    const next: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(obj)) {
+      if (key === 'additionalProperties') continue
+      if (key === 'type' && Array.isArray(value)) {
+        const types = value.filter((t): t is string => typeof t === 'string')
+        const nonNull = types.filter((t) => t !== 'null')
+        if (types.includes('null') && nonNull.length === 1) {
+          next.type = nonNull[0]
+          next.nullable = true
+          continue
+        }
+        if (nonNull.length === 1) {
+          next.type = nonNull[0]
+          continue
+        }
+      }
+      next[key] = visit(value)
+    }
+    return next
+  }
+  return visit(schema) as Record<string, unknown>
+}
+
+// ---------------------------------------------------------------------------
+// HTTP
+// ---------------------------------------------------------------------------
+
+function formatGeminiHttpError(status: number, bodyText: string): string {
+  if (status === 429) {
+    return 'Limite de requêtes Gemini atteinte. Réessayez dans quelques minutes.'
+  }
+  if (status === 401 || status === 403) {
+    try {
+      const parsed = JSON.parse(bodyText) as { error?: { message?: unknown }; message?: unknown }
+      const message =
+        (typeof parsed.error?.message === 'string' && parsed.error.message.trim()) ||
+        (typeof parsed.message === 'string' && parsed.message.trim()) ||
+        ''
+      if (message.toLowerCase().includes('quota') || message.toLowerCase().includes('rate')) {
+        return `Erreur Gemini (${status}): ${message}`
+      }
+    } catch {
+      // ignore
+    }
+    return 'Clé API Gemini invalide ou non configurée.'
+  }
+  try {
+    const parsed = JSON.parse(bodyText) as { error?: { message?: unknown }; message?: unknown }
+    const message =
+      (typeof parsed.error?.message === 'string' && parsed.error.message.trim()) ||
+      (typeof parsed.message === 'string' && parsed.message.trim()) ||
+      ''
+    if (message) return `Erreur Gemini (${status}): ${message}`
+  } catch {
+    // ignore
+  }
+  const excerpt = bodyText.trim().slice(0, 200)
+  return excerpt ? `Erreur Gemini (${status}): ${excerpt}` : `Erreur Gemini (${status})`
 }
 
 async function fetchWithRetry(
   url: string,
   init: RequestInit,
   maxRetries = 2,
-  timeoutMs = 90_000,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<Response> {
   let lastError: Error | null = null
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -74,14 +177,17 @@ async function fetchWithRetry(
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
       const response = await fetch(url, { ...init, signal: controller.signal })
-      if (response.status === 429 || response.status >= 500) {
-        lastError = new Error(`Mistral API ${response.status}: ${await response.text()}`)
+      if (response.status === 429 || response.status === 401 || response.status === 403) {
+        throw new Error(formatGeminiHttpError(response.status, await response.text()))
+      }
+      if (response.status >= 500) {
+        lastError = new Error(formatGeminiHttpError(response.status, await response.text()))
         continue
       }
       return response
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
-        lastError = new Error(`Mistral API timeout après ${timeoutMs}ms`)
+        lastError = new Error(`Gemini API timeout après ${timeoutMs}ms`)
         continue
       }
       throw error
@@ -89,8 +195,120 @@ async function fetchWithRetry(
       clearTimeout(timer)
     }
   }
-  throw lastError ?? new Error('Mistral API: échec après retries')
+  throw lastError ?? new Error('Gemini API: échec après retries')
 }
+
+// ---------------------------------------------------------------------------
+// generateContent (interne)
+// ---------------------------------------------------------------------------
+
+type GeminiPart =
+  | { text: string }
+  | { inline_data: { mime_type: string; data: string } }
+
+type GeminiGenerateResponse = {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string; thought?: boolean }> }
+    finishReason?: string
+  }>
+  usageMetadata?: {
+    promptTokenCount?: number
+    candidatesTokenCount?: number
+    thoughtsTokenCount?: number
+    totalTokenCount?: number
+  }
+  modelVersion?: string
+}
+
+function extractResponseText(payload: GeminiGenerateResponse): string {
+  const parts = payload.candidates?.[0]?.content?.parts ?? []
+  // Ignorer les parts "thought" (reasoning interne Gemini 3.x).
+  return parts
+    .filter((p) => !p.thought)
+    .map((p) => p.text ?? '')
+    .join('')
+    .trim()
+}
+
+function parseJsonResponse<T>(raw: string, context: string): T {
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    throw new Error(`Réponse Gemini invalide (${context}): JSON non parsable`)
+  }
+}
+
+async function generateContent(options: {
+  model: string
+  system?: string
+  parts: GeminiPart[]
+  maxTokens?: number
+  temperature?: number
+  responseSchema?: Record<string, unknown>
+  timeoutMs?: number
+}): Promise<{ text: string; model: string; inputTokens: number; outputTokens: number }> {
+  const apiKey = getApiKey()
+  const model = resolveModel(options.model)
+  const url = `${getApiBase()}/models/${encodeURIComponent(model)}:generateContent`
+
+  // thinkingLevel "low" : latence/coût adaptés aux modules Freli.
+  // maxOutputTokens assez haut car le thinking consomme le budget.
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: options.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+    thinkingConfig: { thinkingLevel: 'low' },
+  }
+  if (options.temperature != null) {
+    generationConfig.temperature = options.temperature
+  }
+  if (options.responseSchema) {
+    generationConfig.responseMimeType = 'application/json'
+    generationConfig.responseSchema = normalizeSchemaForGemini(options.responseSchema)
+  }
+
+  const body: Record<string, unknown> = {
+    contents: [{ role: 'user', parts: options.parts }],
+    generationConfig,
+  }
+  if (options.system?.trim()) {
+    body.systemInstruction = { parts: [{ text: options.system }] }
+  }
+
+  const response = await fetchWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(body),
+    },
+    2,
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  )
+
+  if (!response.ok) {
+    throw new Error(formatGeminiHttpError(response.status, await response.text()))
+  }
+
+  const payload = (await response.json()) as GeminiGenerateResponse
+  const text = extractResponseText(payload)
+  if (!text) {
+    const finish = payload.candidates?.[0]?.finishReason ?? 'unknown'
+    throw new Error(`Réponse Gemini vide (finishReason=${finish})`)
+  }
+
+  return {
+    text,
+    model: payload.modelVersion ?? model,
+    inputTokens: payload.usageMetadata?.promptTokenCount ?? 0,
+    outputTokens: payload.usageMetadata?.candidatesTokenCount ?? 0,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Usage / coûts
+// ---------------------------------------------------------------------------
 
 /** Estimation coût USD → centimes EUR approximatifs (ordre de grandeur). */
 export function estimateCostCents(args: {
@@ -101,20 +319,9 @@ export function estimateCostCents(args: {
 }): number {
   const inTok = args.inputTokens ?? 0
   const outTok = args.outputTokens ?? 0
-  // Tarifs indicatifs Mistral 2026 ($ / 1M tokens) convertis ~×0.92 € puis ×100 centimes
-  let inPerM = 0.1
-  let outPerM = 0.3
-  if (args.operation === 'ocr') {
-    // ~$4 / 1000 pages → ~0.4 cent/page ; on approxime 1 appel OCR = 0.4¢
-    return 0.4
-  }
-  if (args.model.includes('large') || args.model.includes('pixtral')) {
-    inPerM = 2
-    outPerM = 6
-  } else if (args.model.includes('small')) {
-    inPerM = 0.1
-    outPerM = 0.3
-  }
+  if (args.operation === 'ocr') return 0.2
+  const inPerM = 0.3
+  const outPerM = 2.5
   const usd = (inTok * inPerM + outTok * outPerM) / 1_000_000
   return Math.round(usd * 0.92 * 100 * 10_000) / 10_000
 }
@@ -161,7 +368,41 @@ export async function logAiUsage(
   }
 }
 
-/** OCR Mistral avec annotation JSON optionnelle et extraction de structure. */
+// ---------------------------------------------------------------------------
+// OCR
+// ---------------------------------------------------------------------------
+
+function buildOcrResponseSchema(
+  annotationSchema?: Record<string, unknown>,
+): Record<string, unknown> {
+  const properties: Record<string, unknown> = {
+    markdown: {
+      type: 'string',
+      description: 'Texte OCR complet du document en markdown',
+    },
+    pages: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          index: { type: 'integer' },
+          markdown: { type: 'string' },
+          header: { type: 'string', nullable: true },
+          footer: { type: 'string', nullable: true },
+        },
+        required: ['index', 'markdown'],
+      },
+    },
+  }
+  const required = ['markdown', 'pages']
+  if (annotationSchema) {
+    properties.document_annotation = annotationSchema
+    required.push('document_annotation')
+  }
+  return { type: 'object', properties, required }
+}
+
+/** OCR multimodal (PDF / image → markdown + annotation JSON optionnelle). */
 export async function runOcr(options: {
   mediaType: string
   base64: string
@@ -173,36 +414,36 @@ export async function runOcr(options: {
   extractFooter?: boolean
 }): Promise<OcrResult> {
   const start = Date.now()
-  const apiKey = getApiKey()
-  const body: Record<string, unknown> = {
+  const responseSchema = buildOcrResponseSchema(options.annotationSchema)
+
+  const instructions = [
+    'Extrais le texte du document fourni.',
+    'Retourne le contenu en markdown fidèle (sans inventer).',
+    'Découpe par page dans "pages" si possible ; sinon une seule page index 0.',
+    options.extractHeader ? 'Renseigne header si présent.' : null,
+    options.extractFooter ? 'Renseigne footer si présent.' : null,
+    options.annotationSchema
+      ? `Remplis aussi "document_annotation" selon le schéma (${options.annotationSchemaName ?? 'annotation'}).`
+      : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  const result = await generateContent({
     model: MODEL_OCR,
-    document: dataUrlForDocument(options.mediaType, options.base64),
-  }
-  if (options.annotationSchema) {
-    body.document_annotation_format = mistralJsonSchema(
-      options.annotationSchemaName ?? 'document_annotation',
-      options.annotationSchema,
-    )
-  }
-  if (options.includeBlocks) body.include_blocks = true
-  if (options.tableFormat) body.table_format = options.tableFormat
-  if (options.extractHeader) body.extract_header = true
-  if (options.extractFooter) body.extract_footer = true
+    system: 'Tu es un moteur OCR précis pour documents français (identité, Kbis, RIB, contrats).',
+    parts: [
+      { text: instructions },
+      { inline_data: { mime_type: options.mediaType, data: options.base64 } },
+    ],
+    maxTokens: DEFAULT_MAX_OUTPUT_TOKENS,
+    temperature: 0,
+    responseSchema,
+    timeoutMs: OCR_TIMEOUT_MS,
+  })
 
-  const response = await fetchWithRetry(`${getApiBase()}/ocr`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  }, 2, 120_000)
-
-  if (!response.ok) {
-    throw new Error(`Mistral OCR ${response.status}: ${await response.text()}`)
-  }
-
-  const payload = (await response.json()) as {
+  const parsed = parseJsonResponse<{
+    markdown?: string
     pages?: Array<{
       index?: number
       markdown?: string
@@ -210,29 +451,42 @@ export async function runOcr(options: {
       footer?: string
       blocks?: unknown[]
     }>
-    document_annotation?: string | null
-    model?: string
-  }
+    document_annotation?: unknown
+  }>(result.text, 'ocr')
 
-  const pages = (payload.pages ?? []).map((page, index) => ({
+  const pages = (parsed.pages ?? []).map((page, index) => ({
     index: page.index ?? index,
     markdown: page.markdown ?? '',
     header: page.header,
     footer: page.footer,
     blocks: page.blocks,
   }))
-  const markdown = pages.map((p) => p.markdown).filter(Boolean).join('\n\n')
+  const markdown =
+    (typeof parsed.markdown === 'string' && parsed.markdown) ||
+    pages.map((p) => p.markdown).filter(Boolean).join('\n\n')
+
+  let documentAnnotation: string | null = null
+  if (parsed.document_annotation != null) {
+    documentAnnotation =
+      typeof parsed.document_annotation === 'string'
+        ? parsed.document_annotation
+        : JSON.stringify(parsed.document_annotation)
+  }
 
   return {
     markdown,
-    pages,
-    documentAnnotation: payload.document_annotation ?? null,
-    model: payload.model ?? MODEL_OCR,
+    pages: pages.length > 0 ? pages : [{ index: 0, markdown }],
+    documentAnnotation,
+    model: result.model,
     durationMs: Date.now() - start,
   }
 }
 
-/** Appel chat Mistral avec sortie JSON Schema stricte. */
+// ---------------------------------------------------------------------------
+// Chat JSON
+// ---------------------------------------------------------------------------
+
+/** Appel chat avec sortie JSON Schema stricte. */
 export async function chatJsonSchema<T = Record<string, unknown>>(options: {
   model: string
   system: string
@@ -245,70 +499,44 @@ export async function chatJsonSchema<T = Record<string, unknown>>(options: {
   imageBase64?: string
 }): Promise<AiCallResult & { parsed: T }> {
   const start = Date.now()
-  const apiKey = getApiKey()
 
-  let userContent: string | Array<Record<string, unknown>>
+  const parts: GeminiPart[] = [{ text: options.user }]
   if (options.imageBase64 && options.imageMediaType) {
-    const dataUrl = `data:${options.imageMediaType};base64,${options.imageBase64}`
-    userContent = [
-      { type: 'text', text: options.user },
-      { type: 'image_url', image_url: dataUrl },
-    ]
-  } else {
-    userContent = options.user
+    parts.push({
+      inline_data: { mime_type: options.imageMediaType, data: options.imageBase64 },
+    })
   }
 
-  const response = await fetchWithRetry(`${getApiBase()}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: options.model,
-      messages: [
-        { role: 'system', content: options.system },
-        { role: 'user', content: userContent },
-      ],
-      max_tokens: options.maxTokens ?? 4096,
-      temperature: options.temperature ?? 0,
-      response_format: mistralJsonSchema(options.schemaName, options.schema),
-    }),
+  const result = await generateContent({
+    model: options.model,
+    system: options.system,
+    parts,
+    maxTokens: options.maxTokens ?? 4096,
+    temperature: options.temperature ?? 0,
+    responseSchema: options.schema,
   })
 
-  if (!response.ok) {
-    throw new Error(`Mistral chat ${response.status}: ${await response.text()}`)
-  }
-
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
-    model?: string
-    usage?: { prompt_tokens?: number; completion_tokens?: number }
-  }
-
-  const text = payload.choices?.[0]?.message?.content ?? ''
-  if (!text) throw new Error('Réponse Mistral vide')
-
-  const parsed = JSON.parse(text) as T
-  const result: AiCallResult = {
-    text,
-    model: payload.model ?? options.model,
-    inputTokens: payload.usage?.prompt_tokens ?? 0,
-    outputTokens: payload.usage?.completion_tokens ?? 0,
+  const parsed = parseJsonResponse<T>(result.text, options.schemaName)
+  const callResult: AiCallResult = {
+    text: result.text,
+    model: result.model,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
     durationMs: Date.now() - start,
   }
 
   console.log(
-    `Mistral ${options.schemaName} ok — model=${result.model} in=${result.inputTokens} out=${result.outputTokens}`,
+    `Gemini ${options.schemaName} ok — model=${callResult.model} in=${callResult.inputTokens} out=${callResult.outputTokens}`,
   )
 
-  return { ...result, parsed }
+  return { ...callResult, parsed }
 }
 
-/**
- * Extrait le premier objet JSON de la réponse du modèle (fallback legacy).
- * Tolère les fences markdown mais json_schema devrait rendre cela inutile.
- */
+// ---------------------------------------------------------------------------
+// Utilitaires extraction
+// ---------------------------------------------------------------------------
+
+/** Extrait le premier objet JSON (fallback si sortie non strictement JSON). */
 export function parseJsonOutput<T = Record<string, unknown>>(raw: string): T {
   const trimmed = raw.trim()
   const unfenced = trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
@@ -352,7 +580,7 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
-/** Compte les champs null — déclenche le fallback Pixtral si trop élevé. */
+/** Compte les champs null — déclenche le fallback vision si trop élevé. */
 export function nullFieldRatio(fields: Record<string, string | null>): number {
   const values = Object.values(fields)
   if (values.length === 0) return 1

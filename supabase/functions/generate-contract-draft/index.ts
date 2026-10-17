@@ -1,8 +1,8 @@
 /**
  * Génération d'une première version de contrat/proposition depuis un brief.
  *
- * Mistral large-latest avec json_schema strict. Traçabilité ai_version vs
- * current_version. Jamais d'envoi automatique au client.
+ * Gemini + JSON Schema strict. Traçabilité ai_version vs current_version.
+ * Jamais d'envoi automatique au client.
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -12,7 +12,7 @@ import {
   getAuthenticatedUser,
   jsonResponse,
 } from '../_shared/functionAuth.ts'
-import { chatJsonSchema, logAiUsage, MODEL_LARGE } from '../_shared/ai-provider.ts'
+import { chatJsonSchema, logAiUsage, MODEL_SMALL } from '../_shared/ai-provider.ts'
 import { agencyLegalContextBlock, type AgencyLegalProfile } from '../_shared/agencyLegal.ts'
 import { CONTRACT_DRAFT_JSON_SCHEMA } from '../_shared/documentSchemas.ts'
 import { assertAiAddonActive, consumeAiCredit } from '../_shared/aiEntitlements.ts'
@@ -198,7 +198,7 @@ serve(async (req) => {
       title?: string
       sections?: Array<Partial<Section>>
     }>({
-      model: MODEL_LARGE,
+      model: MODEL_SMALL,
       system: SYSTEM_PROMPT,
       user: userMessage,
       schema: CONTRACT_DRAFT_JSON_SCHEMA,

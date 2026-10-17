@@ -1,10 +1,12 @@
 # Rétention & conformité données IA (Freli)
 
-## Sous-traitant Mistral
+## Sous-traitant Google Gemini
 
 - Appels OCR / chat / vision uniquement depuis Edge Functions (`ai-provider.ts`).
-- Clé `MISTRAL_API_KEY` (ou `_DEV`) en secrets serveur — jamais `VITE_*`.
-- Hébergement UE par défaut côté Mistral ; activer **Zero Data Retention (ZDR)** sur le plan Scale pour désactiver la rétention training/debug Mistral (30 j sinon).
+- Clé `GEMINI_API_KEY` (ou `_DEV`) en secrets serveur — jamais `VITE_*`.
+- Sur le free tier Gemini, les contenus peuvent servir à améliorer les modèles Google ; pour un usage prod plus strict, activer un projet facturé / conditions entreprise Google AI.
+- Pipeline extraction en base : `ocr_chat` | `vision_fallback` (`pixtral_fallback` = legacy encore accepté).
+- RPCs crédits / purge OCR : `service_role` uniquement (pas d’appel client).
 
 ## `ocr_markdown` / `ocr_pages`
 

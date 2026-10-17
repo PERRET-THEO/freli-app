@@ -106,7 +106,7 @@ serve(async (req) => {
       headers: internalSecretHeaders(),
     })
 
-    const payload = invokeResult.data as {
+    type GeneratePayload = {
       error?: string
       skipped?: boolean
       reason?: string
@@ -114,11 +114,33 @@ serve(async (req) => {
       reminderId?: string
       status?: string
       previewRequired?: boolean
-    } | null
+    }
+
+    let payload = invokeResult.data as GeneratePayload | null
+
+    // FunctionsHttpError : le body JSON de generate est souvent dans error.context.
+    if (invokeResult.error && (!payload || !payload.error)) {
+      const ctx = (invokeResult.error as { context?: Response }).context
+      if (ctx && typeof ctx.json === 'function') {
+        try {
+          const nested = (await ctx.json()) as GeneratePayload
+          if (nested && typeof nested === 'object') {
+            payload = { ...nested, ...payload }
+          }
+        } catch {
+          // ignore parse errors
+        }
+      }
+    }
 
     if (invokeResult.error || payload?.error) {
       return jsonResponse(
-        { error: invokeResult.error?.message ?? payload?.error ?? 'Génération échouée' },
+        {
+          error:
+            payload?.error ??
+            invokeResult.error?.message ??
+            'Génération échouée',
+        },
         400,
       )
     }

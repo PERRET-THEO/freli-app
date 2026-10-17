@@ -1,8 +1,8 @@
 /**
  * Extraction IA de données depuis un document uploadé par le client.
  *
- * Pipeline Mistral : OCR (classification + markdown) → chat json_schema
- * (mistral-small-latest) → fallback Pixtral si trop de champs null.
+ * Pipeline Gemini : OCR multimodal (classification + markdown) → chat JSON
+ * → fallback vision (même modèle) si trop de champs null.
  * Résultat en pending_review : validation humaine obligatoire.
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -12,8 +12,8 @@ import {
   arrayBufferToBase64,
   chatJsonSchema,
   logAiUsage,
-  MODEL_PIXTRAL,
   MODEL_SMALL,
+  MODEL_VISION,
   normalizeToSchema,
   nullFieldRatio,
   runOcr,
@@ -90,7 +90,7 @@ async function extractFieldsFromOcr(options: {
   ].join('\n\n')
 
   const chatOptions = {
-    model: options.useVision ? MODEL_PIXTRAL : MODEL_SMALL,
+    model: options.useVision ? MODEL_VISION : MODEL_SMALL,
     system: EXTRACTION_SYSTEM,
     user: userPrompt,
     schema,
@@ -129,7 +129,8 @@ async function extractFieldsFromOcr(options: {
   return {
     fields,
     model: result.model,
-    pipeline: options.useVision ? 'pixtral_fallback' : 'ocr_chat',
+    // vision_fallback (pixtral_fallback = valeur legacy encore acceptée en CHECK SQL)
+    pipeline: options.useVision ? 'vision_fallback' : 'ocr_chat',
   }
 }
 

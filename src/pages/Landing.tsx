@@ -322,7 +322,7 @@ export function Landing() {
               />
               <div className="relative grid gap-6 md:grid-cols-3 md:gap-8">
                 {timeSavingSteps.map((s, idx) => (
-                  <div key={s.step} className="relative flex flex-col items-center md:items-stretch">
+                  <div key={s.step} className="relative flex h-full flex-col items-center md:items-stretch">
                     <div className="relative z-10 mx-auto flex h-[92px] w-[92px] items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent)] to-[#8B9BFF] shadow-[0_12px_32px_rgba(90,110,255,0.35)] ring-4 ring-[var(--ink)]">
                       <s.icon className="h-8 w-8 text-[var(--white)]" aria-hidden />
                       <span className="absolute -right-2 -top-2 rounded-full bg-[var(--white)] px-2 py-[2px] font-display text-[11px] font-extrabold tracking-tight text-[var(--accent)] shadow">
@@ -330,7 +330,7 @@ export function Landing() {
                       </span>
                     </div>
 
-                    <div className="mt-5 rounded-[var(--radius-lg)] border border-[rgba(255,255,255,0.08)] bg-gradient-to-b from-[rgba(255,255,255,0.04)] to-[rgba(255,255,255,0.02)] p-5 backdrop-blur-sm">
+                    <div className="mt-5 flex flex-col rounded-[var(--radius-lg)] border border-[rgba(255,255,255,0.08)] bg-gradient-to-b from-[rgba(255,255,255,0.04)] to-[rgba(255,255,255,0.02)] p-5 backdrop-blur-sm md:flex-1">
                       <div className="flex items-center justify-between">
                         <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-soft)] px-2.5 py-[3px] font-display text-[11px] font-bold uppercase tracking-wide text-[var(--accent)]">
                           <Timer className="h-3 w-3" aria-hidden />
@@ -348,7 +348,7 @@ export function Landing() {
                         {s.text}
                       </p>
 
-                      <div className="mt-4 flex items-center gap-2 rounded-[var(--radius-sm)] bg-[rgba(0,0,0,0.35)] px-3 py-2 font-mono text-[12px] text-[rgba(253,252,250,0.75)]">
+                      <div className="mt-4 flex items-center gap-2 rounded-[var(--radius-sm)] bg-[rgba(0,0,0,0.35)] px-3 py-2 font-mono text-[12px] text-[rgba(253,252,250,0.75)] md:mt-auto md:pt-4">
                         <span className="h-2 w-2 rounded-full bg-[var(--mint)]" />
                         <span className="truncate">{s.mock}</span>
                       </div>

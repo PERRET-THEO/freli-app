@@ -1,8 +1,8 @@
 /**
- * Génération du CONTENU d'une relance intelligente par Mistral.
+ * Génération du CONTENU d'une relance intelligente (Gemini).
  *
  * La décision d'envoyer (timing, plafond, catégorie) est déterministe
- * (smart-reminders-batch). Ici : rédaction via mistral-small-latest.
+ * (smart-reminders-batch). Ici : rédaction via chatJsonSchema / MODEL_SMALL.
  * L'envoi auto n'a lieu que dans la fenêtre horaire Paris de l'agence.
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -155,14 +155,6 @@ serve(async (req) => {
       return jsonResponse({ skipped: true, reason: addonDenied.error, code: addonDenied.code })
     }
 
-    const credit = await consumeAiCredit(supabase, {
-      agencyId: project.agency_id,
-      feature: 'reminders',
-    })
-    if (!credit.ok) {
-      return jsonResponse({ skipped: true, reason: credit.message, code: credit.code })
-    }
-
     const agencyName = typeof agency.name === 'string' && agency.name ? agency.name : 'Votre agence'
     const tone =
       typeof agency.ai_reminder_tone === 'string' && agency.ai_reminder_tone in TONE_INSTRUCTIONS
@@ -222,6 +214,22 @@ serve(async (req) => {
       temperature: 0.7,
     })
 
+    const parsed = parseReminderPayload(result.parsed)
+    if (!parsed.ok) {
+      throw new Error(`Réponse IA invalide: ${parsed.error}`)
+    }
+    const subject = parsed.subject
+    const bodyText = parsed.body
+
+    // Débit seulement après succès Gemini+parse — un échec IA ne brûle plus de crédit.
+    const credit = await consumeAiCredit(supabase, {
+      agencyId: project.agency_id,
+      feature: 'reminders',
+    })
+    if (!credit.ok) {
+      return jsonResponse({ skipped: true, reason: credit.message, code: credit.code })
+    }
+
     await logAiUsage(supabase, {
       agencyId: project.agency_id,
       projectId: project.id,
@@ -234,13 +242,6 @@ serve(async (req) => {
       promptVersion: REMINDER_PROMPT_VERSION,
       creditsConsumed: 1,
     })
-
-    const parsed = parseReminderPayload(result.parsed)
-    if (!parsed.ok) {
-      throw new Error(`Réponse IA invalide: ${parsed.error}`)
-    }
-    const subject = parsed.subject
-    const bodyText = parsed.body
 
     // Première relance : toujours brouillon. Hors fenêtre Paris : brouillon aussi.
     const { count: priorSent } = await supabase

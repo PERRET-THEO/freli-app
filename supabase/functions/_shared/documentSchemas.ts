@@ -1,5 +1,5 @@
 /**
- * Schémas JSON stricts (Mistral json_schema) et listes de champs par type de document.
+ * Schémas JSON stricts (Gemini responseSchema) et listes de champs par type de document.
  */
 
 export const DOCUMENT_FIELD_LISTS: Record<string, string[]> = {
@@ -195,14 +195,3 @@ export const CONTRACT_DRAFT_JSON_SCHEMA = {
   },
 }
 
-/** Enveloppe json_schema pour l'API Mistral. */
-export function mistralJsonSchema(name: string, schema: Record<string, unknown>) {
-  return {
-    type: 'json_schema' as const,
-    json_schema: {
-      name,
-      strict: true,
-      schema,
-    },
-  }
-}

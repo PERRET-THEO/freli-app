@@ -1,7 +1,7 @@
 /**
  * Analyse d'un modèle de référence (contrat/proposition uploadé par l'agence).
  *
- * Pipeline Mistral : OCR du PDF (blocs + structure) → mistral-large-latest extrait
+ * Pipeline Gemini : OCR multimodal du PDF → chat JSON extrait
  * un résumé structuré stocké dans structure_summary + layout_profile.
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -12,7 +12,7 @@ import {
   arrayBufferToBase64,
   chatJsonSchema,
   logAiUsage,
-  MODEL_LARGE,
+  MODEL_SMALL,
   runOcr,
 } from '../_shared/ai-provider.ts'
 import { STRUCTURE_SUMMARY_JSON_SCHEMA } from '../_shared/documentSchemas.ts'
@@ -123,7 +123,7 @@ serve(async (req) => {
     ].filter(Boolean).join('\n\n')
 
     const result = await chatJsonSchema<Record<string, unknown>>({
-      model: MODEL_LARGE,
+      model: MODEL_SMALL,
       system: SYSTEM_PROMPT,
       user: userPrompt,
       schema: STRUCTURE_SUMMARY_JSON_SCHEMA,

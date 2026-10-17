@@ -57,6 +57,58 @@ export async function fetchProjectSmartReminders(
   return (data ?? []) as SmartReminderRecord[]
 }
 
+const AI_RATE_LIMIT_MESSAGE =
+  'Limite de requêtes IA atteinte. Réessayez dans quelques minutes.'
+
+/** Filet UI : humanise les erreurs rate-limit provider (Gemini / legacy). */
+function humanizeInvokeError(message: string): string {
+  const lower = message.toLowerCase()
+  if (
+    lower.includes('429') ||
+    lower.includes('rate_limit') ||
+    lower.includes('rate limit exceeded') ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('quota')
+  ) {
+    return AI_RATE_LIMIT_MESSAGE
+  }
+  return message
+}
+
+/** Extrait le détail métier d'un FunctionsHttpError (body JSON dans error.context). */
+async function invokeErrorMessage(
+  error: { message?: string; context?: Response } | null,
+  data: unknown,
+): Promise<string> {
+  let raw = ''
+
+  if (data && typeof data === 'object') {
+    const body = data as { error?: unknown; reason?: unknown }
+    if (typeof body.error === 'string' && body.error.trim()) {
+      raw = body.error
+    } else if (typeof body.reason === 'string' && body.reason.trim()) {
+      raw = body.reason
+    }
+  }
+  const context = error?.context
+  if (!raw && context && typeof context.json === 'function') {
+    try {
+      const parsed = (await context.clone().json()) as { error?: unknown; reason?: unknown }
+      if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+        raw = parsed.error
+      } else if (typeof parsed?.reason === 'string' && parsed.reason.trim()) {
+        raw = parsed.reason
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+  if (!raw) {
+    raw = error?.message?.trim() || 'Erreur Edge Function'
+  }
+  return humanizeInvokeError(raw)
+}
+
 /** Envoi d'un brouillon (éventuellement édité) via l'Edge Function dédiée. */
 export async function sendSmartReminder(
   reminderId: string,
@@ -66,7 +118,7 @@ export async function sendSmartReminder(
   const { data, error } = await supabase.functions.invoke('send-smart-reminder', {
     body: { reminderId, subject, body },
   })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(await invokeErrorMessage(error, data))
   if (data?.error) throw new Error(String(data.error))
 }
 
@@ -95,7 +147,7 @@ export async function requestSmartReminder(
   const { data, error } = await supabase.functions.invoke('request-smart-reminder', {
     body: { projectId, forceRefresh: options?.forceRefresh === true },
   })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(await invokeErrorMessage(error, data))
   if (data?.error) throw new Error(String(data.error))
   if (data?.skipped) {
     throw new Error(String(data.reason ?? 'Génération IA indisponible (add-on ou crédits).'))

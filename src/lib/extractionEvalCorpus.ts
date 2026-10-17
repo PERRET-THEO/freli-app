@@ -1,6 +1,6 @@
 /**
  * Corpus d'évaluation extraction (fixtures textuelles OCR).
- * Utilisé pour mesurer field-accuracy hors CI Mistral (pas d'appel API).
+ * Utilisé pour mesurer field-accuracy hors CI (pas d'appel API).
  */
 export type ExtractionEvalCase = {
   id: string
