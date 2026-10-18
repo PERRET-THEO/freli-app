@@ -1,7 +1,40 @@
 import { describe, expect, it } from 'vitest'
-import { mergeClientActivityEvents, paginateActivityEvents } from './clientActivity'
+import {
+  formatAmountChangedTitle,
+  mergeClientActivityEvents,
+  paginateActivityEvents,
+} from './clientActivity'
 
 describe('mergeClientActivityEvents', () => {
+  it('reformate payment.amount_changed depuis metadata', () => {
+    const events = mergeClientActivityEvents({
+      projects: [
+        {
+          id: 'p1',
+          client_name: 'Acme',
+          created_at: '2026-01-01T10:00:00.000Z',
+        },
+      ],
+      reminders: [],
+      checklist: [],
+      extractions: [],
+      storedEvents: [
+        {
+          id: 'a1',
+          event_type: 'payment.amount_changed',
+          title: 'Montant modifié : 450. € → 500. €',
+          occurred_at: '2026-01-05T10:00:00.000Z',
+          project_id: 'p1',
+          metadata: { old_price: 450, new_price: 500 },
+        },
+      ],
+    })
+    const amountEvent = events.find((e) => e.eventType === 'payment.amount_changed')
+    expect(amountEvent?.title).toBe(formatAmountChangedTitle(450, 500))
+    expect(amountEvent?.title).toMatch(/450\s€ → 500\s€/)
+    expect(amountEvent?.title).not.toMatch(/\d\.\s€/)
+  })
+
   it('merges reminders, files, signatures and project creation newest first', () => {
     const events = mergeClientActivityEvents({
       projects: [

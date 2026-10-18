@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { formatPriceEur } from './payments'
+import { formatEuro } from './payments'
 
 export type ContractProjectContext = {
   clientName: string
@@ -97,7 +97,7 @@ export async function fetchContractProjectContext(
   return {
     clientName: data.client_name?.trim() || 'Client',
     clientEmail: data.client_email?.trim() || null,
-    priceLabel: data.price != null ? formatPriceEur(data.price) : null,
+    priceLabel: data.price != null ? formatEuro(data.price) : null,
     agencyName: agency?.name?.trim() || null,
     agencyLines: agencyLinesFrom(agency),
     clientLines: clientLinesFrom(data.client_name ?? 'Client', data.client_email, client),

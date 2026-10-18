@@ -53,9 +53,53 @@ export async function syncChecklistToProject(
 }
 
 export async function syncProjectPrice(projectId: string, priceEur: number | null): Promise<void> {
+  const nextPrice = priceEur && priceEur > 0 ? priceEur : null
+
+  const { data: project } = await supabase
+    .from('projects')
+    .select('price, stripe_checkout_session_id, payment_status')
+    .eq('id', projectId)
+    .maybeSingle()
+
+  const priceChanged = (project?.price ?? null) !== nextPrice
+
+  // Prefer expiring on Stripe while session_id is still on the row (agency JWT).
+  // Any other PATCH to price still hits the DB trigger → queue + cron expire.
+  if (
+    priceChanged &&
+    project?.stripe_checkout_session_id &&
+    project.payment_status !== 'paid'
+  ) {
+    const { error: expireError } = await supabase.functions.invoke('stripe-payment-link', {
+      body: { projectId, action: 'expire_checkout', sendEmail: false },
+    })
+    if (expireError) console.warn('expire checkout before price change:', expireError.message)
+  }
+
+  // Trigger BEFORE UPDATE OF price clears URL/session and queues expire if still present.
   const { error } = await supabase
     .from('projects')
-    .update({ price: priceEur && priceEur > 0 ? priceEur : null })
+    .update({ price: nextPrice })
     .eq('id', projectId)
+  if (error) throw new Error(error.message)
+}
+
+export async function syncProjectPaymentSettings(
+  projectId: string,
+  settings: {
+    paymentUnlockMode?: 'after_prerequisites' | 'immediate'
+    amountType?: 'full' | 'deposit'
+    depositPercent?: number | null
+  },
+): Promise<void> {
+  const patch: Record<string, unknown> = {}
+  if (settings.paymentUnlockMode) patch.payment_unlock_mode = settings.paymentUnlockMode
+  if (settings.amountType) {
+    patch.amount_type = settings.amountType
+    patch.deposit_percent =
+      settings.amountType === 'deposit' ? (settings.depositPercent ?? null) : null
+  }
+  if (Object.keys(patch).length === 0) return
+  const { error } = await supabase.from('projects').update(patch).eq('id', projectId)
   if (error) throw new Error(error.message)
 }

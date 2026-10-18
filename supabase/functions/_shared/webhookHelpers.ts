@@ -1,5 +1,7 @@
 /** Pure webhook helpers (no Deno env) — shared by Edge delivery + Vitest. */
 
+import { formatEuro } from './formatEuro.ts'
+
 export const MAX_WEBHOOKS_PER_USER = 5
 export const WEBHOOK_MAX_ATTEMPTS = 3
 export const WEBHOOK_RETRY_BACKOFF_MS = [500, 1500, 3000] as const
@@ -114,15 +116,20 @@ export function buildSlackIncomingPayload(
     fields.push({ type: 'mrkdwn', text: `*Statut:*\n${String(project.status)}` })
   }
   if (project.price != null) {
-    fields.push({ type: 'mrkdwn', text: `*Prix:*\n${String(project.price)} €` })
+    fields.push({ type: 'mrkdwn', text: `*Prix:*\n${formatEuro(Number(project.price))}` })
   }
   if (project.payment_status != null) {
     fields.push({ type: 'mrkdwn', text: `*Paiement:*\n${String(project.payment_status)}` })
   }
   if (typeof meta.amount_cents === 'number') {
+    const currency = String(meta.currency ?? 'eur').toLowerCase()
+    const amountLabel =
+      currency === 'eur'
+        ? formatEuro(meta.amount_cents / 100)
+        : `${(meta.amount_cents / 100).toFixed(2)} ${currency.toUpperCase()}`
     fields.push({
       type: 'mrkdwn',
-      text: `*Montant:*\n${(meta.amount_cents / 100).toFixed(2)} ${String(meta.currency ?? 'eur').toUpperCase()}`,
+      text: `*Montant:*\n${amountLabel}`,
     })
   }
 

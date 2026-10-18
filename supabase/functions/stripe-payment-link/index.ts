@@ -1,6 +1,14 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { ensureCheckoutSession, stripeConnectReady } from '../_shared/stripeCheckout.ts'
+import {
+  ensureCheckoutSession,
+  expireProjectCheckoutSession,
+  stripeConnectReady,
+} from '../_shared/stripeCheckout.ts'
+import {
+  evaluatePaymentUnlock,
+  stampPaymentUnlockedAt,
+} from '../_shared/paymentUnlock.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,7 +57,11 @@ serve(async (req) => {
 
   try {
     const rawBody = await req.text()
-    const body = (rawBody ? JSON.parse(rawBody) : {}) as { projectId?: string; sendEmail?: boolean }
+    const body = (rawBody ? JSON.parse(rawBody) : {}) as {
+      projectId?: string
+      sendEmail?: boolean
+      action?: 'create' | 'expire_checkout'
+    }
     if (!body.projectId) {
       return new Response(JSON.stringify({ error: 'Missing projectId' }), {
         status: 400,
@@ -57,11 +69,12 @@ serve(async (req) => {
       })
     }
     const sendEmail = body.sendEmail !== false
+    const action = body.action ?? 'create'
 
     const { data: project, error: projectError } = await supabaseAdmin
       .from('projects')
       .select(
-        'id, client_name, client_email, token, price, payment_status, status, agency_id, stripe_checkout_url, stripe_checkout_session_id, agencies(user_id)',
+        'id, client_name, client_email, token, price, payment_status, status, agency_id, stripe_checkout_url, stripe_checkout_session_id, payment_unlock_mode, payment_unlocked_at, agencies(user_id)',
       )
       .eq('id', body.projectId)
       .single()
@@ -72,6 +85,31 @@ serve(async (req) => {
     if (agencyRow?.user_id !== user.id) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), {
         status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const { data: integration } = await supabaseAdmin
+      .from('integrations')
+      .select('config')
+      .eq('user_id', user.id)
+      .eq('provider', 'stripe')
+      .maybeSingle()
+
+    const connect = stripeConnectReady((integration?.config ?? {}) as Record<string, unknown>)
+
+    if (action === 'expire_checkout') {
+      if (connect) {
+        await expireProjectCheckoutSession(project, connect)
+      } else {
+        await supabaseAdmin
+          .from('projects')
+          .update({ stripe_checkout_url: null, stripe_checkout_session_id: null })
+          .eq('id', project.id)
+          .neq('payment_status', 'paid')
+      }
+      return new Response(JSON.stringify({ success: true, expired: true }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -89,14 +127,32 @@ serve(async (req) => {
       })
     }
 
-    const { data: integration } = await supabaseAdmin
-      .from('integrations')
-      .select('config')
-      .eq('user_id', user.id)
-      .eq('provider', 'stripe')
-      .maybeSingle()
+    const { data: checklistItems } = await supabaseAdmin
+      .from('checklist_items')
+      .select('type, completed, required, order_index')
+      .eq('project_id', project.id)
+      .order('order_index', { ascending: true })
 
-    const connect = stripeConnectReady((integration?.config ?? {}) as Record<string, unknown>)
+    const unlock = evaluatePaymentUnlock({
+      unlockMode: project.payment_unlock_mode,
+      paymentUnlockedAt: project.payment_unlocked_at,
+      items: checklistItems ?? [],
+    })
+    if (!unlock.unlocked) {
+      return new Response(
+        JSON.stringify({
+          error: unlock.lockMessage ?? 'Paiement pas encore disponible',
+          code: 'payment_locked',
+        }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    await stampPaymentUnlockedAt(supabaseAdmin, project.id, project.payment_unlocked_at)
+
     if (!connect) {
       return new Response(JSON.stringify({ error: 'Stripe non configuré ou non prêt' }), {
         status: 400,

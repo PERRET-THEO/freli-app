@@ -27,7 +27,7 @@ const QUICK_ADD_ITEMS: { type: ChecklistItemType; label: string; defaultLabel: s
   { type: 'url', label: 'Lien', defaultLabel: 'Lien à fournir' },
   { type: 'choice', label: 'Choix', defaultLabel: 'Choix à faire' },
   { type: 'signature', label: 'Contrat à signer', defaultLabel: 'Contrat à signer' },
-  { type: 'payment', label: 'Paiement', defaultLabel: 'Régler l’acompte' },
+  { type: 'payment', label: 'Paiement', defaultLabel: 'Paiement' },
   { type: 'schedule', label: 'Rendez-vous', defaultLabel: 'Réserver le rendez-vous de lancement' },
   { type: 'credentials', label: 'Identifiants', defaultLabel: 'Accès / identifiants' },
 ]

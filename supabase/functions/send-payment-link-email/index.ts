@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'npm:resend'
 import { getResendFrom, assertResendOk } from '../_shared/email.ts'
 import { buildClientPaymentEmail } from '../_shared/clientEmailHtml.ts'
+import { formatEuro } from '../_shared/formatEuro.ts'
 import {
   assertProjectToken,
   assertUserOwnsProject,
@@ -76,7 +77,7 @@ serve(async (req) => {
       clientName: project.client_name,
       agencyName,
       checkoutUrl: project.stripe_checkout_url,
-      amountLabel: `${project.price} €`,
+      amountLabel: formatEuro(project.price),
     })
 
     const result = await resend.emails.send({

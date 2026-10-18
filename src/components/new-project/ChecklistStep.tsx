@@ -2,12 +2,15 @@ import { Button, Input } from '../ui'
 import { ChecklistBuilder } from '../checklist/ChecklistBuilder'
 import type { DraftChecklistItem } from '../../lib/checklist'
 import type { AgencyChecklistTemplate } from '../../lib/checklistTemplates'
+import { PAYMENT_UNLOCK_HELP, type PaymentUnlockMode } from '../../lib/payments'
 
 type ChecklistStepProps = {
   items: DraftChecklistItem[]
   onItemsChange: (items: DraftChecklistItem[]) => void
   projectPrice: string
   onProjectPriceChange: (value: string) => void
+  paymentUnlockMode: PaymentUnlockMode
+  onPaymentUnlockModeChange: (mode: PaymentUnlockMode) => void
   contractTemplates: { id: string; name: string }[]
   agencyTemplates: AgencyChecklistTemplate[]
   agencyId: string | null
@@ -32,6 +35,8 @@ export function ChecklistStep({
   onItemsChange,
   projectPrice,
   onProjectPriceChange,
+  paymentUnlockMode,
+  onPaymentUnlockModeChange,
   contractTemplates,
   agencyTemplates,
   agencyId,
@@ -50,6 +55,8 @@ export function ChecklistStep({
   onBack,
   onSubmit,
 }: ChecklistStepProps) {
+  const hasPaymentStep = items.some((item) => item.type === 'payment')
+
   return (
     <div className="mt-6 min-w-0">
       <p className="text-sm font-body text-[var(--ink-muted)]">Configure la checklist de démarrage.</p>
@@ -65,16 +72,39 @@ export function ChecklistStep({
           Prix (€)
         </label>
         <p className="mb-2 text-xs font-body text-[var(--ink-muted)]">
-          Montant facturé au client à la fin de l&apos;onboarding si Stripe est activé dans Intégrations. Laisser vide pour ne pas proposer de paiement.
+          Montant réglé par le client via Stripe (étape Paiement ou en fin de parcours). Laisser
+          vide pour ne pas proposer de paiement.
         </p>
         <Input
           type="number"
           min={0}
-          step={1}
+          step={0.01}
           placeholder="ex: 650"
           value={projectPrice}
           onChange={(e) => onProjectPriceChange(e.target.value)}
         />
+        {(hasPaymentStep || (priceEur != null && priceEur > 0)) && (
+          <label className="mt-4 flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              className="mt-1 accent-[var(--accent)]"
+              checked={paymentUnlockMode === 'immediate'}
+              onChange={(e) =>
+                onPaymentUnlockModeChange(
+                  e.target.checked ? 'immediate' : 'after_prerequisites',
+                )
+              }
+            />
+            <span>
+              <span className="block font-body text-sm font-medium text-[var(--ink)]">
+                Paiement dès le début
+              </span>
+              <span className="mt-1 block font-body text-xs text-[var(--ink-muted)]">
+                {PAYMENT_UNLOCK_HELP}
+              </span>
+            </span>
+          </label>
+        )}
       </div>
 
       <div className="mt-4">

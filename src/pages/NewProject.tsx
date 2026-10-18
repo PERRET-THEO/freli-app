@@ -31,7 +31,12 @@ import {
   type ContractGenerationContext,
   type DraftChecklistItem,
 } from '../lib/checklist'
-import { syncChecklistToProject, syncProjectPrice } from '../lib/checklistSync'
+import {
+  syncChecklistToProject,
+  syncProjectPaymentSettings,
+  syncProjectPrice,
+} from '../lib/checklistSync'
+import { parsePriceInput, type PaymentUnlockMode } from '../lib/payments'
 import { isValidContactEmail } from '../lib/contactLinks'
 import {
   fetchProjectGeneratedDocuments,
@@ -146,6 +151,8 @@ export function NewProject() {
   const [agencyId, setAgencyId] = useState<string | null>(null)
   const [agencyTemplates, setAgencyTemplates] = useState<AgencyChecklistTemplate[]>([])
   const [projectPrice, setProjectPrice] = useState('')
+  const [paymentUnlockMode, setPaymentUnlockMode] =
+    useState<PaymentUnlockMode>('after_prerequisites')
   const [aiContractsEnabled, setAiContractsEnabled] = useState(false)
 
   const [createdProjectId, setCreatedProjectId] = useState<string | null>(null)
@@ -202,10 +209,7 @@ export function NewProject() {
     [emailConflict, wizardForm],
   )
 
-  const priceEur = useMemo(() => {
-    const euros = Math.round(parseFloat(projectPrice.replace(',', '.')))
-    return Number.isFinite(euros) && euros > 0 ? euros : null
-  }, [projectPrice])
+  const priceEur = useMemo(() => parsePriceInput(projectPrice), [projectPrice])
 
   const defaultContractBrief = useMemo(
     () => buildDefaultContractBrief(clientFullName, priceEur),
@@ -665,6 +669,8 @@ export function NewProject() {
       items,
     })
 
+    await syncProjectPaymentSettings(result.projectId, { paymentUnlockMode })
+
     setSelectedClientId(result.clientId)
 
     const aiLinks: PendingContractLink[] = []
@@ -714,6 +720,7 @@ export function NewProject() {
 
   const syncProjectBeforeContractStep = async (projectId: string) => {
     await syncProjectPrice(projectId, priceEur)
+    await syncProjectPaymentSettings(projectId, { paymentUnlockMode })
     const signatureItemId = pendingContractLinks[0]?.checklistItemId ?? null
     const syncResult = await syncChecklistToProject(projectId, items, signatureItemId)
     if (syncResult.signatureItemId) {
@@ -1003,6 +1010,8 @@ export function NewProject() {
             onItemsChange={setItems}
             projectPrice={projectPrice}
             onProjectPriceChange={setProjectPrice}
+            paymentUnlockMode={paymentUnlockMode}
+            onPaymentUnlockModeChange={setPaymentUnlockMode}
             contractTemplates={contractTemplates}
             agencyTemplates={agencyTemplates}
             agencyId={agencyId}

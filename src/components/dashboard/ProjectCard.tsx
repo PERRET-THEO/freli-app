@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { mailtoHref, telHref } from '../../lib/contactLinks'
-import { getPaymentState } from '../../lib/payments'
+import { resolvePaymentState } from '../../lib/payments'
 import {
   formatBottleneckLabel,
   isBottleneckStale,
@@ -61,7 +61,12 @@ export function ProjectCard({
 
   const secondary = getSecondaryIndicator(project, pendingExtraction, now)
   const activityLabel = getActivityLabel(project, now)
-  const paymentState = getPaymentState(project.price, project.paymentStatus)
+  // Cards don't load checklist unlock details; unlocked=true keeps unpaid states visible.
+  const paymentLifecycle = resolvePaymentState({
+    price: project.price,
+    paymentStatus: project.paymentStatus,
+    unlockInfo: { unlocked: true },
+  })
 
   useEffect(() => {
     if (!menuOpen) return
@@ -250,14 +255,28 @@ export function ProjectCard({
               {secondary.label}
             </span>
           )}
-          {paymentState === 'paid' && (
+          {paymentLifecycle === 'paid' && (
             <span className="inline-flex items-center rounded-full bg-[var(--status-done-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--status-done)]">
               Payé
             </span>
           )}
-          {paymentState === 'pending' && project.status === 'completed' && (
+          {(paymentLifecycle === 'available' ||
+            paymentLifecycle === 'link_created' ||
+            paymentLifecycle === 'link_sent' ||
+            paymentLifecycle === 'not_available') &&
+            project.status === 'completed' && (
             <span className="inline-flex items-center rounded-full bg-[var(--status-waiting-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--status-waiting)]">
               Paiement en attente
+            </span>
+          )}
+          {paymentLifecycle === 'failed' && (
+            <span className="inline-flex items-center rounded-full bg-[var(--status-waiting-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--status-waiting)]">
+              Échec paiement
+            </span>
+          )}
+          {paymentLifecycle === 'refunded' && (
+            <span className="inline-flex items-center rounded-full bg-[var(--surface-warm)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--ink-muted)]">
+              Remboursé
             </span>
           )}
           <span className="ml-auto truncate text-[11px] font-body text-[var(--ink-muted)]">

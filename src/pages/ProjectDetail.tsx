@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
 import { ExtractionReviewPanel } from '../components/extraction/ExtractionReviewPanel'
@@ -6,14 +6,28 @@ import { ChecklistReviewPanel } from '../components/review/ChecklistReviewPanel'
 import { SmartRemindersPanel } from '../components/reminders/SmartRemindersPanel'
 import { ContractGeneratorPanel } from '../components/contracts/ContractGeneratorPanel'
 import { ClientContactBlock } from '../components/client/ClientContactBlock'
-import { Badge, Button, Card } from '../components/ui'
+import { ClientActivityTimeline } from '../components/client/ClientActivityTimeline'
+import { Badge, Button, Card, Input } from '../components/ui'
+import {
+  mergeClientActivityEvents,
+  type ClientActivityEvent,
+} from '../lib/clientActivity'
 import { sendProjectInviteEmail, sendProjectReminderEmail } from '../lib/resend'
 import { canResendInvite, formatInviteSentAt } from '../lib/projectInvite'
 import { requestSmartReminder } from '../lib/smartReminders'
 import { sendPaymentLink } from '../lib/stripePayment'
 import { syncProjectDriveFolder } from '../lib/googleDriveConnect'
 import { openStripeExpressDashboard } from '../lib/stripeConnectDashboard'
-import { getPaymentState, formatPriceEur, PAYMENT_STATE_LABELS } from '../lib/payments'
+import {
+  canEditProjectPrice,
+  formatEuro,
+  getPaymentUnlockInfo,
+  parsePriceInput,
+  PAYMENT_LIFECYCLE_LABELS,
+  resolvePaymentState,
+  type PaymentLifecycleState,
+} from '../lib/payments'
+import { updateProjectPrice } from '../lib/projectPrice'
 import { formatRelative } from '../lib/formatRelative'
 import { fetchAgencyAiFlags } from '../lib/agencyQueries'
 import { getVisibleItems } from '../lib/checklistConditions'
@@ -51,6 +65,8 @@ type ProjectRecord = {
   payment_status: string | null
   stripe_checkout_url: string | null
   last_payment_email_sent_at: string | null
+  payment_unlock_mode: string | null
+  payment_unlocked_at: string | null
   google_drive_folder_url: string | null
   google_drive_files_synced_at: string | null
   google_drive_sync_status: 'synced' | 'partial' | 'failed' | null
@@ -68,6 +84,7 @@ type ChecklistItemRecord = {
   label: string
   type: string
   completed: boolean
+  required: boolean | null
   value: string | null
   order_index: number
   review_status: ReviewStatus | null
@@ -83,28 +100,24 @@ type ReminderLog = {
   sent_at: string
 }
 
-type SecretActivityRow = {
-  id: string
-  event_type: string
-  title: string
-  occurred_at: string
-}
-
 export function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const priceInputRef = useRef<HTMLInputElement>(null)
+  const paymentFeedbackTimer = useRef<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [project, setProject] = useState<ProjectRecord | null>(null)
   const [items, setItems] = useState<ChecklistItemRecord[]>([])
   const [reminderLogs, setReminderLogs] = useState<ReminderLog[]>([])
-  const [secretActivity, setSecretActivity] = useState<SecretActivityRow[]>([])
+  const [projectActivity, setProjectActivity] = useState<ClientActivityEvent[]>([])
   const [signatureProofs, setSignatureProofs] = useState<Record<string, SignatureProof>>({})
   const [sendingReminder, setSendingReminder] = useState(false)
   const [reminderFeedback, setReminderFeedback] = useState<string | null>(null)
   const [sendingPayment, setSendingPayment] = useState(false)
   const [paymentFeedback, setPaymentFeedback] = useState<string | null>(null)
   const [paymentError, setPaymentError] = useState<string | null>(null)
+  const [priceFieldError, setPriceFieldError] = useState<string | null>(null)
   const [openingStripe, setOpeningStripe] = useState(false)
   const [syncingDrive, setSyncingDrive] = useState(false)
   const [driveFeedback, setDriveFeedback] = useState<string | null>(null)
@@ -116,6 +129,21 @@ export function ProjectDetail() {
   const [smartRemindersKey, setSmartRemindersKey] = useState(0)
   const [resendingInvite, setResendingInvite] = useState(false)
   const [inviteFeedback, setInviteFeedback] = useState<string | null>(null)
+  const [editingPrice, setEditingPrice] = useState(false)
+  const [priceDraft, setPriceDraft] = useState('')
+  const [resendPaymentEmail, setResendPaymentEmail] = useState(true)
+  const [savingPrice, setSavingPrice] = useState(false)
+
+  const showPaymentFeedback = useCallback((message: string) => {
+    if (paymentFeedbackTimer.current) {
+      window.clearTimeout(paymentFeedbackTimer.current)
+    }
+    setPaymentFeedback(message)
+    paymentFeedbackTimer.current = window.setTimeout(() => {
+      setPaymentFeedback(null)
+      paymentFeedbackTimer.current = null
+    }, 6000)
+  }, [])
 
   const loadProject = useCallback(async () => {
     if (!id) {
@@ -126,7 +154,7 @@ export function ProjectDetail() {
 
     const { data: projectData, error: projectError } = await supabase
       .from('projects')
-      .select('id, agency_id, client_id, name, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, invite_status, invite_sent_at, invite_error, invite_last_attempt_at, agencies(name), clients(phone, address_street, address_postal_code, address_city, address_country, company_name)')
+      .select('id, agency_id, client_id, name, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, payment_unlock_mode, payment_unlocked_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, invite_status, invite_sent_at, invite_error, invite_last_attempt_at, agencies(name), clients(phone, address_street, address_postal_code, address_city, address_country, company_name)')
       .eq('id', id)
       .maybeSingle()
 
@@ -143,7 +171,7 @@ export function ProjectDetail() {
     const { data: checklistData, error: checklistError } = await supabase
       .from('checklist_items')
       .select(
-        'id, label, type, completed, value, order_index, review_status, review_note, reviewed_at, submitted_at, config',
+        'id, label, type, completed, required, value, order_index, review_status, review_note, reviewed_at, submitted_at, config',
       )
       .eq('project_id', projectData.id)
       .order('order_index', { ascending: true })
@@ -154,7 +182,7 @@ export function ProjectDetail() {
       return
     }
 
-    const [{ data: logsData }, { data: secretRows }] = await Promise.all([
+    const [{ data: logsData }, { data: activityRows }, authResult] = await Promise.all([
       supabase
         .from('project_reminder_logs')
         .select('id, source, sent_at')
@@ -163,19 +191,56 @@ export function ProjectDetail() {
         .limit(10),
       supabase
         .from('client_activity_events')
-        .select('id, event_type, title, occurred_at')
+        .select('id, event_type, title, occurred_at, project_id, metadata')
         .eq('project_id', projectData.id)
-        .in('event_type', ['secret.reveal', 'secret.copy', 'secret.cleared'])
+        .in('event_type', [
+          'secret.reveal',
+          'secret.copy',
+          'secret.cleared',
+          'payment.amount_changed',
+        ])
         .order('occurred_at', { ascending: false })
-        .limit(20),
+        .limit(50),
+      supabase.auth.getUser(),
     ])
 
     const record = projectData as ProjectRecord
+    const agenciesRel = record.agencies
+    const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
+    // Prefer the signed-in user for amount edits; fall back to agency name.
+    const actorLabel =
+      authResult.data.user?.email?.trim() ||
+      agencyRow?.name?.trim() ||
+      null
+
     setProject(record)
     pushRecentProject(record.id, record.name?.trim() || record.client_name)
     setItems((checklistData ?? []) as ChecklistItemRecord[])
     setReminderLogs((logsData ?? []) as ReminderLog[])
-    setSecretActivity((secretRows ?? []) as SecretActivityRow[])
+    setProjectActivity(
+      mergeClientActivityEvents({
+        projects: [
+          {
+            id: record.id,
+            client_name: record.name?.trim() || record.client_name,
+            created_at: record.created_at,
+          },
+        ],
+        reminders: (logsData ?? []).map((row) => ({
+          id: row.id,
+          project_id: record.id,
+          source: row.source as 'auto' | 'manual',
+          sent_at: row.sent_at,
+        })),
+        checklist: [],
+        extractions: [],
+        storedEvents: (activityRows ?? []).map((row) => ({
+          ...row,
+          project_id: row.project_id ?? record.id,
+        })),
+        defaultActorLabel: actorLabel,
+      }).map((event) => ({ ...event, projectName: null })),
+    )
     setSignatureProofs(await fetchProjectSignatureProofs(projectData.id))
     setLoading(false)
   }, [id])
@@ -243,9 +308,124 @@ export function ProjectDetail() {
     }
   }
 
-  const paymentState = getPaymentState(project?.price, project?.payment_status)
+  const paymentUnlockInfo = useMemo(
+    () =>
+      getPaymentUnlockInfo({
+        unlockMode: project?.payment_unlock_mode,
+        paymentUnlockedAt: project?.payment_unlocked_at,
+        items,
+      }),
+    [project?.payment_unlock_mode, project?.payment_unlocked_at, items],
+  )
+
+  const paymentLifecycle = useMemo(
+    (): PaymentLifecycleState | null =>
+      resolvePaymentState({
+        price: project?.price,
+        paymentStatus: project?.payment_status,
+        unlockMode: project?.payment_unlock_mode,
+        paymentUnlockedAt: project?.payment_unlocked_at,
+        lastPaymentEmailSentAt: project?.last_payment_email_sent_at,
+        stripeCheckoutUrl: project?.stripe_checkout_url,
+        unlockInfo: paymentUnlockInfo,
+      }),
+    [project, paymentUnlockInfo],
+  )
+
   const canRequestPayment =
-    paymentState === 'pending' && project?.status === 'completed'
+    Boolean(paymentUnlockInfo.unlocked) &&
+    (paymentLifecycle === 'available' ||
+      paymentLifecycle === 'link_created' ||
+      paymentLifecycle === 'link_sent' ||
+      paymentLifecycle === 'failed')
+
+  const priceEditable = canEditProjectPrice(paymentLifecycle)
+  const needsCheckoutInvalidate =
+    paymentLifecycle === 'link_created' || paymentLifecycle === 'link_sent'
+
+  const startEditPrice = () => {
+    if (!project || !priceEditable) return
+    setPriceDraft(project.price != null ? String(project.price) : '')
+    setResendPaymentEmail(Boolean(project.last_payment_email_sent_at))
+    setEditingPrice(true)
+    setPaymentError(null)
+    setPriceFieldError(null)
+    setPaymentFeedback(null)
+  }
+
+  const handleSavePrice = async () => {
+    if (!project) return
+    const next = parsePriceInput(priceDraft)
+    if (next == null) {
+      const message = 'Montant invalide (doit être > 0, max 2 décimales).'
+      setPriceFieldError(message)
+      window.setTimeout(() => priceInputRef.current?.focus(), 0)
+      return
+    }
+    if (
+      needsCheckoutInvalidate &&
+      !window.confirm(
+        'Le lien actuel sera désactivé ; un nouveau lien sera créé au nouveau montant.',
+      )
+    ) {
+      return
+    }
+
+    setSavingPrice(true)
+    setPaymentError(null)
+    setPriceFieldError(null)
+    setPaymentFeedback(null)
+    try {
+      const result = await updateProjectPrice(project.id, next)
+      // Update local state immediately so the payment block reflects the DB
+      // before / even if the subsequent refetch is slow.
+      setProject((cur) =>
+        cur
+          ? {
+              ...cur,
+              price: result.price,
+              stripe_checkout_url: null,
+              last_payment_email_sent_at: null,
+            }
+          : cur,
+      )
+      setEditingPrice(false)
+
+      if (result.changed && resendPaymentEmail && result.hadPaymentEmail) {
+        const sent = await sendPaymentLink(project.id, true)
+        showPaymentFeedback(
+          sent.emailSent
+            ? `Montant mis à jour (${formatEuro(result.oldPrice)} → ${formatEuro(result.price)}). Nouveau lien envoyé au client.`
+            : `Montant mis à jour. Lien généré (email non envoyé).`,
+        )
+      } else if (result.changed) {
+        showPaymentFeedback(
+          `Montant mis à jour : ${formatEuro(result.oldPrice)} → ${formatEuro(result.price)}.`,
+        )
+      }
+      await loadProject()
+    } catch (reason: unknown) {
+      const message =
+        reason instanceof Error ? reason.message : 'Impossible de modifier le montant.'
+      if (message.includes('Montant invalide')) {
+        setEditingPrice(true)
+        setPriceFieldError(message)
+        window.setTimeout(() => priceInputRef.current?.focus(), 0)
+      } else {
+        setPaymentError(message)
+      }
+    } finally {
+      setSavingPrice(false)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (paymentFeedbackTimer.current) {
+        window.clearTimeout(paymentFeedbackTimer.current)
+      }
+    }
+  }, [])
 
   const handleSendPaymentLink = async () => {
     if (!project) return
@@ -511,27 +691,144 @@ export function ProjectDetail() {
                 </div>
               ) : null}
 
-              {paymentState !== 'none' ? (
+              {paymentLifecycle ? (
                 <div className="mt-5 border-t border-[var(--border)] pt-4">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Paiement</p>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-body ${paymentState === 'paid' ? 'bg-[var(--mint-soft)] text-[var(--mint)]' : 'bg-[var(--surface-warm)] text-[var(--ink-soft)]'}`}>
-                      {paymentState === 'paid' ? 'Payé par le client' : PAYMENT_STATE_LABELS[paymentState]}
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-body ${
+                        paymentLifecycle === 'paid'
+                          ? 'bg-[var(--mint-soft)] text-[var(--mint)]'
+                          : paymentLifecycle === 'failed'
+                            ? 'bg-[var(--amber-soft)] text-[var(--amber)]'
+                            : 'bg-[var(--surface-warm)] text-[var(--ink-soft)]'
+                      }`}
+                    >
+                      {paymentLifecycle === 'paid'
+                        ? 'Payé par le client'
+                        : PAYMENT_LIFECYCLE_LABELS[paymentLifecycle]}
                     </span>
                   </div>
-                  <p className="mt-2 font-display text-2xl font-bold text-[var(--ink)]">
-                    {formatPriceEur(project.price)}
-                  </p>
-                  {project.last_payment_email_sent_at ? (
+                  {!editingPrice ? (
+                    <div className="mt-2 flex items-baseline gap-3">
+                      <p className="font-display text-2xl font-bold text-[var(--ink)]">
+                        {formatEuro(project.price)}
+                      </p>
+                      {priceEditable ? (
+                        <button
+                          type="button"
+                          onClick={startEditPrice}
+                          className="text-xs font-body text-[var(--accent)] underline"
+                        >
+                          Modifier
+                        </button>
+                      ) : paymentLifecycle === 'paid' || paymentLifecycle === 'refunded' ? (
+                        <span className="text-xs font-body text-[var(--ink-muted)]">
+                          Montant verrouillé après paiement
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-3">
+                      <label className="block" htmlFor="project-price-draft">
+                        <span className="text-xs font-body font-medium text-[var(--ink-soft)]">
+                          Nouveau montant (€)
+                        </span>
+                        <Input
+                          ref={priceInputRef}
+                          id="project-price-draft"
+                          type="number"
+                          min={0.01}
+                          step={0.01}
+                          className="mt-1"
+                          value={priceDraft}
+                          onChange={(e) => {
+                            setPriceDraft(e.target.value)
+                            if (priceFieldError) setPriceFieldError(null)
+                          }}
+                          disabled={savingPrice}
+                          invalid={Boolean(priceFieldError)}
+                          aria-describedby={
+                            priceFieldError ? 'project-price-draft-error' : undefined
+                          }
+                        />
+                      </label>
+                      {priceFieldError ? (
+                        <p
+                          id="project-price-draft-error"
+                          role="alert"
+                          className="text-xs font-body text-[var(--amber)]"
+                        >
+                          {priceFieldError}
+                        </p>
+                      ) : null}
+                      {needsCheckoutInvalidate ? (
+                        <p className="text-xs font-body text-[var(--ink-muted)]">
+                          Le lien actuel sera désactivé ; un nouveau lien sera créé au nouveau
+                          montant.
+                        </p>
+                      ) : null}
+                      {project.last_payment_email_sent_at ? (
+                        <label className="flex cursor-pointer items-start gap-2">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 accent-[var(--accent)]"
+                            checked={resendPaymentEmail}
+                            onChange={(e) => setResendPaymentEmail(e.target.checked)}
+                            disabled={savingPrice}
+                          />
+                          <span className="text-xs font-body text-[var(--ink-soft)]">
+                            Renvoyer le nouveau lien au client
+                          </span>
+                        </label>
+                      ) : null}
+                      <div className="flex flex-wrap gap-2">
+                        <Button onClick={() => void handleSavePrice()} disabled={savingPrice}>
+                          {savingPrice ? 'Enregistrement…' : 'Enregistrer'}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setEditingPrice(false)
+                            setPriceFieldError(null)
+                          }}
+                          disabled={savingPrice}
+                        >
+                          Annuler
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {paymentLifecycle === 'link_sent' && project.last_payment_email_sent_at ? (
                     <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
                       Lien envoyé {formatRelative(project.last_payment_email_sent_at)}
+                    </p>
+                  ) : null}
+
+                  {paymentLifecycle === 'link_created' ? (
+                    <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
+                      Lien de paiement créé — pas encore envoyé par email.
+                    </p>
+                  ) : null}
+
+                  {paymentLifecycle === 'not_available' ? (
+                    <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
+                      {paymentUnlockInfo.lockMessage ??
+                        'Le paiement se débloque quand les étapes précédentes obligatoires sont soumises (contrat signé inclus).'}
                     </p>
                   ) : null}
 
                   {canRequestPayment ? (
                     <>
                       <Button className="mt-3" onClick={handleSendPaymentLink} disabled={sendingPayment}>
-                        {sendingPayment ? 'Envoi…' : 'Renvoyer le lien de paiement'}
+                        {sendingPayment
+                          ? 'Envoi…'
+                          : paymentLifecycle === 'link_sent'
+                            ? 'Renvoyer le lien de paiement'
+                            : paymentLifecycle === 'link_created'
+                              ? 'Envoyer le lien par email'
+                              : 'Envoyer le lien de paiement'}
                       </Button>
                       {project.stripe_checkout_url ? (
                         <button
@@ -542,11 +839,9 @@ export function ProjectDetail() {
                         </button>
                       ) : null}
                     </>
-                  ) : paymentState === 'pending' ? (
-                    <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
-                      Le lien de paiement sera disponible une fois l'onboarding terminé.
-                    </p>
-                  ) : paymentState === 'paid' ? (
+                  ) : null}
+
+                  {paymentLifecycle === 'paid' ? (
                     <>
                       <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
                         Le virement vers votre compte bancaire est géré automatiquement par Stripe.
@@ -561,6 +856,19 @@ export function ProjectDetail() {
                         {openingStripe ? 'Ouverture…' : 'Voir dans Stripe →'}
                       </button>
                     </>
+                  ) : null}
+
+                  {paymentLifecycle === 'failed' ? (
+                    <p className="mt-2 text-xs font-body text-[var(--amber)]">
+                      Le dernier paiement a échoué. Vous pouvez renvoyer un lien dès que le paiement
+                      est débloqué.
+                    </p>
+                  ) : null}
+
+                  {paymentLifecycle === 'refunded' ? (
+                    <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
+                      Paiement remboursé intégralement.
+                    </p>
                   ) : null}
 
                   {paymentFeedback ? (
@@ -650,22 +958,7 @@ export function ProjectDetail() {
             }}
           />
           <ExtractionReviewPanel projectId={project.id} />
-          {secretActivity.length > 0 ? (
-            <Card>
-              <h2 className="font-display text-xl font-semibold text-[var(--ink)]">
-                Consultations des secrets
-              </h2>
-              <ul className="mt-3 space-y-2">
-                {secretActivity.map((row) => (
-                  <li key={row.id} className="text-xs font-body text-[var(--ink-soft)]">
-                    <span className="text-[var(--ink-muted)]">{formatRelative(row.occurred_at)}</span>
-                    {' — '}
-                    {row.title}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
+          <ClientActivityTimeline key={project.id} events={projectActivity} />
           <ContractGeneratorPanel
             projectId={project.id}
             aiContractsEnabled={aiContractsEnabled}

@@ -5,6 +5,7 @@ import {
 } from './checklistConditions'
 import { buildPendingTemplateContractValue } from './contractSignatureValue'
 import { isValidHttpUrl, normalizeUrl, type ChecklistItemConfig } from './checklistFields'
+import { formatEuro } from './payments'
 import { isFreliPortalUrl } from './scheduleEmbed'
 
 export type ChecklistItemType =
@@ -231,7 +232,7 @@ export function buildDefaultContractBrief(clientName: string, priceEur?: number 
     parts.push(`Prestation pour ${clientName.trim()}.`)
   }
   if (priceEur && priceEur > 0) {
-    parts.push(`Montant : ${priceEur} € HT.`)
+    parts.push(`Montant : ${formatEuro(priceEur)} HT.`)
   }
   parts.push('Modalités de paiement à 30 jours. Clause de confidentialité standard.')
   return parts.join(' ')
@@ -269,7 +270,7 @@ export function buildContractBriefFromProject(
     parts.push(`Prestation pour ${clientName.trim()}.`)
   }
   if (priceEur && priceEur > 0) {
-    parts.push(`Montant : ${priceEur} € HT.`)
+    parts.push(`Montant : ${formatEuro(priceEur)} HT.`)
   }
   if (manualBrief.trim()) {
     parts.push('')

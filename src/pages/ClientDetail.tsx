@@ -200,9 +200,14 @@ export function ClientDetail() {
           .order('created_at', { ascending: false }),
         supabase
           .from('client_activity_events')
-          .select('id, event_type, title, occurred_at, project_id')
+          .select('id, event_type, title, occurred_at, project_id, metadata')
           .eq('client_id', clientId)
-          .in('event_type', ['secret.reveal', 'secret.copy', 'secret.cleared'])
+          .in('event_type', [
+            'secret.reveal',
+            'secret.copy',
+            'secret.cleared',
+            'payment.amount_changed',
+          ])
           .order('occurred_at', { ascending: false })
           .limit(50),
       ])
@@ -256,6 +261,7 @@ export function ClientDetail() {
           title: string
           occurred_at: string
           project_id: string | null
+          metadata?: Record<string, unknown> | null
         }>,
       }),
     )

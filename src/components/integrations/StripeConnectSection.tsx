@@ -42,7 +42,7 @@ export function StripeConnectSection({
               )}
             </div>
             <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">
-              Encaissez automatiquement vos clients à la fin de l{'\u2019'}onboarding.
+              Encaissez vos clients via Stripe Connect (étape Paiement ou fin de parcours).
             </p>
           </div>
         </div>
@@ -57,12 +57,17 @@ export function StripeConnectSection({
           <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Comment ça marche</p>
           <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-xs font-body text-[var(--ink-muted)]">
             <li>Connectez votre compte Stripe (Connect Express).</li>
-            <li>Définissez un prix lors de la création du projet.</li>
+            <li>Définissez un prix (et éventuellement une étape Paiement) à la création du projet.</li>
             <li>
-              À la fin de l&apos;onboarding, le client reçoit automatiquement un lien de paiement par
-              email — vous pouvez aussi le renvoyer depuis la fiche projet.
+              Le client paie quand le paiement est débloqué (étapes précédentes soumises, ou option
+              « Paiement dès le début »). Vous pouvez aussi envoyer le lien depuis la fiche projet.
             </li>
           </ol>
+          <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
+            Webhook : l&apos;endpoint Freli doit écouter les événements des{' '}
+            <strong>comptes Connect</strong> (checkout.session.completed, expired,
+            async_payment_failed, payment_intent.payment_failed, charge.refunded, account.updated).
+          </p>
         </div>
         {stripeAccountId && (
           <p className="text-xs font-body text-[var(--ink-muted)]">

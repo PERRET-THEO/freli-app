@@ -1,3 +1,5 @@
+import { formatEuro } from './formatEuro'
+
 export type ClientActivityEvent = {
   id: string
   eventType:
@@ -10,11 +12,21 @@ export type ClientActivityEvent = {
     | 'secret.reveal'
     | 'secret.copy'
     | 'secret.cleared'
+    | 'payment.amount_changed'
   title: string
   occurredAt: string
   projectId: string | null
   projectName: string | null
+  /** Optional actor label (e.g. agency name) shown next to the date */
+  actorLabel?: string | null
 }
+
+const STORED_ACTIVITY_TYPES = new Set([
+  'secret.reveal',
+  'secret.copy',
+  'secret.cleared',
+  'payment.amount_changed',
+])
 
 export type StoredActivityRow = {
   id: string
@@ -22,6 +34,34 @@ export type StoredActivityRow = {
   title: string
   occurred_at: string
   project_id: string | null
+  metadata?: Record<string, unknown> | null
+}
+
+export function formatAmountChangedTitle(
+  oldPrice: number | null | undefined,
+  newPrice: number | null | undefined,
+): string {
+  return `Montant modifié : ${formatEuro(oldPrice)} → ${formatEuro(newPrice)}`
+}
+
+function titleForStoredEvent(row: StoredActivityRow): string {
+  if (row.event_type === 'payment.amount_changed') {
+    const meta = row.metadata ?? {}
+    const oldRaw = meta.old_price
+    const newRaw = meta.new_price
+    const oldPrice =
+      oldRaw == null || oldRaw === '' ? null : Number(oldRaw)
+    const newPrice =
+      newRaw == null || newRaw === '' ? null : Number(newRaw)
+    if (
+      (oldPrice == null || Number.isFinite(oldPrice)) &&
+      newPrice != null &&
+      Number.isFinite(newPrice)
+    ) {
+      return formatAmountChangedTitle(oldPrice, newPrice)
+    }
+  }
+  return row.title
 }
 
 type ReminderRow = {
@@ -63,25 +103,24 @@ export function mergeClientActivityEvents(input: {
   checklist: ChecklistRow[]
   extractions: ExtractionRow[]
   storedEvents?: StoredActivityRow[]
+  /** Shown on stored events when no per-event actor is available */
+  defaultActorLabel?: string | null
 }): ClientActivityEvent[] {
   const projectName = new Map(input.projects.map((p) => [p.id, p.client_name]))
   const events: ClientActivityEvent[] = []
 
   for (const row of input.storedEvents ?? []) {
-    if (
-      row.event_type !== 'secret.reveal' &&
-      row.event_type !== 'secret.copy' &&
-      row.event_type !== 'secret.cleared'
-    ) {
+    if (!STORED_ACTIVITY_TYPES.has(row.event_type)) {
       continue
     }
     events.push({
       id: `stored-${row.id}`,
-      eventType: row.event_type,
-      title: row.title,
+      eventType: row.event_type as ClientActivityEvent['eventType'],
+      title: titleForStoredEvent(row),
       occurredAt: row.occurred_at,
       projectId: row.project_id,
       projectName: row.project_id ? projectName.get(row.project_id) ?? null : null,
+      actorLabel: input.defaultActorLabel ?? null,
     })
   }
 

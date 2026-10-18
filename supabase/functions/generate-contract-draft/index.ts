@@ -20,6 +20,7 @@ import {
   CONTRACT_PROMPT_VERSION,
   parseContractDraft,
 } from '../_shared/aiValidation.ts'
+import { formatEuro } from '../_shared/formatEuro.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -145,7 +146,9 @@ serve(async (req) => {
       `Nom du client : ${project.client_name}`,
       `Email du client : ${project.client_email}`,
     ]
-    if (project.price != null) projectContext.push(`Montant défini dans Freli : ${project.price} €`)
+    if (project.price != null) {
+      projectContext.push(`Montant défini dans Freli : ${formatEuro(Number(project.price))}`)
+    }
     if (client) {
       if (client.company_name) projectContext.push(`Société du client : ${client.company_name}`)
       if (client.siret) projectContext.push(`SIRET du client : ${client.siret}`)

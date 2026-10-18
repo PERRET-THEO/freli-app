@@ -48,6 +48,7 @@ export function ClientActivityTimeline({
                     dateStyle: 'medium',
                     timeStyle: 'short',
                   })}
+                  {event.actorLabel ? <> · {event.actorLabel}</> : null}
                   {event.projectId && event.projectName ? (
                     <>
                       {' · '}

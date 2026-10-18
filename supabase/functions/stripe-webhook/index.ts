@@ -1,3 +1,19 @@
+/**
+ * Stripe webhook for Freli SaaS billing + Connect Express project payments.
+ *
+ * Connect: this endpoint MUST receive events from connected accounts
+ * (Dashboard → Webhooks → "Listen to events on Connected accounts", or
+ * Stripe CLI `stripe listen --forward-connect-to ...`). Required Connect events:
+ * - checkout.session.completed
+ * - checkout.session.async_payment_failed
+ * - checkout.session.expired
+ * - payment_intent.payment_failed
+ * - charge.refunded
+ * - account.updated
+ *
+ * Idempotency: stripe_webhook_events.event_id + conditional UPDATE
+ * WHERE payment_status <> 'paid' so payment.received fires once.
+ */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
@@ -22,6 +38,170 @@ const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
 
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
+
+function metaProjectId(obj: Record<string, unknown> | undefined): string {
+  const meta = obj?.metadata as Record<string, unknown> | undefined
+  return meta && typeof meta.project_id === 'string' ? meta.project_id : ''
+}
+
+async function completePaymentChecklist(projectId: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('checklist_items')
+    .update({
+      completed: true,
+      value: 'Paiement confirmé',
+      submitted_at: new Date().toISOString(),
+    })
+    .eq('project_id', projectId)
+    .eq('type', 'payment')
+    .eq('completed', false)
+  if (error) console.error('completePaymentChecklist:', error.message)
+}
+
+/**
+ * Marks project paid once, completes payment checklist item, fires payment.received once.
+ * Verifies metadata.project_id and amount_total === price * 100.
+ */
+async function handleConnectCheckoutPaid(session: Record<string, unknown>): Promise<void> {
+  const sessionPaymentStatus =
+    typeof session.payment_status === 'string' ? session.payment_status : ''
+  if (sessionPaymentStatus !== 'paid') {
+    console.log('checkout.session.completed skipped, payment_status=', sessionPaymentStatus)
+    return
+  }
+
+  const projectId = metaProjectId(session)
+  if (!projectId) {
+    console.error('checkout.session.completed: missing metadata.project_id')
+    return
+  }
+
+  const { data: existing } = await supabaseAdmin
+    .from('projects')
+    .select('id, price, payment_status')
+    .eq('id', projectId)
+    .maybeSingle()
+
+  if (!existing) {
+    console.error('checkout.session.completed: project not found', projectId)
+    return
+  }
+
+  const amountTotal = typeof session.amount_total === 'number' ? session.amount_total : null
+  const expectedCents =
+    existing.price != null && Number(existing.price) > 0
+      ? Math.round(Number(existing.price) * 100)
+      : null
+
+  if (expectedCents == null || amountTotal !== expectedCents) {
+    console.error(
+      'checkout.session.completed amount mismatch:',
+      { projectId, amountTotal, expectedCents, price: existing.price },
+    )
+    return
+  }
+
+  // Conditional update: only the first transition to paid proceeds.
+  const { data: updatedRows, error: pErr } = await supabaseAdmin
+    .from('projects')
+    .update({
+      payment_status: 'paid',
+      stripe_checkout_url: null,
+      stripe_checkout_session_id: null,
+    })
+    .eq('id', projectId)
+    .neq('payment_status', 'paid')
+    .select('id')
+
+  if (pErr) {
+    console.error('checkout.session.completed project update:', pErr.message)
+    return
+  }
+  if (!updatedRows?.length) {
+    console.log('checkout.session.completed already paid, skip side effects', projectId)
+    return
+  }
+
+  await completePaymentChecklist(projectId)
+
+  const { data: project } = await supabaseAdmin
+    .from('projects')
+    .select(
+      'id, name, client_name, client_email, agency_id, token, status, price, payment_status, agencies(id, name)',
+    )
+    .eq('id', projectId)
+    .single()
+
+  if (!project) return
+
+  const agenciesRel = project.agencies as
+    | { id?: string; name?: string }
+    | { id?: string; name?: string }[]
+    | null
+  const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
+  const userId = await getAgencyUserId(supabaseAdmin, project.agency_id as string)
+  if (userId && agencyRow) {
+    fireOutgoingWebhooks(
+      supabaseAdmin,
+      userId,
+      'payment.received',
+      buildProjectPayload(
+        project,
+        {
+          id: String(agencyRow.id ?? project.agency_id),
+          name: String(agencyRow.name ?? 'Agence'),
+        },
+        {
+          meta: {
+            source: 'stripe',
+            amount_cents: amountTotal,
+            currency: typeof session.currency === 'string' ? session.currency : 'eur',
+          },
+        },
+      ),
+    )
+  }
+}
+
+async function markProjectPaymentFailed(projectId: string): Promise<void> {
+  if (!projectId) return
+  const { error } = await supabaseAdmin
+    .from('projects')
+    .update({
+      payment_status: 'failed',
+      stripe_checkout_url: null,
+      stripe_checkout_session_id: null,
+    })
+    .eq('id', projectId)
+    .neq('payment_status', 'paid')
+    .neq('payment_status', 'refunded')
+  if (error) console.error('markProjectPaymentFailed:', error.message)
+}
+
+async function handleChargeRefunded(charge: Record<string, unknown>): Promise<void> {
+  const projectId = metaProjectId(charge)
+  if (!projectId) {
+    console.log('charge.refunded: no metadata.project_id, skip')
+    return
+  }
+  const amount = typeof charge.amount === 'number' ? charge.amount : null
+  const amountRefunded =
+    typeof charge.amount_refunded === 'number' ? charge.amount_refunded : null
+  if (amount == null || amountRefunded == null) return
+
+  // Full refund only → refunded. Partial refund keeps paid (no dedicated note column).
+  if (amountRefunded < amount) {
+    console.log('charge.refunded partial — keep paid', { projectId, amount, amountRefunded })
+    return
+  }
+
+  const { error } = await supabaseAdmin
+    .from('projects')
+    .update({ payment_status: 'refunded' })
+    .eq('id', projectId)
+    .eq('payment_status', 'paid')
+  if (error) console.error('charge.refunded update:', error.message)
+}
 
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false
@@ -230,77 +410,25 @@ serve(async (req) => {
       if (session && isSaasCheckoutSession(session)) {
         await handleSaasCheckoutCompleted(session)
       } else if (session) {
-        const sessionPaymentStatus =
-          typeof session.payment_status === 'string' ? session.payment_status : ''
-        if (sessionPaymentStatus !== 'paid') {
-          console.log('checkout.session.completed skipped, payment_status=', sessionPaymentStatus)
-          return new Response(JSON.stringify({ received: true, skipped: 'not_paid' }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          })
-        }
-        const meta = session.metadata as Record<string, unknown> | undefined
-        const projectId = meta && typeof meta.project_id === 'string' ? meta.project_id : ''
-        if (projectId) {
-          const { error: pErr } = await supabaseAdmin
-            .from('projects')
-            .update({
-              payment_status: 'paid',
-              stripe_checkout_url: null,
-              stripe_checkout_session_id: null,
-            })
-            .eq('id', projectId)
-          if (pErr) console.error('checkout.session.completed project update:', pErr.message)
+        await handleConnectCheckoutPaid(session)
+      }
+    }
 
-          const { data: project } = await supabaseAdmin
-            .from('projects')
-            .select(
-              'id, name, client_name, client_email, agency_id, token, status, price, payment_status, agencies(id, name)',
-            )
-            .eq('id', projectId)
-            .single()
-
-          if (project) {
-            const agenciesRel = project.agencies as
-              | { id?: string; name?: string }
-              | { id?: string; name?: string }[]
-              | null
-            const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
-            const userId = await getAgencyUserId(supabaseAdmin, project.agency_id as string)
-            if (userId && agencyRow) {
-              const amountTotal =
-                typeof session.amount_total === 'number' ? session.amount_total : null
-              fireOutgoingWebhooks(
-                supabaseAdmin,
-                userId,
-                'payment.received',
-                buildProjectPayload(
-                  project,
-                  {
-                    id: String(agencyRow.id ?? project.agency_id),
-                    name: String(agencyRow.name ?? 'Agence'),
-                  },
-                  {
-                    meta: {
-                      source: 'stripe',
-                      amount_cents: amountTotal,
-                      currency:
-                        typeof session.currency === 'string' ? session.currency : 'eur',
-                    },
-                  },
-                ),
-              )
-            }
-          }
-        }
+    if (
+      type === 'checkout.session.async_payment_failed' ||
+      type === 'payment_intent.payment_failed'
+    ) {
+      const wrapper = event.data as { object?: Record<string, unknown> } | undefined
+      const obj = wrapper?.object
+      if (obj && !isSaasCheckoutSession(obj)) {
+        await markProjectPaymentFailed(metaProjectId(obj))
       }
     }
 
     if (type === 'checkout.session.expired') {
       const sessionWrapper = event.data as { object?: Record<string, unknown> } | undefined
       const session = sessionWrapper?.object
-      const meta = session?.metadata as Record<string, unknown> | undefined
-      const projectId = meta && typeof meta.project_id === 'string' ? meta.project_id : ''
+      const projectId = metaProjectId(session)
       if (projectId) {
         const { error: pErr } = await supabaseAdmin
           .from('projects')
@@ -309,6 +437,11 @@ serve(async (req) => {
           .neq('payment_status', 'paid')
         if (pErr) console.error('checkout.session.expired project update:', pErr.message)
       }
+    }
+
+    if (type === 'charge.refunded') {
+      const wrapper = event.data as { object?: Record<string, unknown> } | undefined
+      if (wrapper?.object) await handleChargeRefunded(wrapper.object)
     }
 
     if (

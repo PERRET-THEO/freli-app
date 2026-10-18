@@ -5,6 +5,7 @@ import {
   type DraftChecklistItem,
 } from '../../lib/checklist'
 import type { GeneratedDocumentRecord } from '../../lib/generatedDocuments'
+import { formatEuro } from '../../lib/payments'
 
 type ContractFinalizeStepProps = {
   clientFullName: string
@@ -91,7 +92,7 @@ export function ContractFinalizeStep({
           <div className="border-t border-[var(--border)] px-4 py-3">
             <p className="break-words text-sm font-body text-[var(--ink-soft)]">
               Client : {clientFullName || '—'}
-              {priceEur ? ` · ${priceEur} € HT` : ''}
+              {priceEur ? ` · ${formatEuro(priceEur)} HT` : ''}
             </p>
             <ul className="mt-3 space-y-2">
               {items.map((item) => (

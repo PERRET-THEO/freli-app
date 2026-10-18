@@ -1,6 +1,10 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { ensureCheckoutSession, stripeConnectReady } from '../_shared/stripeCheckout.ts'
+import {
+  evaluatePaymentUnlock,
+  stampPaymentUnlockedAt,
+} from '../_shared/paymentUnlock.ts'
 import { ensureProjectDriveFolder, syncProjectArtifactsToDrive } from '../_shared/googleDrive.ts'
 import {
   buildProjectPayload,
@@ -34,6 +38,8 @@ type ProjectData = {
   payment_status: string | null
   stripe_checkout_url: string | null
   stripe_checkout_session_id: string | null
+  payment_unlock_mode?: string | null
+  payment_unlocked_at?: string | null
   google_drive_folder_id: string | null
   google_drive_folder_url: string | null
 }
@@ -52,6 +58,24 @@ async function handleStripe(
     console.log('Stripe Connect not ready, skipping checkout.')
     return null
   }
+
+  const { data: checklistItems } = await supabase
+    .from('checklist_items')
+    .select('type, completed, required, order_index')
+    .eq('project_id', project.id)
+    .order('order_index', { ascending: true })
+
+  const unlock = evaluatePaymentUnlock({
+    unlockMode: project.payment_unlock_mode,
+    paymentUnlockedAt: project.payment_unlocked_at,
+    items: checklistItems ?? [],
+  })
+  if (!unlock.unlocked) {
+    console.log('Stripe checkout skipped: payment locked', unlock.lockMessage)
+    return null
+  }
+  await stampPaymentUnlockedAt(supabase, project.id, project.payment_unlocked_at)
+
   return await ensureCheckoutSession(project, connect)
 }
 
@@ -102,7 +126,7 @@ serve(async (req) => {
 
     const { data: project, error: projectError } = await supabase
       .from('projects')
-      .select('id, name, client_name, client_email, agency_id, token, status, price, payment_status, stripe_checkout_url, stripe_checkout_session_id, google_drive_folder_id, google_drive_folder_url')
+      .select('id, name, client_name, client_email, agency_id, token, status, price, payment_status, stripe_checkout_url, stripe_checkout_session_id, payment_unlock_mode, payment_unlocked_at, google_drive_folder_id, google_drive_folder_url')
       .eq('id', body.projectId)
       .single()
 

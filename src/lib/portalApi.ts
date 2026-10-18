@@ -8,6 +8,7 @@ export type PortalLoadedItem = {
   label: string
   type: ChecklistItemType
   completed: boolean
+  required?: boolean | null
   value: string | null
   order_index: number
   review_status: ReviewStatus | null
@@ -25,6 +26,11 @@ export type PortalLoadedProject = {
   price?: number | null
   payment_status?: string | null
   stripe_checkout_url?: string | null
+  payment_unlock_mode?: string | null
+  payment_unlocked_at?: string | null
+  amount_type?: string | null
+  deposit_percent?: number | null
+  last_payment_email_sent_at?: string | null
 }
 
 export type PortalBranding = {
@@ -66,6 +72,21 @@ export async function portalLoadByToken(token: string): Promise<PortalLoadResult
 
 export async function portalTouchVisit(token: string): Promise<void> {
   await supabase.rpc('portal_touch_visit', { p_token: token })
+}
+
+/** Sticky unlock: sets payment_unlocked_at once prerequisites (completed) are met. */
+export async function portalStampPaymentUnlocked(
+  token: string,
+): Promise<{ unlocked: boolean; payment_unlocked_at: string | null }> {
+  const { data, error } = await supabase.rpc('portal_stamp_payment_unlocked', {
+    p_token: token,
+  })
+  if (error) throw new Error(error.message)
+  const payload = data as { unlocked?: boolean; payment_unlocked_at?: string | null }
+  return {
+    unlocked: payload?.unlocked === true,
+    payment_unlocked_at: payload?.payment_unlocked_at ?? null,
+  }
 }
 
 /** Portail : uniquement in_progress (jamais completed). */

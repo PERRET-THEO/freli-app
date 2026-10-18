@@ -69,6 +69,10 @@ verify_jwt = true
 [functions.portal-payment-link]
 verify_jwt = false
 
+# Cron / service_role: expire Checkout sessions queued after price changes
+[functions.expire-stale-checkouts]
+verify_jwt = false
+
 # Mot de passe oublié — formulaire public (Resend + generateLink)
 [functions.send-password-reset-email]
 verify_jwt = false

@@ -20,6 +20,7 @@ import { isExtractableDocumentItem } from '../lib/documentDisplay'
 import {
   portalLoadByToken,
   portalSetProjectStatus,
+  portalStampPaymentUnlocked,
   portalTouchVisit,
   portalUpdateChecklistItem,
   PortalUploadError,
@@ -27,7 +28,12 @@ import {
   requestPortalDocumentUpload,
   uploadPortalDocumentFile,
 } from '../lib/portalApi'
-import { getPaymentState, formatPriceEur } from '../lib/payments'
+import {
+  formatPaymentStepCopy,
+  formatEuro,
+  getPaymentUnlockInfo,
+  resolvePaymentState,
+} from '../lib/payments'
 import { normalizeBrandColor, DEFAULT_BRAND_COLOR } from '../lib/agencyBranding'
 import { agencyInitials, portalThemeStyle } from '../lib/portalTheme'
 import {
@@ -91,6 +97,9 @@ type ProjectRecord = {
   price?: number | null
   payment_status?: string | null
   stripe_checkout_url?: string | null
+  payment_unlock_mode?: string | null
+  payment_unlocked_at?: string | null
+  last_payment_email_sent_at?: string | null
   agencies?: AgencyPortalRelation | AgencyPortalRelation[] | null
 }
 
@@ -99,6 +108,7 @@ type ChecklistItemRecord = {
   label: string
   type: ChecklistItemType
   completed: boolean
+  required?: boolean | null
   value: string | null
   order_index: number
   review_status: ReviewStatus | null
@@ -184,6 +194,15 @@ function StepCircle({ index, status }: { index: number; status: StepStatus }) {
     return <div className={`${base} bg-[var(--amber)] text-white shadow-[0_0_0_4px_var(--amber-soft)]`}>!</div>
   if (status === 'active')
     return <div className={`${base} bg-[var(--accent)] text-white shadow-[0_0_0_4px_var(--accent-soft)]`}>{index + 1}</div>
+  if (status === 'locked')
+    return (
+      <div className={`${base} bg-[var(--surface-warm)] text-[var(--ink-muted)]`} aria-label="Verrouillé">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.75" />
+          <path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+        </svg>
+      </div>
+    )
   return <div className={`${base} bg-[var(--surface-warm)] text-[var(--ink-muted)]`}>{index + 1}</div>
 }
 
@@ -454,11 +473,60 @@ export function ClientPortal() {
   const totalCount = visibleItems.length
   const progressPercent = totalCount ? Math.round((completedCount / totalCount) * 100) : 0
 
-  const paymentState = getPaymentState(project?.price, project?.payment_status)
+  const paymentUnlockInfo = useMemo(
+    () =>
+      getPaymentUnlockInfo({
+        unlockMode: project?.payment_unlock_mode,
+        paymentUnlockedAt: project?.payment_unlocked_at,
+        items,
+      }),
+    [project?.payment_unlock_mode, project?.payment_unlocked_at, items],
+  )
+
+  const paymentLifecycle = useMemo(
+    () =>
+      resolvePaymentState({
+        price: project?.price,
+        paymentStatus: project?.payment_status,
+        unlockMode: project?.payment_unlock_mode,
+        paymentUnlockedAt: project?.payment_unlocked_at,
+        lastPaymentEmailSentAt: project?.last_payment_email_sent_at,
+        stripeCheckoutUrl: project?.stripe_checkout_url,
+        unlockInfo: paymentUnlockInfo,
+      }),
+    [project, paymentUnlockInfo],
+  )
+
   const awaitingPaymentConfirmation =
-    paymentNotice === 'success' && paymentState !== 'paid' && Boolean(project?.price && project.price > 0)
+    paymentNotice === 'success' &&
+    paymentLifecycle !== 'paid' &&
+    Boolean(project?.price && project.price > 0)
   const checkoutUrl =
     integrationResults.stripe?.checkoutUrl ?? project?.stripe_checkout_url ?? null
+
+  // Stamp sticky unlock as soon as prerequisites (completed) are met.
+  useEffect(() => {
+    if (!token || !project?.price || project.price <= 0) return
+    if (project.payment_unlocked_at) return
+    if (!paymentUnlockInfo.prerequisitesMet && project.payment_unlock_mode !== 'immediate') {
+      return
+    }
+    void portalStampPaymentUnlocked(token)
+      .then((result) => {
+        if (result.payment_unlocked_at) {
+          setProject((cur) =>
+            cur ? { ...cur, payment_unlocked_at: result.payment_unlocked_at } : cur,
+          )
+        }
+      })
+      .catch(() => {})
+  }, [
+    token,
+    project?.price,
+    project?.payment_unlocked_at,
+    project?.payment_unlock_mode,
+    paymentUnlockInfo.prerequisitesMet,
+  ])
 
   // After Stripe redirect: poll until webhook confirms payment_status=paid
   useEffect(() => {
@@ -496,11 +564,11 @@ export function ClientPortal() {
   }, [awaitingPaymentConfirmation, project?.id, token])
 
   useEffect(() => {
-    if (paymentState === 'paid' && paymentConfirmPollRef.current) {
+    if (paymentLifecycle === 'paid' && paymentConfirmPollRef.current) {
       clearInterval(paymentConfirmPollRef.current)
       paymentConfirmPollRef.current = null
     }
-  }, [paymentState])
+  }, [paymentLifecycle])
 
   useEffect(() => {
     const allDone = isOnboardingSettled(visibleItems)
@@ -618,11 +686,11 @@ export function ClientPortal() {
 
   // Une étape « Paiement » se valide par le règlement, jamais par une action manuelle.
   useEffect(() => {
-    if (paymentState !== 'paid') return
+    if (paymentLifecycle !== 'paid') return
     const unpaidStep = visibleItems.find((i) => i.type === 'payment' && !i.completed)
     if (!unpaidStep) return
     void markItemCompleted(unpaidStep.id, 'Paiement confirmé')
-  }, [paymentState, visibleItems, markItemCompleted])
+  }, [paymentLifecycle, visibleItems, markItemCompleted])
 
   const handleFieldChange = (itemId: string, value: string) => {
     setTextValues((cur) => ({ ...cur, [itemId]: value }))
@@ -738,6 +806,10 @@ export function ClientPortal() {
 
   const preparePaymentStep = async () => {
     if (!token) return
+    if (!paymentUnlockInfo.unlocked) {
+      setPaymentStepError(paymentUnlockInfo.lockMessage ?? 'Paiement pas encore disponible.')
+      return
+    }
     setPreparingPayment(true)
     setPaymentStepError(null)
     try {
@@ -804,6 +876,7 @@ export function ClientPortal() {
   const stepStatus = (item: ChecklistItemRecord): StepStatus => {
     if (item.completed) return 'completed'
     if (isRejected(item)) return 'rejected'
+    if (item.type === 'payment' && !paymentUnlockInfo.unlocked) return 'locked'
     if (item.id === firstIncompleteId) return 'active'
     return 'locked'
   }
@@ -914,7 +987,7 @@ export function ClientPortal() {
             clientName={project.client_name}
             agencyName={agencyName}
             items={visibleItems}
-            paymentState={paymentState}
+            paymentLifecycle={paymentLifecycle}
             awaitingPaymentConfirmation={awaitingPaymentConfirmation}
             paymentNotice={paymentNotice}
             checkoutUrl={checkoutUrl}
@@ -926,6 +999,7 @@ export function ClientPortal() {
         <div className="space-y-0">
           {visibleItems.map((item, index) => {
             const status = stepStatus(item)
+            const paymentLocked = item.type === 'payment' && !paymentUnlockInfo.unlocked
             const isOpen = openStepId === item.id && !item.completed
             const isLast = index === visibleItems.length - 1
             const isSaving = savingItemId === item.id
@@ -944,7 +1018,11 @@ export function ClientPortal() {
                 <button
                   type="button"
                   className="group relative z-10 flex w-full items-start gap-4 py-3 text-left"
-                  onClick={() => { if (!item.completed) setOpenStepId(isOpen ? null : item.id) }}
+                  onClick={() => {
+                    if (item.completed) return
+                    // Payment locked: allow open only to show the lock message.
+                    setOpenStepId(isOpen ? null : item.id)
+                  }}
                 >
                   <StepCircle index={index} status={status} />
                   <div className="flex flex-1 items-center justify-between pt-1.5">
@@ -1234,35 +1312,53 @@ export function ClientPortal() {
 
                     {item.type === 'payment' && !item.completed && (
                       <div className="space-y-3">
-                        <p className="font-body text-sm text-[var(--ink-muted)]">
-                          Réglez {formatPriceEur(project.price)} pour poursuivre — paiement
-                          sécurisé via Stripe.
-                        </p>
-                        {stepCheckoutUrl ? (
-                          <a
-                            href={stepCheckoutUrl}
-                            className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-6 py-3 font-body text-sm font-medium text-[var(--white)] transition hover:brightness-95"
-                          >
-                            Payer {formatPriceEur(project.price)} →
-                          </a>
+                        {paymentLocked ? (
+                          <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-warm)] p-4">
+                            <p className="font-body text-sm font-medium text-[var(--ink)]">
+                              {paymentUnlockInfo.lockMessage ?? 'Paiement pas encore disponible'}
+                            </p>
+                            <p className="mt-1 font-body text-xs text-[var(--ink-muted)]">
+                              Le paiement se débloque dès que les étapes précédentes obligatoires
+                              sont soumises (contrat signé inclus).
+                            </p>
+                          </div>
                         ) : (
-                          <Button
-                            onClick={() => void preparePaymentStep()}
-                            disabled={preparingPayment}
-                          >
-                            {preparingPayment ? 'Préparation…' : 'Procéder au paiement'}
-                          </Button>
+                          <>
+                            <p className="font-body text-sm text-[var(--ink-muted)]">
+                              {formatPaymentStepCopy({
+                                price: project.price,
+                                isLastStep: isLast,
+                              })}
+                            </p>
+                            {stepCheckoutUrl ? (
+                              <a
+                                href={stepCheckoutUrl}
+                                className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-6 py-3 font-body text-sm font-medium text-[var(--white)] transition hover:brightness-95"
+                              >
+                                Payer {formatEuro(project.price)} →
+                              </a>
+                            ) : (
+                              <Button
+                                onClick={() => void preparePaymentStep()}
+                                disabled={preparingPayment}
+                              >
+                                {preparingPayment ? 'Préparation…' : 'Procéder au paiement'}
+                              </Button>
+                            )}
+                            {paymentStepError ? (
+                              <p className="font-body text-xs text-[var(--amber)]">
+                                {paymentStepError}
+                              </p>
+                            ) : null}
+                          </>
                         )}
-                        {paymentStepError ? (
-                          <p className="font-body text-xs text-[var(--amber)]">{paymentStepError}</p>
-                        ) : null}
                       </div>
                     )}
                     {item.type === 'payment' && item.completed && (
                       <div className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--mint-soft)] p-3">
                         <span className="text-lg text-[var(--mint)]">✓</span>
                         <span className="font-body text-sm text-[var(--ink-soft)]">
-                          Paiement confirmé — {formatPriceEur(project.price)}
+                          Paiement confirmé — {formatEuro(project.price)}
                         </span>
                       </div>
                     )}

@@ -5,6 +5,7 @@ import {
   isValidHttpUrl,
   parseChoiceOptions,
 } from '../../lib/checklistFields'
+import { formatEuro } from '../../lib/payments'
 import { isFreliPortalUrl } from '../../lib/scheduleEmbed'
 
 type FieldItemConfigProps = {
@@ -77,10 +78,10 @@ export function FieldItemConfig({ item, priceEur, onChange }: FieldItemConfigPro
 
   if (item.type === 'payment') {
     return (
-      <div className="mt-3 border-t border-[var(--border)] pt-3">
+      <div className="mt-3 border-t border-[var(--border)] pt-3 space-y-2">
         {priceEur && priceEur > 0 ? (
           <p className={hintCls}>
-            Le client règle {priceEur} € à cette étape, via Stripe. Une seule étape de paiement
+            Le client règle {formatEuro(priceEur)} à cette étape, via Stripe. Une seule étape de paiement
             par projet.
           </p>
         ) : (
@@ -88,6 +89,11 @@ export function FieldItemConfig({ item, priceEur, onChange }: FieldItemConfigPro
             Renseigne le prix du projet pour utiliser une étape de paiement.
           </p>
         )}
+        <p className={hintCls}>
+          Déblocage basé sur les étapes précédentes <strong>soumises</strong> (contrat signé
+          inclus), pas sur la validation agence. Une fois débloqué, le paiement reste accessible
+          même en cas de correction.
+        </p>
       </div>
     )
   }

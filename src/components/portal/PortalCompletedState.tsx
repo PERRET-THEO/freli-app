@@ -1,4 +1,4 @@
-import { formatPriceEur, type PaymentState } from '../../lib/payments'
+import { formatEuro, type PaymentLifecycleState } from '../../lib/payments'
 
 type CompletedItem = {
   id: string
@@ -9,7 +9,7 @@ type PortalCompletedStateProps = {
   clientName: string
   agencyName: string
   items: CompletedItem[]
-  paymentState: PaymentState
+  paymentLifecycle: PaymentLifecycleState | null
   awaitingPaymentConfirmation: boolean
   paymentNotice: 'success' | 'cancelled' | null
   checkoutUrl: string | null
@@ -21,13 +21,18 @@ export function PortalCompletedState({
   clientName,
   agencyName,
   items,
-  paymentState,
+  paymentLifecycle,
   awaitingPaymentConfirmation,
   paymentNotice,
   checkoutUrl,
   checkoutTriggerError,
   price,
 }: PortalCompletedStateProps) {
+  const showPayCta =
+    paymentLifecycle === 'available' ||
+    paymentLifecycle === 'link_created' ||
+    paymentLifecycle === 'link_sent'
+
   return (
     <div className="mb-8 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--white)] p-6 text-center shadow-[0_2px_16px_rgba(13,15,20,0.06)] sm:p-10">
       <p className="text-5xl animate-bounce">🎉</p>
@@ -43,10 +48,10 @@ export function PortalCompletedState({
           </div>
         ))}
       </div>
-      {paymentState === 'paid' ? (
+      {paymentLifecycle === 'paid' ? (
         <div className="mx-auto mt-6 max-w-sm rounded-[var(--radius-sm)] bg-[var(--mint-soft)] px-4 py-3">
           <p className="font-body text-sm font-medium text-[var(--ink)]">
-            Paiement confirmé{price ? ` — ${formatPriceEur(price)}` : ''}. Merci !
+            Paiement confirmé{price ? ` — ${formatEuro(price)}` : ''}. Merci !
           </p>
         </div>
       ) : awaitingPaymentConfirmation ? (
@@ -58,7 +63,7 @@ export function PortalCompletedState({
             Merci, nous finalisons la validation. Cette page se mettra à jour automatiquement.
           </p>
         </div>
-      ) : paymentState === 'pending' ? (
+      ) : showPayCta ? (
         <div className="mx-auto mt-6 max-w-sm">
           {paymentNotice === 'cancelled' && (
             <p className="mb-3 font-body text-sm text-[var(--ink-soft)]">
@@ -71,7 +76,7 @@ export function PortalCompletedState({
                 href={checkoutUrl}
                 className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-6 py-3 font-body text-sm font-medium text-[var(--white)] transition hover:brightness-95"
               >
-                Procéder au paiement{price ? ` (${formatPriceEur(price)})` : ''}
+                Procéder au paiement{price ? ` (${formatEuro(price)})` : ''}
               </a>
               <p className="mt-3 font-body text-xs text-[var(--ink-muted)]">
                 Un email avec le lien de paiement vous a également été envoyé.
@@ -84,6 +89,12 @@ export function PortalCompletedState({
                 : `${agencyName} vous enverra le lien de paiement très bientôt.`}
             </p>
           )}
+        </div>
+      ) : paymentLifecycle === 'not_available' ? (
+        <div className="mx-auto mt-6 max-w-sm rounded-[var(--radius-sm)] bg-[var(--surface-warm)] px-4 py-3">
+          <p className="font-body text-sm text-[var(--ink-soft)]">
+            Le paiement sera disponible une fois les étapes obligatoires soumises.
+          </p>
         </div>
       ) : null}
       <p className="mt-6 font-body text-xs text-[var(--ink-muted)]">Vous pouvez fermer cette page.</p>
