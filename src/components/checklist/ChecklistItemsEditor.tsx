@@ -29,6 +29,7 @@ const QUICK_ADD_ITEMS: { type: ChecklistItemType; label: string; defaultLabel: s
   { type: 'signature', label: 'Contrat à signer', defaultLabel: 'Contrat à signer' },
   { type: 'payment', label: 'Paiement', defaultLabel: 'Régler l’acompte' },
   { type: 'schedule', label: 'Rendez-vous', defaultLabel: 'Réserver le rendez-vous de lancement' },
+  { type: 'credentials', label: 'Identifiants', defaultLabel: 'Accès / identifiants' },
 ]
 
 type ChecklistItemsEditorProps = {

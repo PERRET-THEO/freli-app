@@ -26,6 +26,30 @@ export type ChecklistItemConfig = {
   visibleWhen?: StoredCondition | null
   /** Si true/false, force l'extraction IA ; sinon heuristique sur le libellé (CNI/Kbis/RIB). */
   extractDocument?: boolean
+  /** Efface le ciphertext à la validation agence (type credentials). */
+  eraseSecretOnApprove?: boolean
+}
+
+export type CredentialsFormValues = {
+  username: string
+  password: string
+  loginUrl: string
+}
+
+/** Sentinelles autorisées dans checklist_items.value pour type=credentials. */
+export const CREDENTIALS_SENTINELS = new Set(['submitted', 'cleared'])
+
+export function isCredentialsSentinel(value: string | null | undefined): boolean {
+  return value == null || CREDENTIALS_SENTINELS.has(value)
+}
+
+export function validateCredentialsForm(values: CredentialsFormValues): string | null {
+  if (!values.username.trim()) return 'Identifiant requis.'
+  if (!values.password) return 'Mot de passe requis.'
+  if (values.loginUrl.trim() && !isValidHttpUrl(values.loginUrl)) {
+    return 'Lien invalide (http/https uniquement).'
+  }
+  return null
 }
 
 export const FIELD_PLACEHOLDERS: Partial<Record<ChecklistItemType, string>> = {

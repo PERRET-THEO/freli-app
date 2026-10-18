@@ -181,7 +181,7 @@ export function ClientDetail() {
     setDocsLoading(true)
     setActivityLoading(true)
 
-    const [{ data: reminderRows }, { data: extractionRows }, { data: generatedRows }] =
+    const [{ data: reminderRows }, { data: extractionRows }, { data: generatedRows }, { data: storedActivity }] =
       await Promise.all([
         supabase
           .from('project_reminder_logs')
@@ -197,6 +197,13 @@ export function ClientDetail() {
           .select('id, project_id, status, created_at, finalized_at, brief, current_version')
           .in('project_id', projectIds)
           .order('created_at', { ascending: false }),
+        supabase
+          .from('client_activity_events')
+          .select('id, event_type, title, occurred_at, project_id')
+          .eq('client_id', clientId)
+          .in('event_type', ['secret.reveal', 'secret.copy', 'secret.cleared'])
+          .order('occurred_at', { ascending: false })
+          .limit(50),
       ])
 
     if (!alive()) return
@@ -241,6 +248,13 @@ export function ClientDetail() {
           status: string
           created_at: string
           reviewed_at: string | null
+        }>,
+        storedEvents: (storedActivity ?? []) as Array<{
+          id: string
+          event_type: string
+          title: string
+          occurred_at: string
+          project_id: string | null
         }>,
       }),
     )

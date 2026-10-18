@@ -17,6 +17,7 @@ export type ChecklistItemType =
   | 'choice'
   | 'payment'
   | 'schedule'
+  | 'credentials'
 
 export type ContractSource = 'existing' | 'ai_generate' | 'default'
 
@@ -29,6 +30,8 @@ export type DraftChecklistItem = {
   contractBrief?: string
   choiceOptions?: string[]
   scheduleUrl?: string
+  /** Efface le ciphertext à la validation agence. */
+  eraseSecretOnApprove?: boolean
   /** Affiche l'étape uniquement si la condition est remplie. */
   visibleWhen?: VisibilityCondition | null
 }
@@ -43,6 +46,7 @@ export const CHECKLIST_TYPE_LABELS: Record<ChecklistItemType, string> = {
   choice: 'Choix dans une liste',
   payment: 'Paiement',
   schedule: 'Prise de rendez-vous',
+  credentials: 'Identifiants / Secret',
 }
 
 export const CHECKLIST_TYPE_OPTIONS: { value: ChecklistItemType; label: string }[] = (
@@ -56,6 +60,7 @@ export const CHECKLIST_TYPE_OPTIONS: { value: ChecklistItemType; label: string }
     'signature',
     'payment',
     'schedule',
+    'credentials',
   ] as ChecklistItemType[]
 ).map((value) => ({ value, label: CHECKLIST_TYPE_LABELS[value] }))
 
@@ -80,7 +85,7 @@ export const BUILTIN_TEMPLATES: Record<
       { label: 'Brief', type: 'text' },
       { label: 'Logo', type: 'file' },
       { label: 'Nom de domaine actuel', type: 'url' },
-      { label: 'Accès hébergeur', type: 'text' },
+      { label: 'Accès hébergeur', type: 'credentials' },
       { label: 'Contrat', type: 'signature' },
       { label: 'Contenu pages', type: 'text' },
     ],
@@ -90,7 +95,7 @@ export const BUILTIN_TEMPLATES: Record<
     items: [
       { label: 'Brief technique', type: 'text' },
       { label: 'Charte UI', type: 'file' },
-      { label: 'Comptes stores', type: 'text' },
+      { label: 'Comptes stores', type: 'credentials' },
       { label: 'Contrat', type: 'signature' },
       { label: 'Spécifications', type: 'text' },
     ],
@@ -109,7 +114,7 @@ export const BUILTIN_TEMPLATES: Record<
     items: [
       { label: 'Catalogue produits', type: 'file' },
       { label: 'Logo & charte', type: 'file' },
-      { label: 'Accès plateforme (Shopify, etc.)', type: 'text' },
+      { label: 'Accès plateforme (Shopify, etc.)', type: 'credentials' },
       { label: 'Moyens de paiement souhaités', type: 'text' },
       { label: 'Contrat', type: 'signature' },
     ],
@@ -153,6 +158,7 @@ type DraftOverrides = Partial<
     | 'contractBrief'
     | 'choiceOptions'
     | 'scheduleUrl'
+    | 'eraseSecretOnApprove'
     | 'visibleWhen'
   >
 >
@@ -178,6 +184,9 @@ export function createDraftItem(
   }
   if (type === 'schedule') {
     base.scheduleUrl = overrides?.scheduleUrl ?? ''
+  }
+  if (type === 'credentials') {
+    base.eraseSecretOnApprove = overrides?.eraseSecretOnApprove ?? false
   }
   return { ...base, ...overrides }
 }
@@ -237,6 +246,7 @@ const ONBOARDING_TYPE_HINTS: Record<Exclude<ChecklistItemType, 'signature'>, str
   choice: 'choix à faire',
   payment: 'paiement à régler',
   schedule: 'rendez-vous à planifier',
+  credentials: 'identifiants à transmettre (chiffrés)',
 }
 
 export function getChecklistContextLines(items: DraftChecklistItem[]): string[] {
@@ -454,6 +464,10 @@ export function buildChecklistItemConfig(
     if (scheduleUrl) config.scheduleUrl = scheduleUrl
   }
 
+  if (item.type === 'credentials' && item.eraseSecretOnApprove) {
+    config.eraseSecretOnApprove = true
+  }
+
   const visibleWhen = toStoredCondition(item, siblings)
   if (visibleWhen) config.visibleWhen = visibleWhen
 
@@ -464,8 +478,11 @@ export function buildChecklistItemConfig(
 export function readChecklistItemConfig(
   type: ChecklistItemType,
   config: ChecklistItemConfig | null | undefined,
-): Pick<DraftChecklistItem, 'choiceOptions' | 'scheduleUrl'> {
+): Pick<DraftChecklistItem, 'choiceOptions' | 'scheduleUrl' | 'eraseSecretOnApprove'> {
   if (type === 'choice') return { choiceOptions: config?.choiceOptions ?? [] }
   if (type === 'schedule') return { scheduleUrl: config?.scheduleUrl ?? '' }
+  if (type === 'credentials') {
+    return { eraseSecretOnApprove: Boolean(config?.eraseSecretOnApprove) }
+  }
   return {}
 }

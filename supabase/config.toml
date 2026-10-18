@@ -149,3 +149,19 @@ verify_jwt = false
 # Liste d'attente lancement.freli.fr — formulaire public (honeypot + rate limit)
 [functions.submit-waitlist-signup]
 verify_jwt = false
+
+# PR B — Identifiants / Secret (AES-GCM)
+[functions.portal-submit-credentials]
+verify_jwt = false
+
+[functions.reveal-checklist-credentials]
+verify_jwt = true
+
+[functions.approve-or-clear-credentials]
+verify_jwt = true
+
+[functions.convert-checklist-text-to-credentials]
+verify_jwt = true
+
+[functions.migrate-legacy-credentials]
+verify_jwt = false

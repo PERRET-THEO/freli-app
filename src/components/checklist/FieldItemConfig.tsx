@@ -92,5 +92,27 @@ export function FieldItemConfig({ item, priceEur, onChange }: FieldItemConfigPro
     )
   }
 
+  if (item.type === 'credentials') {
+    return (
+      <div className="mt-3 border-t border-[var(--border)] pt-3">
+        <label className="flex cursor-pointer items-start gap-2 text-xs font-body text-[var(--ink-soft)]">
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-[var(--accent)]"
+            checked={Boolean(item.eraseSecretOnApprove)}
+            onChange={(event) => onChange({ eraseSecretOnApprove: event.target.checked })}
+          />
+          <span>
+            Effacer le secret après validation
+            <span className={`block ${hintCls}`}>
+              Une fois validé, le secret n’est plus consultable (recommandé pour les accès
+              temporaires).
+            </span>
+          </span>
+        </label>
+      </div>
+    )
+  }
+
   return null
 }

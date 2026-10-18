@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Card } from '../ui'
 import { displayDocumentFilename } from '../../lib/documentDisplay'
 import { createDocumentSignedUrl } from '../../lib/documentSignedUrl'
@@ -9,6 +9,15 @@ import { describeDevice, shortHash, type SignatureProof } from '../../lib/signat
 import { getVisibleItems, hasStoredCondition } from '../../lib/checklistConditions'
 import type { ChecklistItemConfig } from '../../lib/checklistFields'
 import {
+  approveOrClearCredentials,
+  convertTextToCredentials,
+  CredentialsApiError,
+  formatRevealedCredentials,
+  isSafeDisplayLoginUrl,
+  revealChecklistCredentials,
+  type RevealedCredentials,
+} from '../../lib/checklistCredentials'
+import {
   approveChecklistItem,
   getReviewBadgeLabel,
   getReviewStatus,
@@ -18,6 +27,8 @@ import {
   rejectChecklistItem,
   type ReviewStatus,
 } from '../../lib/checklistReview'
+
+const SECRET_REVEAL_TTL_MS = 30_000
 
 export type ReviewPanelItem = {
   id: string
@@ -127,7 +138,157 @@ function DocumentOpenLink({ path, label }: { path: string; label: string }) {
   )
 }
 
-function ItemValue({ item }: { item: ReviewPanelItem }) {
+function CredentialsValue({
+  item,
+  onChanged,
+}: {
+  item: ReviewPanelItem
+  onChanged: () => void | Promise<void>
+}) {
+  const [revealed, setRevealed] = useState<RevealedCredentials | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current)
+    }
+  }, [])
+
+  const scheduleAutoHide = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current)
+    hideTimer.current = setTimeout(() => setRevealed(null), SECRET_REVEAL_TTL_MS)
+  }
+
+  const handleReveal = async (action: 'reveal' | 'copy') => {
+    setBusy(true)
+    setErrorMsg(null)
+    try {
+      const creds = await revealChecklistCredentials({ itemId: item.id, action })
+      if (action === 'copy') {
+        await navigator.clipboard.writeText(formatRevealedCredentials(creds))
+      }
+      setRevealed(creds)
+      scheduleAutoHide()
+    } catch (reason) {
+      if (reason instanceof CredentialsApiError && (reason.status === 410 || reason.code === 'cleared')) {
+        setErrorMsg('Secret effacé — plus rien à afficher.')
+        setRevealed(null)
+      } else {
+        setErrorMsg(reason instanceof Error ? reason.message : 'Consultation impossible.')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleClear = async () => {
+    setBusy(true)
+    setErrorMsg(null)
+    try {
+      await approveOrClearCredentials({ itemId: item.id, action: 'clear' })
+      setRevealed(null)
+      await onChanged()
+    } catch (reason) {
+      setErrorMsg(reason instanceof Error ? reason.message : 'Effacement impossible.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (item.value === 'cleared') {
+    return (
+      <p className="text-xs font-body text-[var(--ink-muted)]">
+        Secret effacé — plus consultable.
+      </p>
+    )
+  }
+
+  if (!item.completed || item.value !== 'submitted') {
+    return <p className="text-xs font-body text-[var(--ink-muted)]">En attente du client.</p>
+  }
+
+  return (
+    <div className="space-y-2">
+      {revealed ? (
+        <div className="rounded-[var(--radius-xs)] bg-[var(--surface)] p-2 text-xs font-body text-[var(--ink-soft)]">
+          {'legacy' in revealed ? (
+            <p className="whitespace-pre-wrap">{revealed.legacy}</p>
+          ) : (
+            <dl className="space-y-1">
+              <div>
+                <dt className="inline font-medium">Identifiant : </dt>
+                <dd className="inline">{revealed.username}</dd>
+              </div>
+              <div>
+                <dt className="inline font-medium">Mot de passe : </dt>
+                <dd className="inline font-mono">{revealed.password}</dd>
+              </div>
+              {isSafeDisplayLoginUrl(revealed.loginUrl) ? (
+                <div>
+                  <dt className="inline font-medium">URL : </dt>
+                  <dd className="inline">
+                    <a
+                      href={revealed.loginUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--accent)] underline"
+                    >
+                      {revealed.loginUrl}
+                    </a>
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          )}
+          <p className="mt-1 text-[var(--ink-muted)]">Masqué automatiquement dans 30 s.</p>
+        </div>
+      ) : (
+        <p className="text-xs font-body text-[var(--ink-muted)]">•••••••• (secret chiffré)</p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => handleReveal('reveal')}
+          className="rounded-[var(--radius-xs)] border border-[var(--border)] px-2.5 py-1 text-xs font-body text-[var(--ink-soft)] transition hover:border-[var(--accent)] disabled:opacity-50"
+        >
+          Afficher
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => handleReveal('copy')}
+          className="rounded-[var(--radius-xs)] border border-[var(--border)] px-2.5 py-1 text-xs font-body text-[var(--ink-soft)] transition hover:border-[var(--accent)] disabled:opacity-50"
+        >
+          Copier
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={handleClear}
+          className="rounded-[var(--radius-xs)] border border-[var(--border)] px-2.5 py-1 text-xs font-body text-[#EF4444] transition hover:bg-[#FEF2F2] disabled:opacity-50"
+        >
+          Effacer maintenant
+        </button>
+      </div>
+      {errorMsg ? <p className="text-xs font-body text-[var(--amber)]">{errorMsg}</p> : null}
+    </div>
+  )
+}
+
+function ItemValue({
+  item,
+  onChanged,
+}: {
+  item: ReviewPanelItem
+  onChanged: () => void | Promise<void>
+}) {
+  if (item.type === 'credentials') {
+    return <CredentialsValue item={item} onChanged={onChanged} />
+  }
+
   if (!item.value) {
     return <p className="text-xs font-body text-[var(--ink-muted)]">Aucune valeur transmise.</p>
   }
@@ -154,9 +315,47 @@ function ItemValue({ item }: { item: ReviewPanelItem }) {
   }
 
   return (
-    <p className="whitespace-pre-wrap rounded-[var(--radius-xs)] bg-[var(--surface)] p-2 text-xs font-body text-[var(--ink-soft)]">
-      {item.value}
-    </p>
+    <div className="space-y-2">
+      <p className="whitespace-pre-wrap rounded-[var(--radius-xs)] bg-[var(--surface)] p-2 text-xs font-body text-[var(--ink-soft)]">
+        {item.value}
+      </p>
+      {item.type === 'text' && item.value.trim() ? (
+        <ConvertToSecretButton itemId={item.id} onChanged={onChanged} />
+      ) : null}
+    </div>
+  )
+}
+
+function ConvertToSecretButton({
+  itemId,
+  onChanged,
+}: {
+  itemId: string
+  onChanged: () => void | Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  return (
+    <div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true)
+          setErrorMsg(null)
+          void convertTextToCredentials(itemId)
+            .then(() => onChanged())
+            .catch((reason) => {
+              setErrorMsg(reason instanceof Error ? reason.message : 'Conversion impossible.')
+            })
+            .finally(() => setBusy(false))
+        }}
+        className="text-xs font-body text-[var(--accent)] underline disabled:opacity-50"
+      >
+        {busy ? 'Conversion…' : 'Convertir en secret'}
+      </button>
+      {errorMsg ? <p className="mt-1 text-xs font-body text-[var(--amber)]">{errorMsg}</p> : null}
+    </div>
   )
 }
 
@@ -191,7 +390,11 @@ function ReviewRow({
     setBusy(true)
     setErrorMsg(null)
     try {
-      await approveChecklistItem(item.id)
+      if (item.type === 'credentials') {
+        await approveOrClearCredentials({ itemId: item.id, action: 'approve' })
+      } else {
+        await approveChecklistItem(item.id)
+      }
       await onReviewed()
     } catch (reason) {
       setErrorMsg(reason instanceof Error ? reason.message : 'Validation impossible.')
@@ -270,9 +473,11 @@ function ReviewRow({
         </div>
       ) : null}
 
-      {item.completed ? <div className="mt-2">
-        <ItemValue item={item} />
-      </div> : null}
+      {item.completed || item.type === 'credentials' ? (
+        <div className="mt-2">
+          <ItemValue item={item} onChanged={onReviewed} />
+        </div>
+      ) : null}
 
       {item.completed && signatureProof ? (
         <SignatureProofBlock proof={signatureProof} />

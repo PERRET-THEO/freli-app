@@ -7,10 +7,21 @@ export type ClientActivityEvent = {
     | 'contract_signed'
     | 'extraction_ready'
     | 'project_created'
+    | 'secret.reveal'
+    | 'secret.copy'
+    | 'secret.cleared'
   title: string
   occurredAt: string
   projectId: string | null
   projectName: string | null
+}
+
+export type StoredActivityRow = {
+  id: string
+  event_type: string
+  title: string
+  occurred_at: string
+  project_id: string | null
 }
 
 type ReminderRow = {
@@ -51,9 +62,28 @@ export function mergeClientActivityEvents(input: {
   reminders: ReminderRow[]
   checklist: ChecklistRow[]
   extractions: ExtractionRow[]
+  storedEvents?: StoredActivityRow[]
 }): ClientActivityEvent[] {
   const projectName = new Map(input.projects.map((p) => [p.id, p.client_name]))
   const events: ClientActivityEvent[] = []
+
+  for (const row of input.storedEvents ?? []) {
+    if (
+      row.event_type !== 'secret.reveal' &&
+      row.event_type !== 'secret.copy' &&
+      row.event_type !== 'secret.cleared'
+    ) {
+      continue
+    }
+    events.push({
+      id: `stored-${row.id}`,
+      eventType: row.event_type,
+      title: row.title,
+      occurredAt: row.occurred_at,
+      projectId: row.project_id,
+      projectName: row.project_id ? projectName.get(row.project_id) ?? null : null,
+    })
+  }
 
   for (const project of input.projects) {
     events.push({

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BUILTIN_TEMPLATES,
   buildChecklistItemConfig,
   createDraftItem,
   readChecklistItemConfig,
@@ -117,6 +118,14 @@ describe('buildChecklistItemConfig / readChecklistItemConfig', () => {
     expect(buildChecklistItemConfig(createDraftItem('Acompte', 'payment'))).toBeNull()
   })
 
+  it('sérialise eraseSecretOnApprove pour credentials', () => {
+    const item = createDraftItem('Accès', 'credentials', { eraseSecretOnApprove: true })
+    expect(buildChecklistItemConfig(item)).toEqual({ eraseSecretOnApprove: true })
+    expect(readChecklistItemConfig('credentials', { eraseSecretOnApprove: true })).toEqual({
+      eraseSecretOnApprove: true,
+    })
+  })
+
   it('relit la config vers les champs de brouillon', () => {
     expect(readChecklistItemConfig('choice', { choiceOptions: ['A', 'B'] })).toEqual({
       choiceOptions: ['A', 'B'],
@@ -130,5 +139,22 @@ describe('buildChecklistItemConfig / readChecklistItemConfig', () => {
   it('tolère une config absente', () => {
     expect(readChecklistItemConfig('choice', null)).toEqual({ choiceOptions: [] })
     expect(readChecklistItemConfig('schedule', null)).toEqual({ scheduleUrl: '' })
+  })
+})
+
+describe('builtins credentials', () => {
+  it('convertit Accès hébergeur, Accès plateforme et Comptes stores', () => {
+    const labels = [
+      ...BUILTIN_TEMPLATES.website.items,
+      ...BUILTIN_TEMPLATES.ecommerce.items,
+      ...BUILTIN_TEMPLATES.mobile.items,
+    ]
+      .filter((item) =>
+        ['Accès hébergeur', 'Accès plateforme (Shopify, etc.)', 'Comptes stores'].includes(
+          item.label,
+        ),
+      )
+      .map((item) => item.type)
+    expect(labels).toEqual(['credentials', 'credentials', 'credentials'])
   })
 })

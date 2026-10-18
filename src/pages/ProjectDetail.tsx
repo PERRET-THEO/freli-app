@@ -77,6 +77,13 @@ type ReminderLog = {
   sent_at: string
 }
 
+type SecretActivityRow = {
+  id: string
+  event_type: string
+  title: string
+  occurred_at: string
+}
+
 export function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -85,6 +92,7 @@ export function ProjectDetail() {
   const [project, setProject] = useState<ProjectRecord | null>(null)
   const [items, setItems] = useState<ChecklistItemRecord[]>([])
   const [reminderLogs, setReminderLogs] = useState<ReminderLog[]>([])
+  const [secretActivity, setSecretActivity] = useState<SecretActivityRow[]>([])
   const [signatureProofs, setSignatureProofs] = useState<Record<string, SignatureProof>>({})
   const [sendingReminder, setSendingReminder] = useState(false)
   const [reminderFeedback, setReminderFeedback] = useState<string | null>(null)
@@ -138,18 +146,28 @@ export function ProjectDetail() {
       return
     }
 
-    const { data: logsData } = await supabase
-      .from('project_reminder_logs')
-      .select('id, source, sent_at')
-      .eq('project_id', projectData.id)
-      .order('sent_at', { ascending: false })
-      .limit(10)
+    const [{ data: logsData }, { data: secretRows }] = await Promise.all([
+      supabase
+        .from('project_reminder_logs')
+        .select('id, source, sent_at')
+        .eq('project_id', projectData.id)
+        .order('sent_at', { ascending: false })
+        .limit(10),
+      supabase
+        .from('client_activity_events')
+        .select('id, event_type, title, occurred_at')
+        .eq('project_id', projectData.id)
+        .in('event_type', ['secret.reveal', 'secret.copy', 'secret.cleared'])
+        .order('occurred_at', { ascending: false })
+        .limit(20),
+    ])
 
     const record = projectData as ProjectRecord
     setProject(record)
     pushRecentProject(record.id, record.client_name)
     setItems((checklistData ?? []) as ChecklistItemRecord[])
     setReminderLogs((logsData ?? []) as ReminderLog[])
+    setSecretActivity((secretRows ?? []) as SecretActivityRow[])
     setSignatureProofs(await fetchProjectSignatureProofs(projectData.id))
     setLoading(false)
   }, [id])
@@ -557,6 +575,22 @@ export function ProjectDetail() {
             }}
           />
           <ExtractionReviewPanel projectId={project.id} />
+          {secretActivity.length > 0 ? (
+            <Card>
+              <h2 className="font-display text-xl font-semibold text-[var(--ink)]">
+                Consultations des secrets
+              </h2>
+              <ul className="mt-3 space-y-2">
+                {secretActivity.map((row) => (
+                  <li key={row.id} className="text-xs font-body text-[var(--ink-soft)]">
+                    <span className="text-[var(--ink-muted)]">{formatRelative(row.occurred_at)}</span>
+                    {' — '}
+                    {row.title}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
           <ContractGeneratorPanel
             projectId={project.id}
             aiContractsEnabled={aiContractsEnabled}

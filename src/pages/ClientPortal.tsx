@@ -44,8 +44,14 @@ import {
   isSingleLineType,
   normalizeClientAnswer,
   validateClientAnswer,
+  validateCredentialsForm,
   type ChecklistItemConfig,
+  type CredentialsFormValues,
 } from '../lib/checklistFields'
+import {
+  CredentialsApiError,
+  portalSubmitCredentials,
+} from '../lib/checklistCredentials'
 import { requestPortalPaymentLink } from '../lib/portalPayment'
 import {
   clearDraft,
@@ -212,6 +218,9 @@ export function ClientPortal() {
   const checkoutTriggerAttempts = useRef(0)
   const confettiShown = useRef(false)
   const paymentConfirmPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [credentialForms, setCredentialForms] = useState<Record<string, CredentialsFormValues>>({})
+  const [credentialShowPassword, setCredentialShowPassword] = useState<Record<string, boolean>>({})
+  const [replacingCredentialsId, setReplacingCredentialsId] = useState<string | null>(null)
 
   const agencyRelation = useMemo(() => {
     const relation = project?.agencies
@@ -636,6 +645,97 @@ export function ClientPortal() {
     await markItemCompleted(item.id, normalizeClientAnswer(item.type, raw))
   }
 
+  const emptyCredentialsForm = (): CredentialsFormValues => ({
+    username: '',
+    password: '',
+    loginUrl: '',
+  })
+
+  const updateCredentialForm = (
+    itemId: string,
+    patch: Partial<CredentialsFormValues>,
+  ) => {
+    setCredentialForms((cur) => ({
+      ...cur,
+      [itemId]: { ...(cur[itemId] ?? emptyCredentialsForm()), ...patch },
+    }))
+    setFieldErrors((cur) => {
+      if (!cur[itemId]) return cur
+      const next = { ...cur }
+      delete next[itemId]
+      return next
+    })
+  }
+
+  const submitCredentialsAnswer = async (item: ChecklistItemRecord) => {
+    if (!token) return
+    const form = credentialForms[item.id] ?? emptyCredentialsForm()
+    const validationError = validateCredentialsForm(form)
+    if (validationError) {
+      setFieldErrors((cur) => ({ ...cur, [item.id]: validationError }))
+      return
+    }
+    setSavingItemId(item.id)
+    try {
+      const result = await portalSubmitCredentials({
+        projectToken: token,
+        itemId: item.id,
+        username: form.username.trim(),
+        password: form.password,
+        loginUrl: form.loginUrl.trim() || undefined,
+      })
+      setItems((cur) =>
+        cur.map((row) =>
+          row.id === item.id
+            ? {
+                ...row,
+                completed: result.item.completed,
+                value: result.item.value,
+                review_status: result.item.review_status as ReviewStatus | null,
+                review_note: result.item.review_note,
+                config: result.item.config,
+              }
+            : row,
+        ),
+      )
+      setProject((cur) =>
+        cur
+          ? {
+              ...cur,
+              status: result.projectStatus as ProjectRecord['status'],
+            }
+          : cur,
+      )
+      setCredentialForms((cur) => {
+        const next = { ...cur }
+        delete next[item.id]
+        return next
+      })
+      setCredentialShowPassword((cur) => {
+        const next = { ...cur }
+        delete next[item.id]
+        return next
+      })
+      setReplacingCredentialsId(null)
+      clearDraft(token, item.id)
+      if (result.projectJustCompleted) {
+        setIsCompleted(true)
+        void processPortalProjectCompletion({
+          projectId: project?.id ?? '',
+          projectToken: token,
+        }).catch(() => {})
+      }
+      advanceToNext(item.id)
+    } catch (reason) {
+      const message =
+        reason instanceof CredentialsApiError
+          ? reason.message
+          : 'Impossible d’enregistrer les identifiants.'
+      setFieldErrors((cur) => ({ ...cur, [item.id]: message }))
+    }
+    setSavingItemId(null)
+  }
+
   const preparePaymentStep = async () => {
     if (!token) return
     setPreparingPayment(true)
@@ -946,6 +1046,124 @@ export function ClientPortal() {
                     )}
                     {isInputType(item.type) && item.completed && (
                       <p className="rounded-[var(--radius-sm)] bg-[var(--surface)] p-3 font-body text-sm text-[var(--ink-soft)]">{item.value}</p>
+                    )}
+
+                    {item.type === 'credentials' &&
+                      (!item.completed || replacingCredentialsId === item.id) && (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="mb-1 block font-body text-xs font-medium text-[var(--ink-soft)]">
+                            Identifiant
+                          </label>
+                          <input
+                            type="text"
+                            autoComplete="username"
+                            className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-base text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)]"
+                            placeholder="ex. contact@entreprise.fr"
+                            value={(credentialForms[item.id] ?? emptyCredentialsForm()).username}
+                            onChange={(e) => updateCredentialForm(item.id, { username: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block font-body text-xs font-medium text-[var(--ink-soft)]">
+                            Mot de passe
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type={credentialShowPassword[item.id] ? 'text' : 'password'}
+                              autoComplete="new-password"
+                              className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-base text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)]"
+                              placeholder="Mot de passe"
+                              value={(credentialForms[item.id] ?? emptyCredentialsForm()).password}
+                              onChange={(e) => updateCredentialForm(item.id, { password: e.target.value })}
+                            />
+                            <button
+                              type="button"
+                              className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--border)] px-3 font-body text-xs text-[var(--ink-muted)]"
+                              onClick={() =>
+                                setCredentialShowPassword((cur) => ({
+                                  ...cur,
+                                  [item.id]: !cur[item.id],
+                                }))
+                              }
+                            >
+                              {credentialShowPassword[item.id] ? 'Masquer' : 'Afficher'}
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 block font-body text-xs font-medium text-[var(--ink-soft)]">
+                            URL de connexion <span className="font-normal text-[var(--ink-muted)]">(optionnel)</span>
+                          </label>
+                          <input
+                            type="url"
+                            autoComplete="url"
+                            className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-base text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)]"
+                            placeholder="https://…"
+                            value={(credentialForms[item.id] ?? emptyCredentialsForm()).loginUrl}
+                            onChange={(e) => updateCredentialForm(item.id, { loginUrl: e.target.value })}
+                          />
+                        </div>
+                        {fieldErrors[item.id] ? (
+                          <p className="font-body text-xs text-[var(--amber)]">{fieldErrors[item.id]}</p>
+                        ) : null}
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {replacingCredentialsId === item.id ? (
+                            <button
+                              type="button"
+                              className="rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-2 font-body text-xs text-[var(--ink-muted)]"
+                              onClick={() => {
+                                setReplacingCredentialsId(null)
+                                setCredentialForms((cur) => {
+                                  const next = { ...cur }
+                                  delete next[item.id]
+                                  return next
+                                })
+                              }}
+                            >
+                              Annuler
+                            </button>
+                          ) : null}
+                          <Button
+                            onClick={() => submitCredentialsAnswer(item)}
+                            disabled={
+                              isSaving ||
+                              !(credentialForms[item.id]?.username ?? '').trim() ||
+                              !(credentialForms[item.id]?.password ?? '')
+                            }
+                          >
+                            {isSaving ? 'Enregistrement...' : 'Transmettre les identifiants →'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    {item.type === 'credentials' &&
+                      item.completed &&
+                      replacingCredentialsId !== item.id && (
+                      <div className="space-y-2 rounded-[var(--radius-sm)] bg-[var(--surface)] p-3">
+                        {item.value === 'cleared' ? (
+                          <p className="font-body text-sm text-[var(--ink-soft)]">
+                            Secret effacé par l’agence — vous pouvez en renvoyer de nouveaux si besoin.
+                          </p>
+                        ) : (
+                          <p className="font-body text-sm text-[var(--ink-soft)]">
+                            Identifiants transmis ✓ — stockés de façon sécurisée.
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          className="font-body text-xs text-[var(--accent)] underline"
+                          onClick={() => {
+                            setReplacingCredentialsId(item.id)
+                            setCredentialForms((cur) => ({
+                              ...cur,
+                              [item.id]: emptyCredentialsForm(),
+                            }))
+                          }}
+                        >
+                          Remplacer les identifiants
+                        </button>
+                      </div>
                     )}
 
                     {item.type === 'file' && !item.completed && (

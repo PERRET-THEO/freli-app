@@ -355,7 +355,14 @@ function buildRecapText(
 
   for (const item of items) {
     const mark = item.completed ? '[x]' : '[ ]'
-    const suffix = item.type === 'text' && item.value ? ` : ${item.value}` : ''
+    // Never append credentials / legacy plaintext into Drive recap.
+    let suffix = ''
+    if (item.type === 'credentials') {
+      if (item.value === 'cleared') suffix = ' : [secret effacé]'
+      else if (item.value === 'submitted') suffix = ' : [secret transmis]'
+    } else if (item.type === 'text' && item.value) {
+      suffix = ` : ${item.value}`
+    }
     lines.push(`${mark} ${item.label} (${item.type})${suffix}`)
   }
   return lines.join('\n')
