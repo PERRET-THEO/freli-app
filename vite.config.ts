@@ -22,7 +22,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // autoUpdate + skipWaiting/clientsClaim: new SW activates immediately after deploy.
+      // PwaUpdateBridge still shows a reload toast if a waiting worker needs a nudge.
       registerType: 'autoUpdate',
+      injectRegister: false,
       includeAssets: ['favicon.ico', 'favicon.png', 'apple-touch-icon.png', 'og-image.png'],
       manifest: {
         name: 'Freli',
@@ -63,10 +66,29 @@ export default defineConfig({
       workbox: {
         // Avoid workbox terser crash on large chunks (pdf.worker) during SW generation.
         mode: 'development',
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        globIgnores: ['**/pdf.worker*.mjs'],
+        // Never precache index.html — stale HTML was serving the old wizard after deploys.
+        globPatterns: ['**/*.{js,css,ico,png,svg,woff2}'],
+        globIgnores: ['**/pdf.worker*.mjs', '**/index.html'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        clientsClaim: true,
+        skipWaiting: true,
+        navigationPreload: true,
+        // Disable default CacheFirst navigateFallback → index.html (caused stale wizard after deploy).
+        navigateFallback: null,
+        // SPA shell: fetch latest HTML (dashboard + /p/:token), fall back to cache offline.
         runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pages-network-first',
+              networkTimeoutSeconds: 3,
+              expiration: {
+                maxEntries: 32,
+                maxAgeSeconds: 24 * 60 * 60,
+              },
+            },
+          },
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
             handler: 'NetworkFirst',

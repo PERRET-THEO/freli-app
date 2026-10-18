@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { getOrCreateAgency } from '../lib/agency'
 import { fetchAgencyAiFlags } from '../lib/agencyQueries'
+import { useAgencySession } from '../contexts/AgencyContext'
 import { sendProjectInviteEmail } from '../lib/resend'
 import { supabase } from '../lib/supabase'
 import { DashboardLayout } from '../components/DashboardLayout'
@@ -89,6 +89,7 @@ function snapshotFromRow(c: Record<string, unknown>): ExistingClientSnapshot {
 }
 
 export function NewProject() {
+  const { agency, loading: agencySessionLoading } = useAgencySession()
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [clientMode, setClientMode] = useState<ClientWizardMode>('new')
   const [clientResolution, setClientResolution] = useState<ClientResolution | null>(null)
@@ -283,13 +284,9 @@ export function NewProject() {
   }, [applyClientSnapshot])
 
   useEffect(() => {
+    if (!agency?.id) return
+    setAgencyId(agency.id)
     const load = async () => {
-      const { data: userData } = await supabase.auth.getUser()
-      if (!userData.user) return
-      const agency = await getOrCreateAgency(userData.user.id)
-      if (!agency?.id) return
-      setAgencyId(agency.id)
-
       const aiFlags = await fetchAgencyAiFlags(agency.id)
       setAiContractsEnabled(aiFlags.ai_contracts_enabled === true)
 
@@ -303,8 +300,8 @@ export function NewProject() {
       setHasDefaultContract(templates.some((t) => t.is_default === true))
       await refreshAgencyTemplates(agency.id)
     }
-    load()
-  }, [])
+    void load()
+  }, [agency?.id])
 
   useEffect(() => {
     if (!clientIdParam) return
@@ -639,14 +636,14 @@ export function NewProject() {
     token: string
     aiLinks: PendingContractLink[]
   }> => {
-    const { data: userData, error: userError } = await supabase.auth.getUser()
-    if (userError || !userData.user) {
-      throw new Error('Utilisateur non connecté. Merci de te reconnecter.')
-    }
-
-    const agency = await getOrCreateAgency(userData.user.id)
-    if (!agency?.id) {
-      throw new Error('Impossible de créer automatiquement votre agence.')
+    // Auth + membership already verified by dashboard session + RPC (auth.uid / user_agency_ids).
+    // Avoid serial getUser + agency_members + agencies round-trips (~6s observed in prod).
+    const resolvedAgencyId = agencyId ?? agency?.id
+    if (!resolvedAgencyId) {
+      if (agencySessionLoading) {
+        throw new Error('Chargement de ton agence… réessaie dans une seconde.')
+      }
+      throw new Error('Agence introuvable. Recharge la page ou reconnecte-toi.')
     }
 
     const mode = resolveMode()
@@ -661,7 +658,7 @@ export function NewProject() {
       mode,
       clientId,
       form: wizardForm,
-      agencyId: agency.id,
+      agencyId: resolvedAgencyId,
       projectName: projectName.trim(),
       clientFullName,
       priceEur,

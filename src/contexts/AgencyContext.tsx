@@ -32,15 +32,17 @@ export function AgencySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const load = async () => {
-      const { data, error } = await supabase.auth.getUser()
-      if (error || !data.user) {
+      // Local session (no Auth API round-trip). JWT validity is enforced by RLS/RPC.
+      const { data: sessionData } = await supabase.auth.getSession()
+      const user = sessionData.session?.user
+      if (!user) {
         navigate('/signin', { replace: true })
         return
       }
-      setEmail(data.user.email ?? null)
-      setUserId(data.user.id)
+      setEmail(user.email ?? null)
+      setUserId(user.id)
 
-      const resolved = await getOrCreateAgency(data.user.id)
+      const resolved = await getOrCreateAgency(user.id)
       if (resolved?.id) {
         const { data: agencyRow } = await supabase
           .from('agencies')
@@ -54,7 +56,7 @@ export function AgencySessionProvider({ children }: { children: ReactNode }) {
             name: agencyRow.name ?? null,
             logo_url: agencyRow.logo_url ?? null,
           })
-          setRole(await fetchMyAgencyRole(agencyRow.id, data.user.id))
+          setRole(await fetchMyAgencyRole(agencyRow.id, user.id))
         }
       }
 

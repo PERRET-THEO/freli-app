@@ -5,6 +5,7 @@ import { AppChromeProvider } from './components/app-shell/AppChromeProvider'
 import { RequireBillingAccess } from './components/billing/RequireBillingAccess'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { CookieConsentBanner } from './components/layout/CookieConsentBanner'
+import { PwaUpdateBridge } from './components/PwaUpdateBridge'
 import { MarketingPageTransition } from './components/layout/MarketingPageTransition'
 import { ScrollToTop } from './components/layout/ScrollToTop'
 import { resolveAuthCallbackPath } from './lib/authCallbackRoute'
@@ -197,6 +198,7 @@ function App() {
     <ErrorBoundary>
       <ScrollToTop />
       <CookieConsentBanner />
+      <PwaUpdateBridge />
       <Routes>
         <Route element={<MarketingPageTransition />}>
           <Route path="/" element={<AppRoot />} />
