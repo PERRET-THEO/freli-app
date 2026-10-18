@@ -45,6 +45,8 @@ export type ProjectRow = {
   client_email: string | null
   agency_id: string
   token: string
+  /** Optional project display name (falls back to client_name in consumers). */
+  name?: string | null
   status?: string | null
   price?: number | null
   payment_status?: string | null
@@ -108,6 +110,7 @@ export function buildProjectPayload(
   return {
     project: {
       id: project.id,
+      name: project.name ?? project.client_name,
       client_name: project.client_name,
       client_email: project.client_email,
       status: project.status ?? null,

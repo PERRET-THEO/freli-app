@@ -44,6 +44,7 @@ export function needsAgencyReview(project: ProjectCardData): boolean {
 
 export function isActionView(project: ProjectCardData, now: number): boolean {
   if (project.status === 'completed') return false
+  if (project.inviteStatus === 'failed') return true
   return needsAgencyReview(project) || needsAgencyFollowUp(project, now)
 }
 
@@ -153,6 +154,7 @@ export function matchesSearchQuery(project: ProjectCardData, query: string): boo
   const q = query.trim().toLowerCase()
   if (!q) return true
   const haystack = [
+    project.projectName,
     project.clientName,
     project.clientEmail,
     project.companyName ?? '',

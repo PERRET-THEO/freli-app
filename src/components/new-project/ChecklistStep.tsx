@@ -22,6 +22,7 @@ type ChecklistStepProps = {
   loadingMessage: string | null
   submitLabel: string
   onTemplatesChanged: () => void
+  onTemplateApplied?: (templateLabel: string | null) => void
   onBack: () => void
   onSubmit: () => void
 }
@@ -42,9 +43,10 @@ export function ChecklistStep({
   needsContractStep,
   error,
   loading,
-  loadingMessage,
+  loadingMessage: _loadingMessage,
   submitLabel,
   onTemplatesChanged,
+  onTemplateApplied,
   onBack,
   onSubmit,
 }: ChecklistStepProps) {
@@ -87,13 +89,11 @@ export function ChecklistStep({
           defaultContractBrief={defaultContractBrief}
           priceEur={priceEur}
           onTemplatesChanged={onTemplatesChanged}
+          onTemplateApplied={onTemplateApplied}
         />
       </div>
 
       {error ? <p className="mt-3 text-sm font-body text-[var(--amber)]">{error}</p> : null}
-      {loadingMessage ? (
-        <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">{loadingMessage}</p>
-      ) : null}
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row">
         <Button variant="secondary" onClick={onBack} disabled={loading}>

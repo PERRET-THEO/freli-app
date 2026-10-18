@@ -23,6 +23,7 @@ type ChecklistBuilderProps = {
   agencyTemplates: AgencyChecklistTemplate[]
   agencyId: string | null
   onTemplatesChanged: () => void
+  onTemplateApplied?: (templateLabel: string | null) => void
   aiContractsEnabled?: boolean
   hasDefaultContract?: boolean
   defaultContractBrief?: string
@@ -41,6 +42,7 @@ export function ChecklistBuilder({
   agencyTemplates,
   agencyId,
   onTemplatesChanged,
+  onTemplateApplied,
   aiContractsEnabled = false,
   hasDefaultContract = false,
   defaultContractBrief = '',
@@ -48,6 +50,7 @@ export function ChecklistBuilder({
 }: ChecklistBuilderProps) {
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const [loadingTemplate, setLoadingTemplate] = useState(false)
+  const [itemsDirtySinceApply, setItemsDirtySinceApply] = useState(false)
 
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [saveName, setSaveName] = useState('')
@@ -56,36 +59,56 @@ export function ChecklistBuilder({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
 
-  const confirmOverwrite = () =>
-    items.length === 0 ||
-    window.confirm('Remplacer la checklist actuelle par ce modèle ?')
+  const confirmOverwrite = () => {
+    if (items.length === 0) return true
+    if (!itemsDirtySinceApply && selectedTemplate) {
+      return window.confirm('Remplacer la checklist actuelle par ce modèle ?')
+    }
+    return window.confirm(
+      'Des étapes ont déjà été modifiées. Remplacer la checklist par ce modèle ?',
+    )
+  }
 
-  const applyValue = async (value: string) => {
-    if (!value) return
+  const applyValue = async (value: string): Promise<boolean> => {
+    if (!value) return false
     if (value === '__empty__') {
-      if (!confirmOverwrite()) return
+      if (!confirmOverwrite()) return false
       onChange([])
-      return
+      onTemplateApplied?.(null)
+      setItemsDirtySinceApply(false)
+      return true
     }
     if (value.startsWith('builtin:')) {
-      if (!confirmOverwrite()) return
+      if (!confirmOverwrite()) return false
       const key = value.slice('builtin:'.length) as BuiltinTemplateKey
       onChange(buildItemsFromSeeds(BUILTIN_TEMPLATES[key].items))
-      return
+      onTemplateApplied?.(BUILTIN_TEMPLATES[key].label)
+      setItemsDirtySinceApply(false)
+      return true
     }
     if (value.startsWith('agency:')) {
-      if (!confirmOverwrite()) return
+      if (!confirmOverwrite()) return false
       const templateId = value.slice('agency:'.length)
+      const tpl = agencyTemplates.find((t) => t.id === templateId)
       setLoadingTemplate(true)
       const loaded = await loadChecklistTemplateItems(templateId)
       setLoadingTemplate(false)
       onChange(loaded)
+      onTemplateApplied?.(tpl?.name ?? null)
+      setItemsDirtySinceApply(false)
+      return true
     }
+    return false
   }
 
   const handleTemplateChange = async (value: string) => {
-    setSelectedTemplate('')
-    await applyValue(value)
+    const applied = await applyValue(value)
+    if (applied) setSelectedTemplate(value)
+  }
+
+  const handleItemsChange = (next: DraftChecklistItem[]) => {
+    setItemsDirtySinceApply(true)
+    onChange(next)
   }
 
   const handleSaveTemplate = async () => {
@@ -178,7 +201,7 @@ export function ChecklistBuilder({
       <div className="mt-4">
         <ChecklistItemsEditor
           items={items}
-          onChange={onChange}
+          onChange={handleItemsChange}
           contractTemplates={contractTemplates}
           aiContractsEnabled={aiContractsEnabled}
           hasDefaultContract={hasDefaultContract}

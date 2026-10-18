@@ -74,6 +74,7 @@ serve(async (req) => {
     const testData = buildProjectPayload(
       {
         id: '00000000-0000-0000-0000-000000000000',
+        name: 'Projet Test',
         client_name: 'Client Test',
         client_email: 'client@example.com',
         agency_id: '00000000-0000-0000-0000-000000000001',

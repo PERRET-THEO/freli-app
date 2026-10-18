@@ -24,6 +24,7 @@ type Integration = {
 
 type ProjectData = {
   id: string
+  name?: string | null
   client_name: string
   client_email: string | null
   agency_id: string
@@ -101,7 +102,7 @@ serve(async (req) => {
 
     const { data: project, error: projectError } = await supabase
       .from('projects')
-      .select('id, client_name, client_email, agency_id, token, status, price, payment_status, stripe_checkout_url, stripe_checkout_session_id, google_drive_folder_id, google_drive_folder_url')
+      .select('id, name, client_name, client_email, agency_id, token, status, price, payment_status, stripe_checkout_url, stripe_checkout_session_id, google_drive_folder_id, google_drive_folder_url')
       .eq('id', body.projectId)
       .single()
 
@@ -179,7 +180,7 @@ serve(async (req) => {
 
     const { data: refreshedProject } = await supabase
       .from('projects')
-      .select('id, client_name, client_email, agency_id, token, status, price, payment_status, stripe_checkout_url, google_drive_folder_url')
+      .select('id, name, client_name, client_email, agency_id, token, status, price, payment_status, stripe_checkout_url, google_drive_folder_url')
       .eq('id', project.id)
       .single()
 

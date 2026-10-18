@@ -255,7 +255,7 @@ serve(async (req) => {
           const { data: project } = await supabaseAdmin
             .from('projects')
             .select(
-              'id, client_name, client_email, agency_id, token, status, price, payment_status, agencies(id, name)',
+              'id, name, client_name, client_email, agency_id, token, status, price, payment_status, agencies(id, name)',
             )
             .eq('id', projectId)
             .single()

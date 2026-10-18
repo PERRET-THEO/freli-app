@@ -35,8 +35,13 @@ export function ProjectCard({
   onDelete,
 }: ProjectCardProps) {
   const menuRef = useRef<HTMLDivElement>(null)
-  const displayTitle = project.companyName || project.clientName
-  const subtitleName = project.companyName ? project.clientName : null
+  const displayTitle = project.projectName || project.companyName || project.clientName
+  const subtitleName =
+    project.projectName && project.projectName !== project.clientName
+      ? [project.companyName, project.clientName].filter(Boolean).join(' · ') || null
+      : project.companyName
+        ? project.clientName
+        : null
 
   const isNew =
     project.status !== 'completed' && now - new Date(project.createdAt).getTime() < 2 * 60 * 60 * 1000

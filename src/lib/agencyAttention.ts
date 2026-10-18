@@ -125,6 +125,7 @@ function toAttentionCard(
   return {
     id: row.id,
     clientId: null,
+    projectName: '',
     clientName: '',
     clientEmail: '',
     clientPhone: null,
@@ -143,6 +144,7 @@ function toAttentionCard(
     blockingStepLabel: bottleneck?.label ?? null,
     blockingOwner: bottleneck?.owner ?? null,
     blockingSince: bottleneck?.since ?? null,
+    inviteStatus: null,
   }
 }
 

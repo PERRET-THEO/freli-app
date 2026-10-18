@@ -1,0 +1,31 @@
+name: Retry pending invites
+
+# Filet serveur : relance les invitations invite_status=pending depuis > 5 min.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  retry-invites:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déclencher retry-pending-invites
+        run: |
+          HTTP_CODE=$(curl -s -o /tmp/body.txt -w "%{http_code}" \
+            -X POST "${SUPABASE_PROJECT_URL}/functions/v1/retry-pending-invites" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "x-cron-secret: ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "Réponse ($HTTP_CODE):"
+          cat /tmp/body.txt
+          if [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Echec retry-pending-invites (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

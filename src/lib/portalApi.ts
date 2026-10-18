@@ -17,6 +17,7 @@ export type PortalLoadedItem = {
 
 export type PortalLoadedProject = {
   id: string
+  name?: string | null
   client_name: string
   client_email?: string | null
   status: 'pending' | 'in_progress' | 'completed'

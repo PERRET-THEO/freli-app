@@ -7,7 +7,8 @@ import { SmartRemindersPanel } from '../components/reminders/SmartRemindersPanel
 import { ContractGeneratorPanel } from '../components/contracts/ContractGeneratorPanel'
 import { ClientContactBlock } from '../components/client/ClientContactBlock'
 import { Badge, Button, Card } from '../components/ui'
-import { sendProjectReminderEmail } from '../lib/resend'
+import { sendProjectInviteEmail, sendProjectReminderEmail } from '../lib/resend'
+import { canResendInvite, formatInviteSentAt } from '../lib/projectInvite'
 import { requestSmartReminder } from '../lib/smartReminders'
 import { sendPaymentLink } from '../lib/stripePayment'
 import { syncProjectDriveFolder } from '../lib/googleDriveConnect'
@@ -38,6 +39,7 @@ type ClientJoin = {
 
 type ProjectRecord = {
   id: string
+  name: string | null
   client_name: string
   client_email: string
   client_id: string | null
@@ -52,6 +54,10 @@ type ProjectRecord = {
   google_drive_folder_url: string | null
   google_drive_files_synced_at: string | null
   google_drive_sync_status: 'synced' | 'partial' | 'failed' | null
+  invite_status: 'pending' | 'sent' | 'failed' | null
+  invite_sent_at: string | null
+  invite_error: string | null
+  invite_last_attempt_at: string | null
   agency_id: string
   agencies?: { name: string | null } | { name: string | null }[] | null
   clients?: ClientJoin | ClientJoin[] | null
@@ -108,6 +114,8 @@ export function ProjectDetail() {
   const [aiContractsEnabled, setAiContractsEnabled] = useState(false)
   const [aiRemindersEnabled, setAiRemindersEnabled] = useState(false)
   const [smartRemindersKey, setSmartRemindersKey] = useState(0)
+  const [resendingInvite, setResendingInvite] = useState(false)
+  const [inviteFeedback, setInviteFeedback] = useState<string | null>(null)
 
   const loadProject = useCallback(async () => {
     if (!id) {
@@ -118,7 +126,7 @@ export function ProjectDetail() {
 
     const { data: projectData, error: projectError } = await supabase
       .from('projects')
-      .select('id, agency_id, client_id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, agencies(name), clients(phone, address_street, address_postal_code, address_city, address_country, company_name)')
+      .select('id, agency_id, client_id, name, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, invite_status, invite_sent_at, invite_error, invite_last_attempt_at, agencies(name), clients(phone, address_street, address_postal_code, address_city, address_country, company_name)')
       .eq('id', id)
       .maybeSingle()
 
@@ -164,7 +172,7 @@ export function ProjectDetail() {
 
     const record = projectData as ProjectRecord
     setProject(record)
-    pushRecentProject(record.id, record.client_name)
+    pushRecentProject(record.id, record.name?.trim() || record.client_name)
     setItems((checklistData ?? []) as ChecklistItemRecord[])
     setReminderLogs((logsData ?? []) as ReminderLog[])
     setSecretActivity((secretRows ?? []) as SecretActivityRow[])
@@ -312,7 +320,34 @@ export function ProjectDetail() {
     navigate('/dashboard', { replace: true })
   }
 
-  const layoutTitle = project?.client_name ?? 'Projet'
+  const handleResendInvite = async () => {
+    if (!project?.id || resendingInvite) return
+    const gate = canResendInvite({
+      inviteStatus: project.invite_status,
+      inviteLastAttemptAt: project.invite_last_attempt_at,
+    })
+    if (!gate.ok) {
+      setInviteFeedback(
+        gate.reason === 'sending'
+          ? 'Invitation en cours d’envoi…'
+          : 'Attendez quelques secondes avant de renvoyer.',
+      )
+      return
+    }
+    setResendingInvite(true)
+    setInviteFeedback(null)
+    try {
+      await sendProjectInviteEmail({ projectId: project.id })
+      setInviteFeedback('Invitation en cours d’envoi…')
+      await loadProject()
+    } catch (err) {
+      setInviteFeedback(err instanceof Error ? err.message : 'Renvoi impossible.')
+    } finally {
+      setResendingInvite(false)
+    }
+  }
+
+  const layoutTitle = project?.name?.trim() || project?.client_name || 'Projet'
   const clientJoin = useMemo(() => {
     if (!project?.clients) return null
     return Array.isArray(project.clients) ? project.clients[0] ?? null : project.clients
@@ -360,6 +395,46 @@ export function ProjectDetail() {
                 <Badge variant={project.status} />
                 <p className="text-xs font-body text-[var(--ink-muted)]">Créé le {createdAtLabel}</p>
               </div>
+
+              {project.invite_status ? (
+                <div
+                  className="mt-4 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-warm)] px-3 py-2 text-xs font-body text-[var(--ink-soft)]"
+                  role="status"
+                >
+                  {project.invite_status === 'sent' ? (
+                    <p>
+                      Invitation envoyée
+                      {formatInviteSentAt(project.invite_sent_at)
+                        ? ` le ${formatInviteSentAt(project.invite_sent_at)}`
+                        : ''}
+                    </p>
+                  ) : project.invite_status === 'pending' ? (
+                    <p>Invitation en cours d&apos;envoi…</p>
+                  ) : (
+                    <p>
+                      Échec de l&apos;envoi
+                      {project.invite_error ? ` — ${project.invite_error}` : ''}.{' '}
+                      <button
+                        type="button"
+                        className="font-medium text-[var(--accent)] underline-offset-2 hover:underline disabled:opacity-50"
+                        onClick={() => void handleResendInvite()}
+                        disabled={
+                          resendingInvite ||
+                          !canResendInvite({
+                            inviteStatus: project.invite_status,
+                            inviteLastAttemptAt: project.invite_last_attempt_at,
+                          }).ok
+                        }
+                      >
+                        {resendingInvite ? 'Envoi…' : 'Renvoyer'}
+                      </button>
+                    </p>
+                  )}
+                  {inviteFeedback ? (
+                    <p className="mt-1 text-[var(--amber)]">{inviteFeedback}</p>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div className="mt-6 h-2 rounded-full bg-[var(--surface-warm)]">
                 <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${progress}%` }} />

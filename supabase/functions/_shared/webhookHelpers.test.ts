@@ -37,6 +37,7 @@ describe('validateWebhookUrl', () => {
 describe('Slack vs Freli payloads', () => {
   const data = {
     project: {
+      name: 'Projet Test',
       client_name: 'Client Test',
       client_email: 'client@example.com',
       status: 'completed',

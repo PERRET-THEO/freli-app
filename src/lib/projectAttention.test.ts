@@ -15,6 +15,7 @@ function project(overrides: Partial<ProjectCardData> = {}): ProjectCardData {
   return {
     id: '1',
     clientId: 'client-1',
+    projectName: 'Site web — Studio AM',
     clientName: 'Alice Martin',
     clientEmail: 'alice@example.com',
     clientPhone: null,
@@ -33,9 +34,28 @@ function project(overrides: Partial<ProjectCardData> = {}): ProjectCardData {
     blockingStepLabel: 'Brief',
     blockingOwner: 'client',
     blockingSince: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
+    inviteStatus: null,
     ...overrides,
   }
 }
+
+describe('invite failed attention', () => {
+  it('puts invite_status failed into action view', () => {
+    const now = Date.now()
+    expect(
+      isActionView(
+        project({
+          inviteStatus: 'failed',
+          createdAt: new Date(now).toISOString(),
+          blockingOwner: null,
+          blockingStepLabel: null,
+          blockingSince: null,
+        }),
+        now,
+      ),
+    ).toBe(true)
+  })
+})
 
 describe('projectAttention', () => {
   const now = Date.now()

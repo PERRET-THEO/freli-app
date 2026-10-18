@@ -66,7 +66,7 @@ export function ActivityBanner({
                 to={`/dashboard/project/${first.id}`}
                 className="font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
               >
-                {first.clientName}
+                {first.projectName || first.clientName}
               </Link>
               {urgentProjects.length > 1 ? ` et ${urgentProjects.length - 1} autre(s)` : ''} attendent
               une action.
@@ -97,7 +97,7 @@ export function ActivityBanner({
                 to={`/dashboard/project/${recentAutoReminder.id}`}
                 className="font-semibold text-[var(--ink)] underline-offset-2 hover:text-[var(--accent)] hover:underline"
               >
-                {recentAutoReminder.clientName}
+                {recentAutoReminder.projectName || recentAutoReminder.clientName}
               </Link>
               {' · '}
               {formatRelative(recentAutoReminder.lastReminderSentAt, now)}

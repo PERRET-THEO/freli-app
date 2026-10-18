@@ -13,6 +13,7 @@ import type { ProjectCardData } from './types'
 type ProjectRecord = {
   id: string
   client_id: string | null
+  name: string | null
   client_name: string
   client_email: string
   status: 'pending' | 'in_progress' | 'completed'
@@ -21,6 +22,7 @@ type ProjectRecord = {
   last_reminder_sent_at: string | null
   price: number | null
   payment_status: string | null
+  invite_status?: 'pending' | 'sent' | 'failed' | null
   clients?: { company_name: string | null; phone: string | null }[] | { company_name: string | null; phone: string | null } | null
 }
 
@@ -44,7 +46,7 @@ export function useDashboardData() {
     const { data: projectRows, error: projectsError } = await supabase
       .from('projects')
       .select(
-        'id, client_id, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, clients(company_name, phone)',
+        'id, client_id, name, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, invite_status, clients(company_name, phone)',
       )
       .eq('agency_id', agencyId)
       .order('created_at', { ascending: false })
@@ -115,6 +117,7 @@ export function useDashboardData() {
       return {
         id: project.id,
         clientId: project.client_id,
+        projectName: (project.name?.trim() || project.client_name),
         clientName: project.client_name,
         clientEmail: project.client_email,
         clientPhone: clientJoin?.phone ?? null,
@@ -133,6 +136,7 @@ export function useDashboardData() {
         blockingStepLabel: bottleneck?.label ?? null,
         blockingOwner: bottleneck?.owner ?? null,
         blockingSince: bottleneck?.since ?? null,
+        inviteStatus: project.invite_status ?? null,
       }
     })
 

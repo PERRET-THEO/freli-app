@@ -43,6 +43,8 @@ describe('contactLinks', () => {
 
   it('rejects invalid phones', () => {
     expect(parseAgencyPhone('123')).toBeNull()
+    expect(parseAgencyPhone('12')).toBeNull()
+    expect(normalizeContactPhone('12')).toBeNull()
     expect(normalizeContactPhone('abc')).toBeNull()
   })
 

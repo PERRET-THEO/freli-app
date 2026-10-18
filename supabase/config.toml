@@ -7,6 +7,9 @@ verify_jwt = false
 [functions.send-reminders-batch]
 verify_jwt = false
 
+[functions.retry-pending-invites]
+verify_jwt = false
+
 # Portail client (/p/:token) appelle sans session utilisateur
 [functions.trigger-integrations]
 verify_jwt = false

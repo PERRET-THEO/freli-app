@@ -96,7 +96,7 @@ export function ClientDetail() {
 
     const { data: projectRows } = await supabase
       .from('projects')
-      .select('id, client_name, status, created_at, token')
+      .select('id, name, client_name, status, created_at, token')
       .eq('client_id', clientId)
       .order('created_at', { ascending: false })
 
@@ -104,6 +104,7 @@ export function ClientDetail() {
 
     const rawProjects = (projectRows ?? []) as Array<{
       id: string
+      name: string | null
       client_name: string
       status: 'pending' | 'in_progress' | 'completed'
       created_at: string
@@ -163,7 +164,7 @@ export function ClientDetail() {
             : findProjectBottleneck(itemsByProject.get(project.id) ?? [], project.created_at)
         return {
           id: project.id,
-          clientName: project.client_name,
+          clientName: project.name?.trim() || project.client_name,
           status: project.status,
           createdAt: project.created_at,
           token: project.token,
@@ -210,7 +211,7 @@ export function ClientDetail() {
 
     const projectMeta = rawProjects.map((p) => ({
       id: p.id,
-      client_name: p.client_name,
+      client_name: p.name?.trim() || p.client_name,
       created_at: p.created_at,
     }))
 

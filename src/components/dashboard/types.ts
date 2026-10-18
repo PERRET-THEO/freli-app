@@ -9,6 +9,8 @@ export type ProjectStatus = 'pending' | 'in_progress' | 'completed'
 export type ProjectCardData = {
   id: string
   clientId: string | null
+  /** Titre produit (projects.name), avec repli client_name côté mapping. */
+  projectName: string
   clientName: string
   clientEmail: string
   clientPhone: string | null
@@ -28,6 +30,8 @@ export type ProjectCardData = {
   blockingStepLabel: string | null
   blockingOwner: 'client' | 'agency' | null
   blockingSince: string | null
+  /** Invitation onboarding : failed → visible dans « À traiter ». */
+  inviteStatus?: 'pending' | 'sent' | 'failed' | null
 }
 
 export type { AttentionView }
