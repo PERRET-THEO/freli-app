@@ -50,6 +50,18 @@ verify_jwt = false
 [functions.portal-contract]
 verify_jwt = false
 
+# Portail client — signed upload URL documents (auth par projectToken)
+[functions.portal-document-upload-url]
+verify_jwt = false
+
+# Finalisation onboarding (kick token si status=completed, ou secret interne)
+[functions.process-project-completion]
+verify_jwt = false
+
+# Dashboard agence — signed GET documents (JWT)
+[functions.create-document-signed-url]
+verify_jwt = true
+
 # Portail client — lien Stripe Checkout pour étape Paiement (auth par projectToken)
 [functions.portal-payment-link]
 verify_jwt = false

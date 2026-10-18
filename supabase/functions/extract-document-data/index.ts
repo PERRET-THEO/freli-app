@@ -38,8 +38,8 @@ const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 type Body = {
   projectToken: string
-  checklistItemId?: string
-  storagePath: string
+  /** Requis : le path est lu en base, jamais fourni par le client. */
+  checklistItemId: string
 }
 
 export const DOCUMENT_SCHEMAS = DOCUMENT_FIELD_LISTS
@@ -144,9 +144,9 @@ serve(async (req) => {
   try {
     const body = (await req.json()) as Body
     const projectToken = body.projectToken?.trim()
-    const storagePath = body.storagePath?.trim()
-    if (!projectToken || !storagePath) {
-      return jsonResponse({ error: 'projectToken et storagePath requis' }, 400)
+    const checklistItemId = body.checklistItemId?.trim()
+    if (!projectToken || !checklistItemId) {
+      return jsonResponse({ error: 'projectToken et checklistItemId requis' }, 400)
     }
 
     const { data: project, error: projectError } = await supabase
@@ -156,7 +156,27 @@ serve(async (req) => {
       .single()
     if (projectError || !project) return jsonResponse({ error: 'Invalid project' }, 403)
 
-    if (!storagePath.startsWith(`${projectToken}/`)) {
+    const { data: item, error: itemError } = await supabase
+      .from('checklist_items')
+      .select('id, project_id, type, value')
+      .eq('id', checklistItemId)
+      .maybeSingle()
+    if (itemError || !item || item.project_id !== project.id || item.type !== 'file') {
+      return jsonResponse({ error: 'Item invalide' }, 403)
+    }
+
+    const storagePath = (item.value ?? '').trim()
+    if (!storagePath || storagePath.startsWith('http')) {
+      return jsonResponse({ error: 'Chemin de fichier absent' }, 400)
+    }
+
+    const scopedOk = storagePath.startsWith(`${project.id}/${item.id}/`)
+    const legacyOk = storagePath.startsWith(`${project.token}/`)
+    if (!scopedOk && !legacyOk) {
+      return jsonResponse({ error: 'Chemin de fichier invalide' }, 403)
+    }
+    // Legacy {token}/… : le token doit être celui du projet de l'item (déjà vérifié via project.token).
+    if (legacyOk && project.token !== projectToken) {
       return jsonResponse({ error: 'Chemin de fichier invalide' }, 403)
     }
 
@@ -201,7 +221,7 @@ serve(async (req) => {
       .insert({
         project_id: project.id,
         agency_id: project.agency_id,
-        checklist_item_id: body.checklistItemId ?? null,
+        checklist_item_id: checklistItemId,
         storage_path: storagePath,
         status: 'processing',
       })

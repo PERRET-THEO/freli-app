@@ -8,6 +8,11 @@ const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 type Body =
   | { action: 'getTemplatePdfUrl'; projectToken: string; templateId: string }
+  | {
+      action: 'resolveSigningTemplate'
+      projectToken: string
+      templateId?: string
+    }
   | { action: 'getGeneratedDocumentPdfUrl'; projectToken: string; generatedDocumentId: string }
   | {
       action: 'uploadSigned'
@@ -147,13 +152,47 @@ serve(async (req) => {
     const project = await resolveProjectByToken(body.projectToken.trim())
     if (!project) return jsonResponse({ error: 'Invalid project' }, 403)
 
-    if (body.action === 'getTemplatePdfUrl') {
-      if (!body.templateId) return jsonResponse({ error: 'Missing templateId' }, 400)
+    if (body.action === 'getTemplatePdfUrl' || body.action === 'resolveSigningTemplate') {
+      let templateRow: {
+        id: string
+        name: string
+        pdf_url: string | null
+        signature_page: number
+        signature_x: number
+        signature_y: number
+        signature_width: number
+        signature_height: number
+      } | null = null
 
-      const template = await assertTemplateAccess(body.templateId, project.agency_id)
-      if (!template?.pdf_url) return jsonResponse({ error: 'Template not found' }, 404)
+      if (body.action === 'getTemplatePdfUrl' || body.templateId) {
+        const templateId =
+          body.action === 'getTemplatePdfUrl' ? body.templateId : body.templateId
+        if (!templateId) return jsonResponse({ error: 'Missing templateId' }, 400)
+        const access = await assertTemplateAccess(templateId, project.agency_id)
+        if (!access?.pdf_url) return jsonResponse({ error: 'Template not found' }, 404)
+        const { data: full } = await supabase
+          .from('contract_templates')
+          .select(
+            'id, name, pdf_url, signature_page, signature_x, signature_y, signature_width, signature_height',
+          )
+          .eq('id', templateId)
+          .maybeSingle()
+        templateRow = full
+      } else {
+        const { data: def } = await supabase
+          .from('contract_templates')
+          .select(
+            'id, name, pdf_url, signature_page, signature_x, signature_y, signature_width, signature_height',
+          )
+          .eq('agency_id', project.agency_id)
+          .eq('is_default', true)
+          .maybeSingle()
+        templateRow = def
+      }
 
-      const storagePath = storagePathFromPdfUrl(template.pdf_url)
+      if (!templateRow?.pdf_url) return jsonResponse({ error: 'Template not found' }, 404)
+
+      const storagePath = storagePathFromPdfUrl(templateRow.pdf_url)
       if (!storagePath) return jsonResponse({ error: 'Invalid template file' }, 400)
 
       const { data, error } = await supabase.storage
@@ -161,7 +200,21 @@ serve(async (req) => {
         .createSignedUrl(storagePath, 3600)
       if (error || !data?.signedUrl) throw new Error(error?.message ?? 'Signed URL failed')
 
-      return jsonResponse({ signedUrl: data.signedUrl })
+      if (body.action === 'getTemplatePdfUrl') {
+        return jsonResponse({ signedUrl: data.signedUrl })
+      }
+
+      return jsonResponse({
+        id: templateRow.id,
+        name: templateRow.name,
+        pdf_url: data.signedUrl,
+        signedUrl: data.signedUrl,
+        signature_page: templateRow.signature_page,
+        signature_x: templateRow.signature_x,
+        signature_y: templateRow.signature_y,
+        signature_width: templateRow.signature_width,
+        signature_height: templateRow.signature_height,
+      })
     }
 
     if (body.action === 'getGeneratedDocumentPdfUrl') {

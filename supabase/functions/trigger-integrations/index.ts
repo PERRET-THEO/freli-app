@@ -7,12 +7,7 @@ import {
   fetchChecklistItems,
   fireOutgoingWebhooks,
 } from '../_shared/outgoingWebhooks.ts'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+import { corsHeaders, internalSecretHeaders, isInternalRequest } from '../_shared/functionAuth.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -88,6 +83,14 @@ serve(async (req) => {
       })
     }
 
+    // Serveur uniquement (process-project-completion / cron) — plus d'appel navigateur.
+    if (!isInternalRequest(req)) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const body = JSON.parse(rawBody) as { projectId?: string; projectToken?: string }
     if (!body.projectId || typeof body.projectToken !== 'string' || !body.projectToken.trim()) {
       return new Response(JSON.stringify({ error: 'Missing projectId or projectToken' }), {
@@ -105,6 +108,13 @@ serve(async (req) => {
     if (projectError || !project || project.token !== body.projectToken) {
       return new Response(JSON.stringify({ error: 'Invalid project' }), {
         status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (project.status !== 'completed') {
+      return new Response(JSON.stringify({ error: 'Project not completed' }), {
+        status: 409,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -145,6 +155,7 @@ serve(async (req) => {
                   'send-payment-link-email',
                   {
                     body: { projectId: project.id, projectToken: body.projectToken },
+                    headers: internalSecretHeaders(),
                   },
                 )
                 if (emailError) console.error('payment email failed:', emailError.message)

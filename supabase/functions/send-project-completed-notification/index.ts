@@ -6,6 +6,7 @@ import { buildAgencyCompletedEmail } from '../_shared/clientEmailHtml.ts'
 import {
   assertProjectToken,
   corsHeaders,
+  isInternalRequest,
   jsonResponse,
 } from '../_shared/functionAuth.ts'
 
@@ -27,6 +28,11 @@ serve(async (req) => {
 
     if (!rawBody || rawBody.trim() === '') {
       return jsonResponse({ error: 'Body vide' }, 400)
+    }
+
+    // Serveur uniquement (process-project-completion avec x-internal-secret).
+    if (!isInternalRequest(req)) {
+      return jsonResponse({ error: 'Unauthorized' }, 401)
     }
 
     const body = JSON.parse(rawBody) as { projectId?: string; projectToken?: string }

@@ -24,6 +24,8 @@ export type ChecklistItemConfig = {
   choiceOptions?: string[]
   scheduleUrl?: string
   visibleWhen?: StoredCondition | null
+  /** Si true/false, force l'extraction IA ; sinon heuristique sur le libellé (CNI/Kbis/RIB). */
+  extractDocument?: boolean
 }
 
 export const FIELD_PLACEHOLDERS: Partial<Record<ChecklistItemType, string>> = {

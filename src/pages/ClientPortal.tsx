@@ -5,7 +5,6 @@ import { PortalCompletedState } from '../components/portal/PortalCompletedState'
 import { PortalFooter } from '../components/portal/PortalFooter'
 import { PortalWelcomeHero } from '../components/portal/PortalWelcomeHero'
 import { Button } from '../components/ui'
-import { triggerIntegrations } from '../lib/integrations/triggerIntegrations'
 import type { IntegrationResults } from '../lib/integrations/triggerIntegrations'
 import {
   getGeneratedDocumentIdFromSignatureValue,
@@ -15,8 +14,19 @@ import {
 import {
   getPortalGeneratedDocumentPdfUrl,
   getPortalTemplatePdfUrl,
+  resolvePortalSigningTemplate,
 } from '../lib/contractStorage'
-import { sendProjectCompletedEmail } from '../lib/resend'
+import { isExtractableDocumentItem } from '../lib/documentDisplay'
+import {
+  portalLoadByToken,
+  portalSetProjectStatus,
+  portalTouchVisit,
+  portalUpdateChecklistItem,
+  PortalUploadError,
+  processPortalProjectCompletion,
+  requestPortalDocumentUpload,
+  uploadPortalDocumentFile,
+} from '../lib/portalApi'
 import { getPaymentState, formatPriceEur } from '../lib/payments'
 import { normalizeBrandColor, DEFAULT_BRAND_COLOR } from '../lib/agencyBranding'
 import { agencyInitials, portalThemeStyle } from '../lib/portalTheme'
@@ -298,29 +308,17 @@ export function ClientPortal() {
       }
 
       const templateId = getTemplateIdFromSignatureValue(item.value)
-      let tpl: LoadedContractForSigning | null = null
-
-      if (templateId) {
-        const { data } = await supabase
-          .from('contract_templates')
-          .select('id, name, pdf_url, signature_page, signature_x, signature_y, signature_width, signature_height')
-          .eq('id', templateId)
-          .maybeSingle()
-        tpl = data as LoadedContractForSigning | null
+      try {
+        const tpl = await resolvePortalSigningTemplate(token, templateId)
+        if (cancelled) return
+        setLoadedTemplate(tpl)
+        setTemplatePdfUrl(tpl.pdf_url)
+      } catch {
+        if (!cancelled) {
+          setLoadedTemplate(null)
+          setTemplatePdfUrl(null)
+        }
       }
-
-      if (!tpl && project.agency_id) {
-        const { data } = await supabase
-          .from('contract_templates')
-          .select('id, name, pdf_url, signature_page, signature_x, signature_y, signature_width, signature_height')
-          .eq('agency_id', project.agency_id)
-          .eq('is_default', true)
-          .maybeSingle()
-        tpl = data as LoadedContractForSigning | null
-      }
-
-      if (cancelled) return
-      setLoadedTemplate(tpl)
     }
 
     void load()
@@ -370,78 +368,40 @@ export function ClientPortal() {
         return
       }
 
-      // Project only — branding comes from agency_portal_public (anon-safe view).
-      // Embedding agencies(...) fails for portal visitors: agencies RLS is members-only.
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('id, client_name, client_email, status, token, agency_id, price, payment_status, stripe_checkout_url')
-        .eq('token', token)
-        .maybeSingle()
+      try {
+        const loaded = await portalLoadByToken(token)
+        const agencyBranding = (loaded.branding ?? null) as AgencyPortalRelation | null
+        const loadedProject: ProjectRecord = {
+          ...loaded.project,
+          status: loaded.project.status,
+          token,
+          agencies: agencyBranding,
+        }
+        setProject(loadedProject)
 
-      if (projectError || !projectData) {
+        const initialTextValues: Record<string, string> = {}
+        const openInputIds = new Set<string>()
+        for (const item of loaded.items) {
+          if (!isInputType(item.type as ChecklistItemType)) continue
+          initialTextValues[item.id] = item.value ?? ''
+          if (!item.completed) openInputIds.add(item.id)
+        }
+
+        const drafts = readDrafts(token)
+        const restorable = countRestorableDrafts(initialTextValues, drafts, openInputIds)
+        const parsedItems = loaded.items as ChecklistItemRecord[]
+        setItems(parsedItems)
+        setTextValues(mergeDraftsIntoValues(initialTextValues, drafts, openInputIds))
+        setRestoredDraftCount(restorable)
+
+        if (parsedItems.every((i) => i.completed)) setShowHero(false)
+        setLoading(false)
+
+        void portalTouchVisit(token).catch(() => {})
+      } catch {
         setError('Projet introuvable pour ce lien.')
         setLoading(false)
-        return
       }
-
-      let agencyBranding: AgencyPortalRelation | null = null
-      if (projectData.agency_id) {
-        const { data: branding } = await supabase
-          .from('agency_portal_public')
-          .select(
-            'logo_url, name, brand_color, portal_welcome_message, tagline, contact_email, contact_phone, portal_help_title, portal_help_text, portal_availability, portfolio_url, portfolio_label',
-          )
-          .eq('id', projectData.agency_id)
-          .maybeSingle()
-        if (branding) agencyBranding = branding as AgencyPortalRelation
-      }
-
-      const loadedProject: ProjectRecord = {
-        ...(projectData as ProjectRecord),
-        agencies: agencyBranding,
-      }
-      setProject(loadedProject)
-
-      const { data: checklistData, error: checklistError } = await supabase
-        .from('checklist_items')
-        .select(
-          'id, label, type, completed, value, order_index, review_status, review_note, config',
-        )
-        .eq('project_id', loadedProject.id)
-        .order('order_index', { ascending: true })
-
-      if (checklistError) {
-        setError('Impossible de charger la checklist.')
-        setLoading(false)
-        return
-      }
-
-      const initialTextValues: Record<string, string> = {}
-      const openInputIds = new Set<string>()
-      for (const item of checklistData ?? []) {
-        if (!isInputType(item.type as ChecklistItemType)) continue
-        initialTextValues[item.id] = item.value ?? ''
-        if (!item.completed) openInputIds.add(item.id)
-      }
-
-      // Reprise multi-session : ce qui était tapé sans être validé revient.
-      const drafts = readDrafts(token)
-      const restorable = countRestorableDrafts(initialTextValues, drafts, openInputIds)
-
-      const parsedItems = (checklistData ?? []) as ChecklistItemRecord[]
-      setItems(parsedItems)
-      setTextValues(mergeDraftsIntoValues(initialTextValues, drafts, openInputIds))
-      setRestoredDraftCount(restorable)
-
-      if (parsedItems.every((i) => i.completed)) setShowHero(false)
-      setLoading(false)
-
-      // Signal comportemental pour les relances intelligentes (fire-and-forget)
-      void supabase
-        .from('projects')
-        .update({ last_portal_visit_at: new Date().toISOString() })
-        .eq('token', token)
-        .then(() => {})
     }
 
     fetchData()
@@ -456,42 +416,30 @@ export function ClientPortal() {
     setSearchParams(next, { replace: true })
   }, [searchParams, setSearchParams])
 
+  // Plus de Realtime anon : refetch au focus après durcissement RLS.
   useEffect(() => {
-    if (!project?.id) return
-    const channel = supabase
-      .channel(`project-${project.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_items', filter: `project_id=eq.${project.id}` }, (payload) => {
-        const next = payload.new as ChecklistItemRecord
-        if (!next?.id) return
-        setItems((cur) => cur.map((i) => (i.id === next.id ? { ...i, ...next } : i)))
-        if (isInputType(next.type)) {
-          setTextValues((cur) => ({ ...cur, [next.id]: next.value ?? '' }))
-        }
-      })
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${project.id}` },
-        (payload) => {
-          const next = payload.new as Partial<ProjectRecord>
-          if (!next) return
+    if (!token || !project?.id) return
+    const refetch = () => {
+      void portalLoadByToken(token)
+        .then((loaded) => {
+          setItems(loaded.items as ChecklistItemRecord[])
           setProject((cur) =>
             cur
               ? {
                   ...cur,
-                  payment_status: next.payment_status ?? cur.payment_status,
-                  stripe_checkout_url: next.stripe_checkout_url ?? cur.stripe_checkout_url,
-                  status: (next.status as ProjectRecord['status']) ?? cur.status,
+                  ...loaded.project,
+                  token,
+                  agencies: (loaded.branding as AgencyPortalRelation | null) ?? cur.agencies,
                 }
               : cur,
           )
-        },
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel).then()
+        })
+        .catch(() => {})
     }
-  }, [project?.id])
+    const onFocus = () => refetch()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [token, project?.id])
 
   const completedCount = visibleItems.filter((i) => i.completed).length
   const totalCount = visibleItems.length
@@ -508,21 +456,21 @@ export function ClientPortal() {
     if (!awaitingPaymentConfirmation || !project?.id) return
 
     const refreshPayment = async () => {
-      const { data } = await supabase
-        .from('projects')
-        .select('payment_status, stripe_checkout_url')
-        .eq('id', project.id)
-        .maybeSingle()
-      if (!data) return
-      setProject((cur) =>
-        cur
-          ? {
-              ...cur,
-              payment_status: data.payment_status,
-              stripe_checkout_url: data.stripe_checkout_url,
-            }
-          : cur,
-      )
+      if (!token) return
+      try {
+        const loaded = await portalLoadByToken(token)
+        setProject((cur) =>
+          cur
+            ? {
+                ...cur,
+                payment_status: loaded.project.payment_status,
+                stripe_checkout_url: loaded.project.stripe_checkout_url,
+              }
+            : cur,
+        )
+      } catch {
+        /* ignore poll errors */
+      }
     }
 
     void refreshPayment()
@@ -536,7 +484,7 @@ export function ClientPortal() {
         paymentConfirmPollRef.current = null
       }
     }
-  }, [awaitingPaymentConfirmation, project?.id])
+  }, [awaitingPaymentConfirmation, project?.id, token])
 
   useEffect(() => {
     if (paymentState === 'paid' && paymentConfirmPollRef.current) {
@@ -554,56 +502,62 @@ export function ClientPortal() {
         setShowConfetti(true)
         setTimeout(() => setShowConfetti(false), 5000)
       }
-      supabase.from('projects').update({ status: 'completed' }).eq('id', project.id).then()
-      if (!completionEmailSent) {
-        sendProjectCompletedEmail({ projectId: project.id, projectToken: project.token }).then(() => setCompletionEmailSent(true))
-      }
-      const needsCheckout =
-        project.payment_status !== 'paid' &&
-        !project.stripe_checkout_url &&
-        !integrationResults.stripe?.checkoutUrl &&
-        Boolean(project.price && project.price > 0)
-      if (needsCheckout && !integrationsSent && checkoutTriggerAttempts.current < 3) {
+      // completed est posé par portal_update_checklist_item (RPC) — pas par le client.
+      // Side effects (email, Drive, webhooks) via process-project-completion uniquement.
+      if (
+        project.status === 'completed' &&
+        token &&
+        !completionEmailSent &&
+        !integrationsSent
+      ) {
         setIntegrationsSent(true)
-        setCheckoutTriggerError(false)
-        checkoutTriggerAttempts.current += 1
-        void (async () => {
-          const pid = project.id
-          console.log('TRIGGER START', pid, 'attempt', checkoutTriggerAttempts.current)
-          try {
-            const result = await triggerIntegrations(pid, project.token)
-            console.log('TRIGGER RESULT:', result)
-            setIntegrationResults(result)
-            if (result.stripe?.checkoutUrl) {
+        setCompletionEmailSent(true)
+        void processPortalProjectCompletion({
+          projectId: project.id,
+          projectToken: token,
+        })
+          .then(({ results }) => {
+            const stripe = results?.stripe as { checkoutUrl?: string } | undefined
+            if (stripe?.checkoutUrl) {
+              setIntegrationResults((cur) => ({ ...cur, stripe: { checkoutUrl: stripe.checkoutUrl! } }))
               setProject((cur) =>
-                cur ? { ...cur, stripe_checkout_url: result.stripe!.checkoutUrl } : cur,
+                cur ? { ...cur, stripe_checkout_url: stripe.checkoutUrl } : cur,
               )
-            } else if (project.price && project.price > 0) {
+            } else if (
+              project.payment_status !== 'paid' &&
+              project.price &&
+              project.price > 0 &&
+              checkoutTriggerAttempts.current < 3
+            ) {
               setCheckoutTriggerError(true)
-              // Retry later (max 3) — Stripe may not be ready yet
-              window.setTimeout(() => setIntegrationsSent(false), 8000)
+              checkoutTriggerAttempts.current += 1
+              window.setTimeout(() => {
+                setIntegrationsSent(false)
+                setCompletionEmailSent(false)
+              }, 8000)
             }
-          } catch (e) {
-            console.error('TRIGGER FAILED', e)
+          })
+          .catch(() => {
             setCheckoutTriggerError(true)
-            window.setTimeout(() => setIntegrationsSent(false), 8000)
-          }
-        })()
+            setIntegrationsSent(false)
+            setCompletionEmailSent(false)
+          })
       }
-    } else if (project?.id && completedCount > 0) {
-      supabase.from('projects').update({ status: 'in_progress' }).eq('id', project.id).then()
+    } else if (project?.id && completedCount > 0 && token && project.status !== 'completed') {
+      void portalSetProjectStatus(token, 'in_progress').catch(() => {})
     }
   }, [
     visibleItems,
     completedCount,
     project?.id,
+    project?.status,
     project?.payment_status,
     project?.stripe_checkout_url,
     project?.price,
     project?.token,
+    token,
     completionEmailSent,
     integrationsSent,
-    integrationResults.stripe?.checkoutUrl,
   ])
 
   const advanceToNext = useCallback((currentId: string) => {
@@ -622,32 +576,32 @@ export function ClientPortal() {
   }, [visibleItems])
 
   const markItemCompleted = useCallback(async (itemId: string, value: string) => {
+    if (!token) return
     setSavingItemId(itemId)
-    // Toute nouvelle soumission repasse en attente de revue et efface le motif précédent.
-    const submission = {
-      completed: true,
-      value,
-      review_status: 'pending' as const,
-      review_note: null,
-      submitted_at: new Date().toISOString(),
-    }
-    const { error: updateError } = await supabase
-      .from('checklist_items')
-      .update(submission)
-      .eq('id', itemId)
-
-    if (!updateError) {
+    try {
+      const result = await portalUpdateChecklistItem(token, itemId, {
+        completed: true,
+        value,
+        submitted_at: new Date().toISOString(),
+      })
+      const updated = result.item
       setItems((cur) =>
         cur.map((i) =>
           i.id === itemId
-            ? { ...i, completed: true, value, review_status: 'pending', review_note: null }
+            ? {
+                ...i,
+                completed: updated.completed,
+                value: updated.value,
+                review_status: updated.review_status,
+                review_note: updated.review_note,
+              }
             : i,
         ),
       )
-      // La valeur est côté serveur : le brouillon local n'a plus de raison d'être.
-      if (token) clearDraft(token, itemId)
+      setProject((cur) => (cur ? { ...cur, status: result.projectStatus } : cur))
+      clearDraft(token, itemId)
       advanceToNext(itemId)
-    } else {
+    } catch {
       setError('Impossible de sauvegarder. Réessayez.')
     }
     setSavingItemId(null)
@@ -709,26 +663,32 @@ export function ClientPortal() {
 
   const handleFileUpload = async (itemId: string, file: File | null) => {
     if (!file || !token) return
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Fichier trop volumineux (max 10 Mo).')
-      return
-    }
     setSavingItemId(itemId)
-    const filePath = `${token}/${itemId}/${file.name}`
-    const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, file, { upsert: true })
-    if (uploadError) {
-      setError("Échec de l'upload. Réessayez.")
-      setSavingItemId(null)
-      return
-    }
-    await markItemCompleted(itemId, filePath)
-
-    // Extraction IA côté agence (fire-and-forget) : n'impacte jamais le parcours client
-    supabase.functions
-      .invoke('extract-document-data', {
-        body: { projectToken: token, checklistItemId: itemId, storagePath: filePath },
+    try {
+      const upload = await requestPortalDocumentUpload({
+        projectToken: token,
+        itemId,
+        file,
       })
-      .catch(() => {})
+      await uploadPortalDocumentFile(file, upload.token, upload.path)
+      await markItemCompleted(itemId, upload.path)
+
+      const item = items.find((i) => i.id === itemId)
+      if (item && isExtractableDocumentItem(item)) {
+        void supabase.functions
+          .invoke('extract-document-data', {
+            body: { projectToken: token, checklistItemId: itemId },
+          })
+          .catch(() => {})
+      }
+    } catch (reason) {
+      if (reason instanceof PortalUploadError) {
+        setError(reason.message)
+      } else {
+        setError('Erreur serveur lors de l’envoi du fichier. Réessayez.')
+      }
+      setSavingItemId(null)
+    }
   }
 
   const scrollToFirstIncomplete = () => {

@@ -22,7 +22,7 @@ describe('mapClientDocuments', () => {
           label: 'Logo',
           type: 'file',
           completed: true,
-          value: 'documents/p1/logo.png',
+          value: 'p1/f1/logo.png',
           submitted_at: '2026-01-01T00:00:00.000Z',
           reviewed_at: null,
         },
@@ -43,6 +43,7 @@ describe('mapClientDocuments', () => {
     const groups = groupClientDocuments(items)
     expect(groups.signed).toHaveLength(1)
     expect(groups.files).toHaveLength(1)
+    expect(groups.files[0]?.storagePath).toBe('p1/f1/logo.png')
     expect(groups.ai).toHaveLength(1)
     expect(items[0]?.kind).toBe('ai_document')
     expect(items[0]?.title).toBe('Contrat prestation web')

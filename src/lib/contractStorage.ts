@@ -40,6 +40,44 @@ export async function getPortalTemplatePdfUrl(
   return String(data.signedUrl)
 }
 
+export type PortalSigningTemplate = {
+  id: string
+  name: string
+  pdf_url: string
+  signature_page: number
+  signature_x: number
+  signature_y: number
+  signature_width: number
+  signature_height: number
+}
+
+/** Charge un modèle (ou le défaut agence) via EF token-bound — pas de SELECT anon sur contract_templates. */
+export async function resolvePortalSigningTemplate(
+  projectToken: string,
+  templateId?: string | null,
+): Promise<PortalSigningTemplate> {
+  const { data, error } = await supabase.functions.invoke('portal-contract', {
+    body: {
+      action: 'resolveSigningTemplate',
+      projectToken,
+      ...(templateId ? { templateId } : {}),
+    },
+  })
+  if (error) throw new Error(error.message)
+  if (data?.error) throw new Error(String(data.error))
+  if (!data?.id || !data?.signedUrl) throw new Error('Modèle de contrat indisponible.')
+  return {
+    id: String(data.id),
+    name: String(data.name ?? 'Contrat'),
+    pdf_url: String(data.signedUrl),
+    signature_page: Number(data.signature_page ?? -1),
+    signature_x: Number(data.signature_x ?? 0.7),
+    signature_y: Number(data.signature_y ?? 0.85),
+    signature_width: Number(data.signature_width ?? 0.25),
+    signature_height: Number(data.signature_height ?? 0.08),
+  }
+}
+
 export type PortalGeneratedDocumentContract = {
   signedUrl: string
   name: string

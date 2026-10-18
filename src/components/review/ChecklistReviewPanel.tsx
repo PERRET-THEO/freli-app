@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Card } from '../ui'
-import { supabase } from '../../lib/supabase'
+import { displayDocumentFilename } from '../../lib/documentDisplay'
+import { createDocumentSignedUrl } from '../../lib/documentSignedUrl'
 import { formatRelative } from '../../lib/formatRelative'
 import { sendProjectReminderEmail } from '../../lib/resend'
 import { requestSmartReminder } from '../../lib/smartReminders'
@@ -88,9 +89,42 @@ const BADGE_CLASSES: Record<ReviewStatus, string> = {
   rejected: 'bg-[#FEF2F2] text-[#EF4444]',
 }
 
-function getFileDownloadUrl(path: string): string {
-  const { data } = supabase.storage.from('documents').getPublicUrl(path)
-  return data.publicUrl
+function DocumentOpenLink({ path, label }: { path: string; label: string }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (path.startsWith('http')) {
+    return (
+      <a href={path} target="_blank" rel="noreferrer" className="text-xs font-body text-[var(--accent)] underline">
+        {label}
+      </a>
+    )
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        disabled={busy}
+        className="text-xs font-body text-[var(--accent)] underline disabled:opacity-60"
+        onClick={() => {
+          setBusy(true)
+          setError(null)
+          void createDocumentSignedUrl(path).then((url) => {
+            setBusy(false)
+            if (!url) {
+              setError('Lien indisponible')
+              return
+            }
+            window.open(url, '_blank', 'noopener,noreferrer')
+          })
+        }}
+      >
+        {busy ? 'Préparation…' : label}
+      </button>
+      {error ? <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">{error}</p> : null}
+    </div>
+  )
 }
 
 function ItemValue({ item }: { item: ReviewPanelItem }) {
@@ -99,28 +133,15 @@ function ItemValue({ item }: { item: ReviewPanelItem }) {
   }
 
   if (item.type === 'signature') {
-    return (
-      <a
-        href={item.value}
-        target="_blank"
-        rel="noreferrer"
-        className="text-xs font-body text-[var(--accent)] underline"
-      >
-        Voir le contrat signé →
-      </a>
-    )
+    return <DocumentOpenLink path={item.value} label="Voir le contrat signé →" />
   }
 
   if (item.type === 'file') {
     return (
-      <a
-        href={getFileDownloadUrl(item.value)}
-        target="_blank"
-        rel="noreferrer"
-        className="text-xs font-body text-[var(--accent)] underline"
-      >
-        Télécharger : {item.value.split('/').pop()}
-      </a>
+      <DocumentOpenLink
+        path={item.value}
+        label={`Télécharger : ${displayDocumentFilename(item.value)}`}
+      />
     )
   }
 

@@ -1,9 +1,60 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { groupClientDocuments, type ClientDocumentItem } from '../../lib/clientDocuments'
+import { createDocumentSignedUrl } from '../../lib/documentSignedUrl'
 
 type ClientDocumentsPanelProps = {
   items: ClientDocumentItem[]
   loading?: boolean
+}
+
+function OpenDocumentButton({ item }: { item: ClientDocumentItem }) {
+  const [busy, setBusy] = useState(false)
+
+  if (item.href?.startsWith('/')) {
+    return (
+      <Link
+        to={item.href}
+        className="inline-flex min-h-11 shrink-0 items-center text-sm font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
+      >
+        Ouvrir
+      </Link>
+    )
+  }
+
+  if (item.href?.startsWith('http') && !item.storagePath) {
+    return (
+      <a
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex min-h-11 shrink-0 items-center text-sm font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
+      >
+        Ouvrir
+      </a>
+    )
+  }
+
+  if (!item.storagePath && !item.href) return null
+
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      className="inline-flex min-h-11 shrink-0 items-center text-sm font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline disabled:opacity-60"
+      onClick={() => {
+        const path = item.storagePath ?? item.href
+        if (!path) return
+        setBusy(true)
+        void createDocumentSignedUrl(path).then((url) => {
+          setBusy(false)
+          if (url) window.open(url, '_blank', 'noopener,noreferrer')
+        })
+      }}
+    >
+      {busy ? '…' : 'Ouvrir'}
+    </button>
+  )
 }
 
 function DocumentList({
@@ -46,25 +97,7 @@ function DocumentList({
                     {new Date(item.occurredAt).toLocaleDateString('fr-FR')}
                   </p>
                 </div>
-                {item.href ? (
-                  item.href.startsWith('/') ? (
-                    <Link
-                      to={item.href}
-                      className="inline-flex min-h-11 shrink-0 items-center text-sm font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
-                    >
-                      Ouvrir
-                    </Link>
-                  ) : (
-                    <a
-                      href={item.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-h-11 shrink-0 items-center text-sm font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
-                    >
-                      Ouvrir
-                    </a>
-                  )
-                ) : null}
+                <OpenDocumentButton item={item} />
               </div>
             </li>
           ))}

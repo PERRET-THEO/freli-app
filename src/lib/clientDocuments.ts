@@ -1,5 +1,3 @@
-import { supabase } from './supabase'
-
 export type ClientDocumentKind = 'signed_contract' | 'ai_document' | 'uploaded_file'
 
 export type ClientDocumentItem = {
@@ -10,7 +8,9 @@ export type ClientDocumentItem = {
   occurredAt: string
   projectId: string
   projectName: string
+  /** Path storage ou URL ; le panneau résout une signed URL à l’ouverture. */
   href: string | null
+  storagePath?: string | null
 }
 
 type ChecklistDocRow = {
@@ -34,11 +34,6 @@ type GeneratedDocRow = {
   current_version?: { title?: string } | null
 }
 
-function filePublicUrl(path: string): string {
-  const { data } = supabase.storage.from('documents').getPublicUrl(path)
-  return data.publicUrl
-}
-
 export function mapClientDocuments(input: {
   projects: Array<{ id: string; client_name: string }>
   checklist: ChecklistDocRow[]
@@ -57,7 +52,8 @@ export function mapClientDocuments(input: {
         occurredAt: row.reviewed_at ?? row.submitted_at ?? new Date(0).toISOString(),
         projectId: row.project_id,
         projectName: projectName.get(row.project_id) ?? 'Projet',
-        href: row.value,
+        href: row.value?.startsWith('http') ? row.value : null,
+        storagePath: row.value && !row.value.startsWith('http') ? row.value : null,
       })
     }
     if (row.type === 'file' && row.value) {
@@ -69,7 +65,8 @@ export function mapClientDocuments(input: {
         occurredAt: row.submitted_at ?? row.reviewed_at ?? new Date(0).toISOString(),
         projectId: row.project_id,
         projectName: projectName.get(row.project_id) ?? 'Projet',
-        href: filePublicUrl(row.value),
+        href: row.value.startsWith('http') ? row.value : null,
+        storagePath: row.value.startsWith('http') ? null : row.value,
       })
     }
   }
