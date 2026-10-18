@@ -78,7 +78,7 @@ type AgencyPortalRelation = {
 type ProjectRecord = {
   id: string
   client_name: string
-  client_email?: string
+  client_email?: string | null
   status: 'pending' | 'in_progress' | 'completed'
   token: string
   agency_id?: string | null
