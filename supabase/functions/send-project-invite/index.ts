@@ -23,6 +23,10 @@ import {
   jsonResponse,
 } from '../_shared/functionAuth.ts'
 import { finalizeAutoReminder } from '../_shared/reminderClaim.ts'
+import {
+  formatRetryAfterMessage,
+  isValidInviteEmail,
+} from '../_shared/inviteResend.ts'
 
 declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void }
 
@@ -38,6 +42,8 @@ type InviteBody = {
   source?: 'auto' | 'manual'
   /** Cron / internal retry: skip 30s rate limit. */
   force?: boolean
+  /** Renvoi manuel depuis la fiche projet (synchrone). */
+  resend?: boolean
   /** Log déjà claimé par claim_auto_reminder (batch auto uniquement). */
   claimLogId?: string
 }
@@ -54,6 +60,7 @@ type ProjectInviteRow = {
   price: number | null
   payment_status: string | null
   invite_status: string | null
+  invite_sent_at: string | null
   invite_attempts: number | null
   invite_last_attempt_at: string | null
   agencies:
@@ -165,18 +172,30 @@ async function deliverInviteEmail(opts: {
   agencyName: string
   projectRow: ProjectInviteRow
   isDev: boolean
-}): Promise<void> {
+  /** Sujet alternatif (renvoi manuel). */
+  subject?: string
+  fireCreatedWebhook?: boolean
+}): Promise<{ inviteSentAt: string }> {
   const portalUrl = `${appUrl}/p/${opts.token}`
   const displayClientName = formatDisplayName(opts.clientName) || opts.clientName
   const welcomeHtml = buildInviteWelcomeHtml(opts.projectRow, opts.agencyName)
+  const subject =
+    opts.subject ?? `${opts.agencyName} vous invite à compléter votre onboarding`
 
   if (opts.isDev) {
     console.log('MODE DEV — Email simulé pour:', opts.clientEmail, portalUrl)
-    await markInviteSent(opts.projectId)
-    return
+    const inviteSentAt = new Date().toISOString()
+    await supabase
+      .from('projects')
+      .update({
+        invite_status: 'sent',
+        invite_sent_at: inviteSentAt,
+        invite_error: null,
+      })
+      .eq('id', opts.projectId)
+    return { inviteSentAt }
   }
 
-  const subject = `${opts.agencyName} vous invite à compléter votre onboarding`
   const html = buildClientOnboardingEmail({
     mode: 'invite',
     clientName: displayClientName,
@@ -204,21 +223,71 @@ async function deliverInviteEmail(opts: {
     })
   }
 
-  await markInviteSent(opts.projectId)
+  const inviteSentAt = new Date().toISOString()
+  await supabase
+    .from('projects')
+    .update({
+      invite_status: 'sent',
+      invite_sent_at: inviteSentAt,
+      invite_error: null,
+    })
+    .eq('id', opts.projectId)
 
-  const userId = await getAgencyUserId(supabase, opts.agencyId)
-  if (userId) {
-    fireOutgoingWebhooks(
-      supabase,
-      userId,
-      'project.created',
-      buildProjectPayload(
-        opts.projectRow,
-        { id: opts.agencyId, name: opts.agencyName },
-        { meta: { source: 'invite', portal_url: portalUrl } },
-      ),
-    )
+  if (opts.fireCreatedWebhook !== false) {
+    const userId = await getAgencyUserId(supabase, opts.agencyId)
+    if (userId) {
+      fireOutgoingWebhooks(
+        supabase,
+        userId,
+        'project.created',
+        buildProjectPayload(
+          opts.projectRow,
+          { id: opts.agencyId, name: opts.agencyName },
+          { meta: { source: 'invite', portal_url: portalUrl } },
+        ),
+      )
+    }
   }
+
+  return { inviteSentAt }
+}
+
+async function insertInviteResentEvent(opts: {
+  agencyId: string
+  clientId: string
+  projectId: string
+  actorEmail: string | null
+  actorUserId: string
+  recipientEmail: string
+  outcome: 'sent' | 'failed'
+  error?: string
+}): Promise<void> {
+  const actor = opts.actorEmail?.trim() || 'un membre de l’agence'
+  await supabase.from('client_activity_events').insert({
+    agency_id: opts.agencyId,
+    client_id: opts.clientId,
+    project_id: opts.projectId,
+    event_type: 'invite.resent',
+    title: `Invitation renvoyée par ${actor}`,
+    metadata: {
+      actor_user_id: opts.actorUserId,
+      actor_email: opts.actorEmail,
+      recipient_email: opts.recipientEmail,
+      outcome: opts.outcome,
+      ...(opts.error ? { error: opts.error.slice(0, 500) } : {}),
+    },
+  })
+}
+
+function translateInviteError(raw: string): string {
+  const lower = raw.toLowerCase()
+  if (lower.includes('rate') || lower.includes('too many')) {
+    return 'Le service d’email est temporairement saturé. Réessayez dans quelques minutes.'
+  }
+  if (lower.includes('invalid') && lower.includes('email')) {
+    return 'Adresse email invalide.'
+  }
+  return raw.slice(0, 300) || 'Envoi impossible.'
 }
 
 serve(async (req) => {
@@ -255,7 +324,7 @@ serve(async (req) => {
     const { data: projectData, error: projectError } = await supabase
       .from('projects')
       .select(
-        'id, token, name, client_name, client_email, client_id, agency_id, status, price, payment_status, invite_status, invite_attempts, invite_last_attempt_at, agencies(id, name, portal_welcome_message), clients(first_name, company_name)',
+        'id, token, name, client_name, client_email, client_id, agency_id, status, price, payment_status, invite_status, invite_sent_at, invite_attempts, invite_last_attempt_at, agencies(id, name, portal_welcome_message), clients(first_name, company_name)',
       )
       .eq('id', projectId)
       .single()
@@ -265,12 +334,16 @@ serve(async (req) => {
     }
 
     const projectRow = projectData as ProjectInviteRow
+    const isManualResend = Boolean(body.resend) && !isReminderMode
 
+    let authUser: { id: string; email?: string } | null = null
     if (!internal) {
-      const user = await getAuthenticatedUser(req)
-      if (user) {
-        const denied = await assertUserIsAgencyMember(supabase, user.id, projectRow.agency_id)
+      authUser = await getAuthenticatedUser(req)
+      if (authUser) {
+        const denied = await assertUserIsAgencyMember(supabase, authUser.id, projectRow.agency_id)
         if (denied) return jsonResponse({ error: denied.error }, denied.status)
+      } else if (isManualResend) {
+        return jsonResponse({ error: 'Unauthorized' }, 401)
       } else if (body.projectToken || body.token) {
         const projectToken = body.projectToken ?? body.token ?? ''
         if (projectRow.token !== projectToken) {
@@ -278,6 +351,168 @@ serve(async (req) => {
         }
       } else {
         return jsonResponse({ error: 'Unauthorized' }, 401)
+      }
+    }
+
+    // --- Renvoi manuel synchrone ---
+    if (isManualResend) {
+      if (!authUser) {
+        return jsonResponse({ error: 'Unauthorized' }, 401)
+      }
+      if (projectRow.status === 'completed') {
+        return jsonResponse(
+          { error: 'completed', message: 'Ce projet est terminé.' },
+          400,
+        )
+      }
+
+      // Valider l'email AVANT le claim (pas de write, pas de burn du cooldown).
+      const requestedEmail =
+        typeof body.clientEmail === 'string' ? body.clientEmail.trim().toLowerCase() : ''
+      const emailWillChange =
+        Boolean(requestedEmail) &&
+        requestedEmail !== projectRow.client_email.trim().toLowerCase()
+      if (emailWillChange) {
+        if (!isValidInviteEmail(requestedEmail)) {
+          return jsonResponse(
+            { error: 'invalid_email', message: 'Adresse email invalide.' },
+            400,
+          )
+        }
+        let dupQuery = supabase
+          .from('clients')
+          .select('id')
+          .eq('agency_id', projectRow.agency_id)
+          .ilike('email', requestedEmail)
+          .limit(1)
+        if (projectRow.client_id) {
+          dupQuery = dupQuery.neq('id', projectRow.client_id)
+        }
+        const { data: dup } = await dupQuery.maybeSingle()
+        if (dup?.id) {
+          return jsonResponse(
+            {
+              error: 'email_taken',
+              message:
+                'Un autre client de votre agence utilise déjà cette adresse email.',
+            },
+            400,
+          )
+        }
+      }
+
+      const { data: claimRaw, error: claimError } = await supabase.rpc(
+        'claim_invite_manual_resend',
+        { p_project_id: projectId },
+      )
+      if (claimError) {
+        console.error('claim_invite_manual_resend:', claimError.message)
+        return jsonResponse({ error: 'claim_failed', message: claimError.message }, 500)
+      }
+      const claim = claimRaw as {
+        ok?: boolean
+        error?: string
+        message?: string
+        retry_after_ms?: number
+        client_id?: string | null
+      }
+      if (!claim?.ok) {
+        const retryAfterMs = Number(claim?.retry_after_ms ?? 60_000)
+        return jsonResponse(
+          {
+            error: claim?.error ?? 'rate_limited',
+            message: claim?.message ?? formatRetryAfterMessage(retryAfterMs),
+            retry_after_ms: retryAfterMs,
+          },
+          429,
+        )
+      }
+
+      // Mise à jour email uniquement après claim réussi.
+      let recipientEmail = projectRow.client_email
+      if (emailWillChange) {
+        await supabase
+          .from('projects')
+          .update({ client_email: requestedEmail })
+          .eq('id', projectId)
+        if (projectRow.client_id) {
+          await supabase
+            .from('clients')
+            .update({ email: requestedEmail })
+            .eq('id', projectRow.client_id)
+            .eq('agency_id', projectRow.agency_id)
+        }
+        recipientEmail = requestedEmail
+        projectRow.client_email = requestedEmail
+      }
+
+      const token = projectRow.token
+      const clientName = formatDisplayName(projectRow.client_name) || projectRow.client_name
+      const agencyName = agencyNameFrom(projectRow.agencies, body.agencyName ?? 'Mon Agence')
+      if (!token || !clientName || !recipientEmail) {
+        return jsonResponse({ error: 'Missing invite payload' }, 400)
+      }
+      if (!isValidProjectToken(token)) {
+        return jsonResponse({ error: 'Invalid project token' }, 400)
+      }
+
+      const actorEmail = authUser.email?.trim() ?? null
+      const clientIdForEvent = projectRow.client_id ?? claim.client_id ?? null
+
+      try {
+        const { inviteSentAt } = await deliverInviteEmail({
+          projectId,
+          token,
+          clientName,
+          clientEmail: recipientEmail,
+          agencyId: projectRow.agency_id,
+          agencyName,
+          projectRow,
+          isDev,
+          subject: `Rappel : votre espace d'onboarding ${agencyName}`,
+          fireCreatedWebhook: false,
+        })
+
+        if (clientIdForEvent) {
+          await insertInviteResentEvent({
+            agencyId: projectRow.agency_id,
+            clientId: clientIdForEvent,
+            projectId,
+            actorEmail,
+            actorUserId: authUser.id,
+            recipientEmail,
+            outcome: 'sent',
+          })
+        } else {
+          console.warn('invite.resent skipped: project without client_id', projectId)
+        }
+
+        return jsonResponse({
+          status: 'sent',
+          invite_sent_at: inviteSentAt,
+          recipient: recipientEmail,
+        })
+      } catch (err) {
+        const message = translateInviteError(
+          err instanceof Error ? err.message : String(err),
+        )
+        console.error('Manual invite resend failed:', message)
+        await markInviteFailed(projectId, message)
+        if (clientIdForEvent) {
+          await insertInviteResentEvent({
+            agencyId: projectRow.agency_id,
+            clientId: clientIdForEvent,
+            projectId,
+            actorEmail,
+            actorUserId: authUser.id,
+            recipientEmail,
+            outcome: 'failed',
+            error: message,
+          })
+        } else {
+          console.warn('invite.resent failed event skipped: no client_id', projectId)
+        }
+        return jsonResponse({ error: 'send_failed', message }, 400)
       }
     }
 

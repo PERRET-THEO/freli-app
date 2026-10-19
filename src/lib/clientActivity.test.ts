@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatAmountChangedTitle,
+  isClientFacingActivityType,
   mergeClientActivityEvents,
   paginateActivityEvents,
 } from './clientActivity'
@@ -81,6 +82,37 @@ describe('mergeClientActivityEvents', () => {
     expect(events.map((e) => e.eventType)).toContain('reminder_sent')
     expect(events.map((e) => e.eventType)).toContain('document_received')
     expect(events.map((e) => e.eventType)).toContain('project_created')
+  })
+})
+
+describe('isClientFacingActivityType', () => {
+  it('exclut invite.resent du calcul dernière activité client', () => {
+    expect(isClientFacingActivityType('invite.resent')).toBe(false)
+    expect(isClientFacingActivityType('reminder_cap_reset')).toBe(false)
+    expect(isClientFacingActivityType('payment.amount_changed')).toBe(true)
+    expect(isClientFacingActivityType('step_completed')).toBe(true)
+  })
+
+  it('affiche quand même invite.resent dans la timeline', () => {
+    const events = mergeClientActivityEvents({
+      projects: [
+        { id: 'p1', client_name: 'Acme', created_at: '2026-01-01T10:00:00.000Z' },
+      ],
+      reminders: [],
+      checklist: [],
+      extractions: [],
+      storedEvents: [
+        {
+          id: 'a1',
+          event_type: 'invite.resent',
+          title: 'Invitation renvoyée par agen@test.fr',
+          occurred_at: '2026-01-05T10:00:00.000Z',
+          project_id: 'p1',
+          metadata: { outcome: 'sent' },
+        },
+      ],
+    })
+    expect(events.some((e) => e.eventType === 'invite.resent')).toBe(true)
   })
 })
 

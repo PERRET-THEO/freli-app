@@ -1,38 +1,95 @@
 import { supabase } from './supabase'
+import { formatRetryAfterMessage } from './projectInvite'
 
 type CompletedEmailPayload = {
   projectId: string
   projectToken: string
 }
 
+export class InviteRateLimitError extends Error {
+  readonly retryAfterMs: number
+  constructor(message: string, retryAfterMs: number) {
+    super(message)
+    this.name = 'InviteRateLimitError'
+    this.retryAfterMs = retryAfterMs
+  }
+}
+
+export type SendProjectInviteResult = {
+  accepted?: true
+  status?: 'sent'
+  invite_sent_at?: string
+  recipient?: string
+}
+
 /**
- * Déclenche l'envoi d'invitation (Edge Function répond 202, livraison en arrière-plan).
- * Ne throw pas sur 202 ; throw uniquement si la requête est refusée (auth, 4xx hors 202).
+ * Déclenche l'envoi d'invitation.
+ * - Création / retry : 202 async (accepted).
+ * - resend: true : synchrone 200 { status:'sent', invite_sent_at } ou erreur.
  */
-export async function sendProjectInviteEmail(payload: { projectId: string; force?: boolean }) {
+export async function sendProjectInviteEmail(payload: {
+  projectId: string
+  force?: boolean
+  resend?: boolean
+  clientEmail?: string
+}): Promise<SendProjectInviteResult> {
   const { data, error } = await supabase.functions.invoke('send-project-invite', {
     body: {
       projectId: payload.projectId,
       mode: 'invite',
       ...(payload.force ? { force: true } : {}),
+      ...(payload.resend ? { resend: true } : {}),
+      ...(payload.clientEmail ? { clientEmail: payload.clientEmail } : {}),
     },
   })
 
-  // supabase-js treats non-2xx as error; 202 is success for async invite
+  const readRetry = (payloadData: unknown): number => {
+    const raw = (payloadData as { retry_after_ms?: number } | null)?.retry_after_ms
+    return typeof raw === 'number' && raw > 0 ? raw : 60_000
+  }
+
   if (error) {
     const ctx = error as { context?: Response; message?: string }
     if (ctx.context?.status === 202) return { accepted: true as const }
     if (ctx.context?.status === 429) {
-      throw new Error('Attendez quelques secondes avant de renvoyer.')
+      let body: { message?: string; retry_after_ms?: number } | null = null
+      try {
+        body = (await ctx.context.clone().json()) as {
+          message?: string
+          retry_after_ms?: number
+        }
+      } catch {
+        body = null
+      }
+      const retryAfterMs = body?.retry_after_ms ?? readRetry(data)
+      throw new InviteRateLimitError(
+        body?.message ?? formatRetryAfterMessage(retryAfterMs),
+        retryAfterMs,
+      )
     }
     throw new Error(error.message)
   }
-  if (data?.error && data.error !== 'rate_limited') {
-    throw new Error(String(data.error))
+
+  if (data?.error === 'rate_limited' || data?.error === 'daily_cap') {
+    const retryAfterMs = readRetry(data)
+    throw new InviteRateLimitError(
+      String(data.message ?? formatRetryAfterMessage(retryAfterMs)),
+      retryAfterMs,
+    )
   }
-  if (data?.error === 'rate_limited') {
-    throw new Error(data.message ?? 'Attendez quelques secondes avant de renvoyer.')
+
+  if (data?.error) {
+    throw new Error(String(data.message ?? data.error))
   }
+
+  if (payload.resend) {
+    return {
+      status: 'sent',
+      invite_sent_at: data?.invite_sent_at as string | undefined,
+      recipient: data?.recipient as string | undefined,
+    }
+  }
+
   return { accepted: true as const }
 }
 
@@ -61,4 +118,5 @@ export async function sendProjectReminderEmail(payload: { projectId: string }) {
   })
   if (error) throw new Error(error.message)
   if (data?.error) throw new Error(String(data.error))
+  return data
 }

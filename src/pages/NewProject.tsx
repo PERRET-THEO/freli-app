@@ -614,13 +614,18 @@ export function NewProject() {
     const gate = canResendInvite({
       inviteStatus,
       inviteLastAttemptAt,
+      inviteSentAt,
     })
     if (!gate.ok) return
     setInviteResending(true)
     try {
-      await sendProjectInviteEmail({ projectId: createdProjectId })
-      setInviteStatus('pending')
+      const result = await sendProjectInviteEmail({
+        projectId: createdProjectId,
+        resend: true,
+      })
+      setInviteStatus('sent')
       setInviteLastAttemptAt(new Date().toISOString())
+      setInviteSentAt(result.invite_sent_at ?? new Date().toISOString())
       pollInviteStatus(createdProjectId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Renvoi impossible.')
@@ -1083,7 +1088,7 @@ export function NewProject() {
                     onClick={() => void handleResendInvite()}
                     disabled={
                       inviteResending ||
-                      !canResendInvite({ inviteStatus, inviteLastAttemptAt }).ok
+                      !canResendInvite({ inviteStatus, inviteLastAttemptAt, inviteSentAt }).ok
                     }
                   >
                     {inviteResending ? 'Envoi…' : 'Renvoyer'}

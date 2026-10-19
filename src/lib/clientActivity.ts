@@ -14,6 +14,7 @@ export type ClientActivityEvent = {
     | 'secret.copy'
     | 'secret.cleared'
     | 'payment.amount_changed'
+    | 'invite.resent'
   title: string
   occurredAt: string
   projectId: string | null
@@ -22,13 +23,25 @@ export type ClientActivityEvent = {
   actorLabel?: string | null
 }
 
+/** Événements stockés affichés dans les timelines (agence ou client). */
 const STORED_ACTIVITY_TYPES = new Set([
   'secret.reveal',
   'secret.copy',
   'secret.cleared',
   'payment.amount_changed',
   'reminder_cap_reset',
+  'invite.resent',
 ])
+
+/**
+ * Types d'activité agence — exclus du calcul « dernière activité client »
+ * (plafond relances, stalled, tris clients).
+ */
+export const AGENCY_ONLY_ACTIVITY_TYPES = new Set(['invite.resent', 'reminder_cap_reset'])
+
+export function isClientFacingActivityType(eventType: string): boolean {
+  return !AGENCY_ONLY_ACTIVITY_TYPES.has(eventType)
+}
 
 export type StoredActivityRow = {
   id: string

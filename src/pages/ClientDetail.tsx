@@ -219,6 +219,8 @@ export function ClientDetail() {
             'secret.copy',
             'secret.cleared',
             'payment.amount_changed',
+            'invite.resent',
+            'reminder_cap_reset',
           ])
           .order('occurred_at', { ascending: false })
           .limit(50),

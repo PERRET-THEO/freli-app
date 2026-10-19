@@ -12,8 +12,19 @@ import {
   mergeClientActivityEvents,
   type ClientActivityEvent,
 } from '../lib/clientActivity'
-import { sendProjectInviteEmail, sendProjectReminderEmail } from '../lib/resend'
-import { canResendInvite, formatInviteSentAt } from '../lib/projectInvite'
+import { ResendInviteModal } from '../components/projects/ResendInviteModal'
+import {
+  InviteRateLimitError,
+  sendProjectInviteEmail,
+  sendProjectReminderEmail,
+} from '../lib/resend'
+import {
+  canResendInvite,
+  formatRetryAfterMessage,
+  inviteBannerLabel,
+  shouldHighlightResendInvite,
+  shouldShowResendInvite,
+} from '../lib/projectInvite'
 import { requestSmartReminder } from '../lib/smartReminders'
 import { sendPaymentLink } from '../lib/stripePayment'
 import { syncProjectDriveFolder } from '../lib/googleDriveConnect'
@@ -155,6 +166,11 @@ export function ProjectDetail() {
   const [smartRemindersKey, setSmartRemindersKey] = useState(0)
   const [resendingInvite, setResendingInvite] = useState(false)
   const [inviteFeedback, setInviteFeedback] = useState<string | null>(null)
+  const [showResendInviteModal, setShowResendInviteModal] = useState(false)
+  const [inviteToast, setInviteToast] = useState<string | null>(null)
+  const [inviteRetryAfterMs, setInviteRetryAfterMs] = useState<number | null>(null)
+  const [inviteResendCount24h, setInviteResendCount24h] = useState(0)
+  const [hasManualResend, setHasManualResend] = useState(false)
   const [editingPrice, setEditingPrice] = useState(false)
   const [priceDraft, setPriceDraft] = useState('')
   const [resendPaymentEmail, setResendPaymentEmail] = useState(true)
@@ -238,6 +254,7 @@ export function ProjectDetail() {
           'secret.cleared',
           'payment.amount_changed',
           'reminder_cap_reset',
+          'invite.resent',
         ])
         .order('occurred_at', { ascending: false })
         .limit(50),
@@ -263,6 +280,14 @@ export function ProjectDetail() {
     pushRecentProject(record.id, record.name?.trim() || record.client_name)
     setItems((checklistData ?? []) as ChecklistItemRecord[])
     setReminderLogs((logsData ?? []) as ReminderLog[])
+    {
+      const dayAgo = Date.now() - 24 * 60 * 60_000
+      const resentRows = (activityRows ?? []).filter((row) => row.event_type === 'invite.resent')
+      setHasManualResend(resentRows.length > 0)
+      setInviteResendCount24h(
+        resentRows.filter((row) => new Date(row.occurred_at).getTime() > dayAgo).length,
+      )
+    }
     setProjectActivity(
       mergeClientActivityEvents({
         projects: [
@@ -609,28 +634,49 @@ export function ProjectDetail() {
     navigate('/dashboard', { replace: true })
   }
 
-  const handleResendInvite = async () => {
-    if (!project?.id || resendingInvite) return
-    const gate = canResendInvite({
+  const inviteGate = useMemo(() => {
+    if (!project) return { ok: false as const, reason: 'completed' as const }
+    return canResendInvite({
       inviteStatus: project.invite_status,
       inviteLastAttemptAt: project.invite_last_attempt_at,
+      inviteSentAt: project.invite_sent_at,
+      projectStatus: project.status,
+      resendCount24h: inviteResendCount24h,
+      retryAfterMs: inviteRetryAfterMs,
     })
-    if (!gate.ok) {
-      setInviteFeedback(
-        gate.reason === 'sending'
-          ? 'Invitation en cours d’envoi…'
-          : 'Attendez quelques secondes avant de renvoyer.',
-      )
+  }, [project, inviteResendCount24h, inviteRetryAfterMs])
+
+  const handleConfirmResendInvite = async (email: string) => {
+    if (!project?.id || resendingInvite) return
+    if (!inviteGate.ok) {
+      const msg =
+        inviteGate.reason === 'sending'
+          ? "Invitation en cours d'envoi…"
+          : formatRetryAfterMessage(inviteGate.retryAfterMs ?? 60_000)
+      setInviteFeedback(msg)
       return
     }
     setResendingInvite(true)
     setInviteFeedback(null)
     try {
-      await sendProjectInviteEmail({ projectId: project.id })
-      setInviteFeedback('Invitation en cours d’envoi…')
+      const result = await sendProjectInviteEmail({
+        projectId: project.id,
+        resend: true,
+        clientEmail: email,
+      })
+      setShowResendInviteModal(false)
+      setInviteRetryAfterMs(null)
+      setHasManualResend(true)
+      setInviteToast(`Invitation renvoyée à ${result.recipient ?? email}`)
+      window.setTimeout(() => setInviteToast(null), 3000)
       await loadProject()
     } catch (err) {
-      setInviteFeedback(err instanceof Error ? err.message : 'Renvoi impossible.')
+      if (err instanceof InviteRateLimitError) {
+        setInviteRetryAfterMs(err.retryAfterMs)
+        setInviteFeedback(err.message)
+      } else {
+        setInviteFeedback(err instanceof Error ? err.message : 'Renvoi impossible.')
+      }
     } finally {
       setResendingInvite(false)
     }
@@ -688,40 +734,52 @@ export function ProjectDetail() {
                 <p className="text-xs font-body text-[var(--ink-muted)]">Créé le {createdAtLabel}</p>
               </div>
 
-              {project.invite_status ? (
+              {project.invite_status && shouldShowResendInvite({ projectStatus: project.status }) ? (
                 <div
-                  className="mt-4 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-warm)] px-3 py-2 text-xs font-body text-[var(--ink-soft)]"
+                  className={`mt-4 rounded-[var(--radius-sm)] border px-3 py-2 text-xs font-body ${
+                    shouldHighlightResendInvite({
+                      inviteStatus: project.invite_status,
+                      lastPortalVisitAt: project.last_portal_visit_at,
+                    })
+                      ? 'border-[var(--amber)] bg-[var(--amber-soft)] text-[var(--ink)]'
+                      : 'border-[var(--border)] bg-[var(--surface-warm)] text-[var(--ink-soft)]'
+                  }`}
                   role="status"
                 >
-                  {project.invite_status === 'sent' ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <p>
-                      Invitation envoyée
-                      {formatInviteSentAt(project.invite_sent_at)
-                        ? ` le ${formatInviteSentAt(project.invite_sent_at)}`
-                        : ''}
+                      {
+                        inviteBannerLabel({
+                          inviteStatus: project.invite_status,
+                          inviteSentAt: project.invite_sent_at,
+                          inviteError: project.invite_error,
+                          hasManualResend,
+                        }).text
+                      }
                     </p>
-                  ) : project.invite_status === 'pending' ? (
-                    <p>Invitation en cours d&apos;envoi…</p>
-                  ) : (
-                    <p>
-                      Échec de l&apos;envoi
-                      {project.invite_error ? ` — ${project.invite_error}` : ''}.{' '}
-                      <button
-                        type="button"
-                        className="font-medium text-[var(--accent)] underline-offset-2 hover:underline disabled:opacity-50"
-                        onClick={() => void handleResendInvite()}
-                        disabled={
-                          resendingInvite ||
-                          !canResendInvite({
-                            inviteStatus: project.invite_status,
-                            inviteLastAttemptAt: project.invite_last_attempt_at,
-                          }).ok
-                        }
-                      >
-                        {resendingInvite ? 'Envoi…' : 'Renvoyer'}
-                      </button>
-                    </p>
-                  )}
+                    <button
+                      type="button"
+                      className={`shrink-0 rounded-[var(--radius-sm)] px-2.5 py-1 font-medium disabled:opacity-50 ${
+                        shouldHighlightResendInvite({
+                          inviteStatus: project.invite_status,
+                          lastPortalVisitAt: project.last_portal_visit_at,
+                        })
+                          ? 'bg-[var(--accent)] text-[var(--white)]'
+                          : 'border border-[var(--border)] bg-[var(--white)] text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)]'
+                      }`}
+                      title={
+                        !inviteGate.ok && inviteGate.retryAfterMs
+                          ? formatRetryAfterMessage(inviteGate.retryAfterMs)
+                          : !inviteGate.ok
+                            ? formatRetryAfterMessage(60_000)
+                            : undefined
+                      }
+                      onClick={() => setShowResendInviteModal(true)}
+                      disabled={resendingInvite || !inviteGate.ok}
+                    >
+                      Renvoyer l&apos;invitation
+                    </button>
+                  </div>
                   {inviteFeedback ? (
                     <p className="mt-1 text-[var(--amber)]">{inviteFeedback}</p>
                   ) : null}
@@ -1183,6 +1241,22 @@ export function ProjectDetail() {
           </Card>
         </div>
       )}
+
+      {showResendInviteModal && project ? (
+        <ResendInviteModal
+          email={project.client_email}
+          hasClientRecord={Boolean(project.client_id)}
+          submitting={resendingInvite}
+          onClose={() => setShowResendInviteModal(false)}
+          onConfirm={(email) => void handleConfirmResendInvite(email)}
+        />
+      ) : null}
+
+      {inviteToast ? (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2.5 text-sm font-body text-[var(--white)] shadow-lg">
+          {inviteToast}
+        </div>
+      ) : null}
     </DashboardLayout>
   )
 }
