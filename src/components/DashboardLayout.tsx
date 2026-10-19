@@ -13,11 +13,12 @@ type DashboardLayoutProps = {
   skeleton?: ReactNode
 }
 
+/** Largeur max du contenu ; le centrage (mx-auto w-full) est sur le conteneur intérieur. */
 const maxWidthClass: Record<NonNullable<DashboardLayoutProps['maxWidth']>, string> = {
   '4xl': 'max-w-4xl',
   '5xl': 'max-w-5xl',
   '7xl': 'max-w-7xl',
-  full: 'w-full max-w-none md:w-[calc(100%-var(--sidebar-current-width))]',
+  full: 'max-w-none',
 }
 
 export function DashboardLayout({
@@ -37,29 +38,35 @@ export function DashboardLayout({
       <AppSidebar />
       <CommandPalette />
 
-      <div
-        className={`mx-auto flex min-h-0 min-w-0 flex-1 flex-col transition-[margin] duration-200 ease-out md:ml-[var(--sidebar-current-width)] md:block md:flex-none ${contentMax}`}
-      >
-        <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain px-4 py-6 pt-[max(1.5rem,var(--safe-top))] sm:px-8 md:overflow-visible md:py-8 md:pt-8">
-          {title ? (
-            <header className="mb-6">
-              <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">{title}</h1>
-              {subtitle ? (
-                <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">{subtitle}</p>
-              ) : null}
-            </header>
-          ) : null}
-          {showSkeleton ? (
-            skeleton
-          ) : sessionLoading ? (
-            <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
-          ) : (
-            children
-          )}
-        </main>
+      {/* Réserve la place de la sidebar via padding (pas margin) → pas d’overflow 100%+ml. */}
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col transition-[padding] duration-200 ease-out md:block md:flex-none md:pl-[var(--sidebar-current-width)]">
+        {/* Centre le contenu dans l’espace restant. w-full mobile : évite min-content. */}
+        <div
+          className={`mx-auto flex min-h-0 w-full min-w-0 flex-1 flex-col md:block ${contentMax}`}
+        >
+          <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain px-4 py-6 pt-[max(1.5rem,var(--safe-top))] sm:px-8 md:overflow-visible md:py-8 md:pt-8">
+            {title ? (
+              <header className="mb-6">
+                <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
+                  {title}
+                </h1>
+                {subtitle ? (
+                  <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">{subtitle}</p>
+                ) : null}
+              </header>
+            ) : null}
+            {showSkeleton ? (
+              skeleton
+            ) : sessionLoading ? (
+              <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
+            ) : (
+              children
+            )}
+          </main>
 
-        <div className="shrink-0 md:hidden">
-          <MobileBottomNav />
+          <div className="shrink-0 md:hidden">
+            <MobileBottomNav />
+          </div>
         </div>
       </div>
     </div>

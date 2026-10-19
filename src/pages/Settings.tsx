@@ -33,6 +33,7 @@ import {
   isValidPortfolioUrl,
   normalizePortfolioUrl,
 } from '../lib/portfolioUrl'
+import { formatDisplayName } from '../lib/formatPersonName'
 import { DEFAULT_PORTAL_HELP_TITLE } from '../lib/portalWelcomeTemplate'
 import { normalizeReminderDelayHours } from '../lib/reminderSettings'
 import {
@@ -70,7 +71,7 @@ function accountInitials(email: string): string {
 export function Settings() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { isOwner, userId: sessionUserId } = useAgencySession()
+  const { isOwner, userId: sessionUserId, setDisplayName } = useAgencySession()
   const [userId, setUserId] = useState<string | null>(null)
   const [agency, setAgency] = useState<AgencyBranding | null>(null)
   const [agencyName, setAgencyName] = useState('')
@@ -101,6 +102,9 @@ export function Settings() {
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
   const [logoError, setLogoError] = useState<string | null>(null)
   const [accountEmail, setAccountEmail] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [firstNameSaving, setFirstNameSaving] = useState(false)
+  const [firstNameFeedback, setFirstNameFeedback] = useState<SectionFeedback>(null)
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [showPasswordForm, setShowPasswordForm] = useState(false)
@@ -213,6 +217,12 @@ export function Settings() {
       }
       setUserId(userData.user.id)
       setAccountEmail(userData.user.email ?? '')
+      const meta = userData.user.user_metadata as Record<string, unknown> | undefined
+      const rawFirst =
+        (typeof meta?.first_name === 'string' && meta.first_name.trim()) ||
+        (typeof meta?.given_name === 'string' && meta.given_name.trim()) ||
+        ''
+      setFirstName(rawFirst ? formatDisplayName(rawFirst) : '')
 
       const resolved = await getOrCreateAgency(userData.user.id)
       if (resolved?.id) {
@@ -434,6 +444,34 @@ export function Settings() {
     } finally {
       setAgencySaving(false)
     }
+  }
+
+  const handleSaveFirstName = async () => {
+    setFirstNameFeedback(null)
+    const trimmed = firstName.trim()
+    if (trimmed.length > 80) {
+      setFirstNameFeedback({ type: 'error', text: 'Le prénom est trop long (80 caractères max).' })
+      return
+    }
+    const formatted = trimmed ? formatDisplayName(trimmed) : ''
+
+    setFirstNameSaving(true)
+    const { error } = await supabase.auth.updateUser({
+      data: { first_name: formatted || null },
+    })
+    setFirstNameSaving(false)
+
+    if (error) {
+      setFirstNameFeedback({ type: 'error', text: error.message })
+      return
+    }
+    setFirstName(formatted)
+    setDisplayName(formatted)
+    setFirstNameFeedback({
+      type: 'success',
+      text: formatted ? 'Prénom enregistré.' : 'Prénom effacé.',
+    })
+    showToast(formatted ? 'Prénom enregistré.' : 'Prénom effacé.')
   }
 
   const handleChangePassword = async () => {
@@ -871,6 +909,39 @@ export function Settings() {
                   <p className="truncate text-sm font-body font-medium text-[var(--ink)]">{accountEmail}</p>
                   <p className="text-xs font-body text-[var(--ink-muted)]">Compte agence Freli</p>
                 </div>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <label
+                  htmlFor="settings-first-name"
+                  className="block text-sm font-body font-medium text-[var(--ink)]"
+                >
+                  Votre prénom
+                  <span className="ml-1 font-normal text-[var(--ink-muted)]">(facultatif)</span>
+                </label>
+                <p className="text-xs font-body text-[var(--ink-muted)]">
+                  Affiché dans le tableau de bord («{'\u00A0'}Bonjour,{'\u00A0'}…{'\u00A0'}»).
+                  Laissez vide pour un simple «{'\u00A0'}Bonjour{'\u00A0'}».
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    id="settings-first-name"
+                    value={firstName}
+                    onChange={(event) => setFirstName(event.target.value)}
+                    placeholder="Ex. Théo"
+                    autoComplete="given-name"
+                    className="sm:max-w-xs"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleSaveFirstName}
+                    disabled={firstNameSaving}
+                    className="shrink-0"
+                  >
+                    {firstNameSaving ? 'Enregistrement…' : 'Enregistrer'}
+                  </Button>
+                </div>
+                <SectionMessage feedback={firstNameFeedback} />
               </div>
 
               {!showPasswordForm ? (

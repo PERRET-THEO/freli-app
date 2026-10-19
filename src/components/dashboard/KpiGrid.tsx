@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { formatCount } from '../../lib/formatCount'
 import { Card } from '../ui'
 
 type KpiGridProps = {
@@ -28,35 +29,38 @@ export function KpiGrid({
   const monthLabel = new Date().toLocaleDateString('fr-FR', { month: 'long' })
 
   return (
-    <section className="mt-8">
-      <h2 className="mb-3 font-display text-lg font-semibold text-[var(--ink)]">Ce mois</h2>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="relative overflow-hidden p-5">
-          <div className="flex items-start justify-between">
-            <p className="text-xs font-display font-bold uppercase tracking-wide text-[var(--ink-muted)]">
+    <section className="mt-4 sm:mt-6">
+      <h2 className="mb-2 font-display text-base font-semibold text-[var(--ink)] sm:mb-3 sm:text-lg">
+        Ce mois
+      </h2>
+      {/* Mobile: 2 cols compactes pour ne pas repousser la liste projets */}
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+        <Card className="relative overflow-hidden p-3 sm:p-5">
+          <div className="flex items-start justify-between gap-1">
+            <p className="text-[10px] font-display font-bold uppercase tracking-wide text-[var(--ink-muted)] sm:text-xs">
               Projets actifs
             </p>
             {activeProjects > 0 && (
-              <span className="relative flex h-2 w-2" aria-hidden>
+              <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-60" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent)]" />
               </span>
             )}
           </div>
-          <p className="mt-2 font-display text-3xl font-extrabold text-[var(--ink)]">
+          <p className="mt-1 font-display text-2xl font-extrabold text-[var(--ink)] sm:mt-2 sm:text-3xl">
             {activeProjects}
           </p>
-          <p className="mt-1 text-[11px] font-body text-[var(--ink-muted)]">
+          <p className="mt-0.5 text-[10px] font-body text-[var(--ink-muted)] sm:mt-1 sm:text-[11px]">
             {pendingProjects > 0 ? `+${pendingProjects} en attente` : 'aucun en attente'}
           </p>
         </Card>
 
-        <Card className="relative overflow-hidden p-5">
-          <p className="text-xs font-display font-bold uppercase tracking-wide text-[var(--ink-muted)]">
+        <Card className="relative overflow-hidden p-3 sm:p-5">
+          <p className="text-[10px] font-display font-bold uppercase tracking-wide text-[var(--ink-muted)] sm:text-xs">
             Taux de complétion
           </p>
-          <div className="mt-2 flex items-baseline gap-2">
-            <p className="font-display text-3xl font-extrabold text-[var(--ink)]">
+          <div className="mt-1 flex items-baseline gap-2 sm:mt-2">
+            <p className="font-display text-2xl font-extrabold text-[var(--ink)] sm:text-3xl">
               {averageCompletion}%
             </p>
             {averageCompletion >= 80 && (
@@ -65,10 +69,10 @@ export function KpiGrid({
               </span>
             )}
           </div>
-          <p className="mt-1 text-[11px] font-body text-[var(--ink-muted)]">
-            moyenne sur {totalProjects} projet{totalProjects > 1 ? 's' : ''}
+          <p className="mt-0.5 text-[10px] font-body text-[var(--ink-muted)] sm:mt-1 sm:text-[11px]">
+            moyenne sur {formatCount(totalProjects, 'projet')}
           </p>
-          <div className="mt-3 h-1.5 rounded-full bg-[var(--surface-warm)]">
+          <div className="mt-2 h-1 rounded-full bg-[var(--surface-warm)] sm:mt-3 sm:h-1.5">
             <div
               className="h-full rounded-full bg-[var(--accent)] transition-all"
               style={{ width: `${averageCompletion}%` }}
@@ -76,56 +80,60 @@ export function KpiGrid({
           </div>
         </Card>
 
-        <Card className="relative overflow-hidden p-5">
-          <p className="text-xs font-display font-bold uppercase tracking-wide text-[var(--ink-muted)]">
+        <Card className="relative overflow-hidden p-3 sm:p-5">
+          <p className="text-[10px] font-display font-bold uppercase tracking-wide text-[var(--ink-muted)] sm:text-xs">
             Projets ce mois
           </p>
-          <p className="mt-2 font-display text-3xl font-extrabold text-[var(--ink)]">
+          <p className="mt-1 font-display text-2xl font-extrabold text-[var(--ink)] sm:mt-2 sm:text-3xl">
             {projectsThisMonth}
           </p>
-          <p className="mt-1 text-[11px] font-body text-[var(--ink-muted)]" title={`Projets démarrés en ${monthLabel}`}>
-            {completedThisMonth} terminé{completedThisMonth > 1 ? 's' : ''} · démarrés en {monthLabel}
+          <p
+            className="mt-0.5 text-[10px] font-body text-[var(--ink-muted)] sm:mt-1 sm:text-[11px]"
+            title={`Projets démarrés en ${monthLabel}`}
+          >
+            {formatCount(completedThisMonth, 'terminé')} · démarrés en {monthLabel}
           </p>
         </Card>
 
-        <Card className="relative overflow-hidden border border-[var(--accent)]/25 bg-gradient-to-br from-[var(--accent-soft)] to-[var(--white)] p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-display font-bold uppercase tracking-wide text-[var(--accent)]">
+        <Card className="relative overflow-hidden border border-[var(--accent)]/25 bg-gradient-to-br from-[var(--accent-soft)] to-[var(--white)] p-3 sm:p-5">
+          <div className="flex items-center justify-between gap-1">
+            <p className="text-[10px] font-display font-bold uppercase tracking-wide text-[var(--accent)] sm:text-xs">
               Temps gagné
             </p>
             <button
               type="button"
               onClick={() => setShowTimeBreakdown((v) => !v)}
-              className="text-[10px] font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
+              className="shrink-0 text-[10px] font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
               aria-expanded={showTimeBreakdown}
+              aria-label="Comment est calculé le temps gagné ?"
             >
-              Comment ?
+              Comment{'\u00A0'}?
             </button>
           </div>
           {hoursSavedThisMonth > 0 ? (
             <>
-              <p className="mt-2 font-display text-3xl font-extrabold text-[var(--ink)]">
+              <p className="mt-1 font-display text-2xl font-extrabold text-[var(--ink)] sm:mt-2 sm:text-3xl">
                 {hoursSavedThisMonth}
-                <span className="text-lg">h</span>
+                <span className="text-base sm:text-lg">h</span>
               </p>
-              <p className="mt-1 text-[11px] font-body text-[var(--ink-muted)]">
+              <p className="mt-0.5 text-[10px] font-body text-[var(--ink-muted)] sm:mt-1 sm:text-[11px]">
                 ce mois, grâce à l&apos;automatisation
               </p>
             </>
           ) : (
             <>
-              <p className="mt-2 font-display text-lg font-bold text-[var(--ink)]">
+              <p className="mt-1 font-display text-sm font-bold text-[var(--ink)] sm:mt-2 sm:text-lg">
                 Pas encore ce mois
               </p>
-              <p className="mt-1 text-[11px] font-body text-[var(--ink-muted)]">
+              <p className="mt-0.5 text-[10px] font-body text-[var(--ink-muted)] sm:mt-1 sm:text-[11px]">
                 Les relances auto et onboardings complétés s&apos;additionnent ici.
               </p>
             </>
           )}
           {showTimeBreakdown ? (
-            <p className="mt-2 text-[11px] font-body text-[var(--ink-muted)]">
-              {completedOnboardings} onboarding × 3h + {autoRemindersThisMonth} relance
-              {autoRemindersThisMonth > 1 ? 's' : ''} auto × 10 min
+            <p className="mt-2 text-[10px] font-body text-[var(--ink-muted)] sm:text-[11px]">
+              {completedOnboardings} onboarding × 3h +{' '}
+              {formatCount(autoRemindersThisMonth, 'relance', { plural: 'relances' })} auto × 10 min
             </p>
           ) : null}
         </Card>

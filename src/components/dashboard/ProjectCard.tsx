@@ -6,6 +6,7 @@ import {
   formatBottleneckLabel,
   isBottleneckStale,
 } from '../../lib/projectBottleneck'
+import { getScrollTop, setScrollTop } from '../../lib/scrollContainer'
 import { Badge, PersonAvatar } from '../ui'
 import {
   getActivityLabel,
@@ -35,6 +36,8 @@ export function ProjectCard({
   onDelete,
 }: ProjectCardProps) {
   const menuRef = useRef<HTMLDivElement>(null)
+  const pointerFocusRef = useRef(false)
+  const scrollSnapshotRef = useRef(0)
   const displayTitle = project.projectName || project.companyName || project.clientName
   const subtitleName =
     project.projectName && project.projectName !== project.clientName
@@ -104,11 +107,26 @@ export function ProjectCard({
         {/* Stretch link: card opens project without nesting interactive children inside <a> */}
         <Link
           to={`/dashboard/project/${project.id}`}
-          className="absolute inset-0 z-0 rounded-[var(--radius-lg)]"
+          className="absolute inset-0 z-0 rounded-[var(--radius-lg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
           aria-label={`Ouvrir le projet de ${project.clientName}`}
+          title={displayTitle}
+          onMouseDown={(event) => {
+            // Snapshot only — no preventDefault (preserves middle-click + drag-to-new-tab).
+            if (event.button !== 0) return
+            pointerFocusRef.current = true
+            scrollSnapshotRef.current = getScrollTop()
+          }}
+          onFocus={() => {
+            if (!pointerFocusRef.current) return
+            pointerFocusRef.current = false
+            setScrollTop(scrollSnapshotRef.current)
+          }}
+          onBlur={() => {
+            pointerFocusRef.current = false
+          }}
         />
 
-        <div className="relative z-[1] flex items-start gap-3">
+        <div className="pointer-events-none relative z-[1] flex items-start gap-3">
           <PersonAvatar
             seed={project.clientId ?? project.id}
             name={project.clientName}
@@ -119,11 +137,11 @@ export function ProjectCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <h2 className="line-clamp-2 break-words font-display text-[17px] font-bold leading-snug text-[var(--ink)]">
+                <h2 className="line-clamp-2 break-normal font-display text-[17px] font-bold leading-snug text-[var(--ink)]">
                   {displayTitle}
                 </h2>
                 {subtitleName ? (
-                  <p className="mt-0.5 line-clamp-1 text-[11px] font-body text-[var(--ink-muted)]">
+                  <p className="mt-0.5 line-clamp-1 break-normal text-[11px] font-body text-[var(--ink-muted)]">
                     {subtitleName}
                   </p>
                 ) : null}
@@ -131,7 +149,7 @@ export function ProjectCard({
                   <a
                     href={mailtoHref(project.clientEmail)}
                     title={project.clientEmail}
-                    className="relative z-[1] break-all text-[var(--accent)] underline-offset-2 hover:underline"
+                    className="pointer-events-auto relative z-[1] break-all text-[var(--accent)] underline-offset-2 hover:underline"
                   >
                     {project.clientEmail}
                   </a>
@@ -140,7 +158,7 @@ export function ProjectCard({
                       {' · '}
                       <a
                         href={telHref(project.clientPhone)}
-                        className="relative z-[1] text-[var(--accent)] underline-offset-2 hover:underline"
+                        className="pointer-events-auto relative z-[1] text-[var(--accent)] underline-offset-2 hover:underline"
                       >
                         {project.clientPhone}
                       </a>
@@ -154,7 +172,7 @@ export function ProjectCard({
                 <button
                   type="button"
                   onClick={onMenuToggle}
-                  className="relative z-[1] flex h-11 w-11 items-center justify-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
+                  className="pointer-events-auto relative z-[1] flex h-11 w-11 items-center justify-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"
                   aria-label="Plus d'options"
                   aria-expanded={menuOpen}
                   aria-haspopup="menu"
@@ -173,7 +191,7 @@ export function ProjectCard({
         project.blockingSince &&
         project.status !== 'completed' ? (
           <p
-            className={`relative z-[1] mt-3 text-[11px] font-body ${
+            className={`pointer-events-none relative z-[1] mt-3 text-[11px] font-body ${
               isBottleneckStale({
                 label: project.blockingStepLabel,
                 owner: project.blockingOwner,
@@ -194,7 +212,7 @@ export function ProjectCard({
           </p>
         ) : null}
 
-        <div className="relative z-[1] mt-4">
+        <div className="pointer-events-none relative z-[1] mt-4">
           <div className="mb-2 flex items-center justify-between text-[11px] font-body text-[var(--ink-muted)]">
             <span className="font-display font-bold text-[var(--ink)]">
               {project.completedCount}/{project.totalCount} étapes
@@ -223,7 +241,7 @@ export function ProjectCard({
           )}
         </div>
 
-        <div className="relative z-[1] mt-4 flex flex-wrap items-center gap-2">
+        <div className="pointer-events-none relative z-[1] mt-4 flex flex-wrap items-center gap-2">
           {(secondary.type === 'relancer' ||
             secondary.type === 'extraction' ||
             secondary.type === 'empty_checklist') && (
@@ -260,11 +278,11 @@ export function ProjectCard({
           </span>
         </div>
 
-        <div className="relative z-[1] mt-4 border-t border-[var(--border)] pt-3">
+        <div className="pointer-events-none relative z-[1] mt-4 border-t border-[var(--border)] pt-3">
           <button
             type="button"
             onClick={() => onCopyLink(project.token)}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[12px] font-body font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+            className="pointer-events-auto inline-flex min-h-11 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[12px] font-body font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
             aria-label="Copier le lien client"
           >
             Copier le lien

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
+import { getAppScrollContainer } from '../../lib/scrollContainer'
 
 const SECTIONS = [
   { id: 'settings-organisation', label: 'Organisation', shortLabel: 'Organisation' },
@@ -20,6 +21,21 @@ type SettingsNavProps = {
   activeId?: string
 }
 
+/** Offset sous le sticky mobile / marge desktop pour décider de la section active. */
+const SPY_OFFSET_PX = 96
+
+function resolveActiveSection(): SectionId {
+  let active: SectionId = SECTIONS[0].id
+  for (const section of SECTIONS) {
+    const el = document.getElementById(section.id)
+    if (!el) continue
+    if (el.getBoundingClientRect().top - SPY_OFFSET_PX <= 0) {
+      active = section.id
+    }
+  }
+  return active
+}
+
 export function SettingsNav({ activeId: activeIdProp }: SettingsNavProps) {
   const reduceMotion = useReducedMotion()
   const [spyId, setSpyId] = useState<SectionId>(SECTIONS[0].id)
@@ -27,10 +43,14 @@ export function SettingsNav({ activeId: activeIdProp }: SettingsNavProps) {
   const [canScrollRight, setCanScrollRight] = useState(false)
   const scrollerRef = useRef<HTMLDivElement>(null)
   const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
+  /** Ignore le spy pendant le scroll programmé après un clic. */
+  const clickLockUntil = useRef(0)
 
   const activeId = (activeIdProp as SectionId | undefined) ?? spyId
 
-  const scrollTo = (id: string) => {
+  const scrollTo = (id: SectionId) => {
+    setSpyId(id)
+    clickLockUntil.current = performance.now() + 700
     document.getElementById(id)?.scrollIntoView({
       behavior: reduceMotion ? 'auto' : 'smooth',
       block: 'start',
@@ -59,30 +79,20 @@ export function SettingsNav({ activeId: activeIdProp }: SettingsNavProps) {
   }, [updateScrollFades])
 
   useEffect(() => {
-    const elements = SECTIONS.map((s) => document.getElementById(s.id)).filter(
-      (el): el is HTMLElement => Boolean(el),
-    )
-    if (elements.length === 0) return
+    const updateSpy = () => {
+      if (performance.now() < clickLockUntil.current) return
+      setSpyId(resolveActiveSection())
+    }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        const top = visible[0]
-        if (top?.target?.id) {
-          setSpyId(top.target.id as SectionId)
-        }
-      },
-      {
-        root: null,
-        rootMargin: '-20% 0px -60% 0px',
-        threshold: 0,
-      },
-    )
-
-    for (const el of elements) observer.observe(el)
-    return () => observer.disconnect()
+    const root = getAppScrollContainer()
+    const target: HTMLElement | Window = root === window ? window : root
+    target.addEventListener('scroll', updateSpy, { passive: true })
+    window.addEventListener('resize', updateSpy)
+    updateSpy()
+    return () => {
+      target.removeEventListener('scroll', updateSpy)
+      window.removeEventListener('resize', updateSpy)
+    }
   }, [])
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { formatCount } from '../../lib/formatCount'
 import { formatRelative } from '../../lib/formatRelative'
 import type { ProjectCardData } from './types'
 
@@ -10,6 +11,12 @@ type ActivityBannerProps = {
   recentAutoReminder: ProjectCardData | null
   remindersThisMonth: number
   now: number
+}
+
+function othersSuffix(total: number): string {
+  const others = total - 1
+  if (others <= 0) return ''
+  return ` et ${formatCount(others, 'autre')}`
 }
 
 export function ActivityBanner({
@@ -52,10 +59,8 @@ export function ActivityBanner({
               >
                 {first.clientName}
               </Link>
-              {unreachableProjects.length > 1
-                ? ` et ${unreachableProjects.length - 1} autre(s)`
-                : ''}{' '}
-              — plafond de relances auto atteint. Contactez-les puis réarmez depuis la fiche.
+              {othersSuffix(unreachableProjects.length)} — plafond de relances auto atteint.
+              Contactez-les puis réarmez depuis la fiche.
             </p>
           </div>
         </div>
@@ -75,8 +80,7 @@ export function ActivityBanner({
           </span>
           <div className="min-w-0 flex-1">
             <p className="font-display text-[13px] font-bold text-[var(--ink)]">
-              {draftReminderCount} brouillon{draftReminderCount > 1 ? 's' : ''} de relance IA à
-              valider
+              {formatCount(draftReminderCount, 'brouillon')} de relance IA à valider
             </p>
             <p className="mt-0.5 text-[12px] font-body text-[var(--ink-muted)]">
               Ouvrez les fiches projet concernées pour relire, éditer et envoyer.
@@ -100,8 +104,7 @@ export function ActivityBanner({
           </span>
           <div className="min-w-0 flex-1">
             <p className="font-display text-[13px] font-bold text-[var(--ink)]">
-              {agencyPendingProjects.length} projet
-              {agencyPendingProjects.length > 1 ? 's' : ''} en attente de votre validation
+              {formatCount(agencyPendingProjects.length, 'projet')} en attente de votre validation
             </p>
             <p className="mt-0.5 text-[12px] font-body text-[var(--ink-muted)]">
               <Link
@@ -111,10 +114,7 @@ export function ActivityBanner({
                 {first.clientName}
               </Link>
               {first.blockingStepLabel ? ` — « ${first.blockingStepLabel} »` : ''}
-              {agencyPendingProjects.length > 1
-                ? ` et ${agencyPendingProjects.length - 1} autre(s)`
-                : ''}
-              . Le client n’a pas été relancé.
+              {othersSuffix(agencyPendingProjects.length)}. Le client n’a pas été relancé.
             </p>
           </div>
         </div>
@@ -135,7 +135,7 @@ export function ActivityBanner({
           </span>
           <div className="min-w-0 flex-1">
             <p className="font-display text-[13px] font-bold text-[var(--ink)]">
-              {urgentProjects.length} projet{urgentProjects.length > 1 ? 's' : ''} à relancer
+              {formatCount(urgentProjects.length, 'projet')} à relancer
             </p>
             <p className="mt-0.5 text-[12px] font-body text-[var(--ink-muted)]">
               <Link
@@ -144,8 +144,7 @@ export function ActivityBanner({
               >
                 {first.clientName}
               </Link>
-              {urgentProjects.length > 1 ? ` et ${urgentProjects.length - 1} autre(s)` : ''} attendent
-              une action.
+              {othersSuffix(urgentProjects.length)} attendent une action.
             </p>
           </div>
         </div>

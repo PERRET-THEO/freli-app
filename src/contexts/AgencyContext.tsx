@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getOrCreateAgency } from '../lib/agency'
 import { fetchMyAgencyRole, type AgencyRole } from '../lib/agencyMembership'
+import { formatDisplayName } from '../lib/formatPersonName'
 import { supabase } from '../lib/supabase'
 
 type AgencyInfo = {
@@ -16,8 +17,23 @@ type AgencySessionContextValue = {
   userId: string | null
   agency: AgencyInfo | null
   role: AgencyRole | null
+  /** Prénom Auth (`user_metadata.first_name`) ; chaîne vide si absent. */
   displayName: string
+  setDisplayName: (firstName: string) => void
   isOwner: boolean
+}
+
+function readFirstName(meta: Record<string, unknown> | undefined): string {
+  if (!meta) return ''
+  const direct = meta.first_name
+  if (typeof direct === 'string' && direct.trim()) return formatDisplayName(direct)
+  const given = meta.given_name
+  if (typeof given === 'string' && given.trim()) return formatDisplayName(given)
+  const full = meta.full_name
+  if (typeof full === 'string' && full.trim()) {
+    return formatDisplayName(full.trim().split(/\s+/)[0] ?? '')
+  }
+  return ''
 }
 
 const AgencySessionContext = createContext<AgencySessionContextValue | null>(null)
@@ -29,6 +45,7 @@ export function AgencySessionProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null)
   const [agency, setAgency] = useState<AgencyInfo | null>(null)
   const [role, setRole] = useState<AgencyRole | null>(null)
+  const [displayName, setDisplayNameState] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -41,6 +58,7 @@ export function AgencySessionProvider({ children }: { children: ReactNode }) {
       }
       setEmail(user.email ?? null)
       setUserId(user.id)
+      setDisplayNameState(readFirstName(user.user_metadata as Record<string, unknown>))
 
       const resolved = await getOrCreateAgency(user.id)
       if (resolved?.id) {
@@ -65,13 +83,9 @@ export function AgencySessionProvider({ children }: { children: ReactNode }) {
     load()
   }, [navigate])
 
-  const displayName = useMemo(() => {
-    if (agency?.name?.trim()) {
-      return agency.name.trim().split(/\s+/)[0]
-    }
-    if (!email) return 'Freelance'
-    return email.split('@')[0].split(/[._-]/)[0]
-  }, [agency?.name, email])
+  const setDisplayName = useCallback((firstName: string) => {
+    setDisplayNameState(firstName.trim() ? formatDisplayName(firstName) : '')
+  }, [])
 
   const value = useMemo(
     () => ({
@@ -81,9 +95,10 @@ export function AgencySessionProvider({ children }: { children: ReactNode }) {
       agency,
       role,
       displayName,
+      setDisplayName,
       isOwner: role === 'owner',
     }),
-    [loading, email, userId, agency, role, displayName],
+    [loading, email, userId, agency, role, displayName, setDisplayName],
   )
 
   return <AgencySessionContext.Provider value={value}>{children}</AgencySessionContext.Provider>

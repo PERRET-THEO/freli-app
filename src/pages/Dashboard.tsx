@@ -13,6 +13,7 @@ import { DashboardLayout } from '../components/DashboardLayout'
 import { useAgencySession } from '../contexts/AgencyContext'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { dashboardSearchParams } from '../lib/dashboardSearchParams'
+import { formatCount } from '../lib/formatCount'
 import {
   DASHBOARD_SORT_LABELS,
   matchesAttentionView,
@@ -126,21 +127,23 @@ export function Dashboard() {
   const narrativeSubtitle = (() => {
     if (projects.length === 0) return 'Créez votre premier onboarding en moins de 2 minutes.'
     if (urgentNeedsAction > 0) {
-      return `${urgentNeedsAction} projet${urgentNeedsAction > 1 ? 's attendent' : ' attend'} une attention de votre part.`
+      const verb = urgentNeedsAction === 1 ? 'attend' : 'attendent'
+      return `${formatCount(urgentNeedsAction, 'projet')} ${verb} une attention de votre part.`
     }
     if (remindersThisMonth > 0 && activeProjects > 0) {
-      return `Freli a relancé ${remindersThisMonth} client${remindersThisMonth > 1 ? 's' : ''} pour vous. Tout avance sans effort.`
+      return `Freli a relancé ${formatCount(remindersThisMonth, 'client')} pour vous. Tout avance sans effort.`
     }
     if (activeProjects > 0) {
-      return `${activeProjects} projet${activeProjects > 1 ? 's' : ''} avance${activeProjects > 1 ? 'nt' : ''} sans vous aujourd'hui.`
+      const verb = activeProjects === 1 ? 'avance' : 'avancent'
+      return `${formatCount(activeProjects, 'projet')} ${verb} sans vous aujourd'hui.`
     }
     if (pendingProjects > 0) {
-      return `${pendingProjects} projet${pendingProjects > 1 ? 's' : ''} en attente de votre client.`
+      return `${formatCount(pendingProjects, 'projet')} en attente de votre client.`
     }
     return 'Tout est à jour. Belle journée ✨'
   })()
 
-  const resultsLabel = `${filteredProjects.length} projet${filteredProjects.length !== 1 ? 's' : ''}`
+  const resultsLabel = formatCount(filteredProjects.length, 'projet')
 
   return (
     <DashboardLayout loading={loading} skeleton={<DashboardSkeleton />}>
@@ -172,7 +175,7 @@ export function Dashboard() {
 
       <header>
         <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
-          Bonjour, {displayName} 👋
+          {displayName ? `Bonjour, ${displayName}` : 'Bonjour'} 👋
         </h1>
         <div className="mt-1 flex flex-wrap items-center gap-3">
           <p className="text-sm font-body text-[var(--ink-muted)]">{narrativeSubtitle}</p>
@@ -182,7 +185,7 @@ export function Dashboard() {
               onClick={() => setView('action_required')}
               className="text-sm font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
             >
-              Voir les {urgentNeedsAction} projet{urgentNeedsAction > 1 ? 's' : ''}
+              Voir les {formatCount(urgentNeedsAction, 'projet')}
             </button>
           ) : remindersThisMonth > 0 ? (
             <Link
@@ -195,6 +198,18 @@ export function Dashboard() {
         </div>
       </header>
 
+      <KpiGrid
+        activeProjects={activeProjects}
+        pendingProjects={pendingProjects}
+        averageCompletion={averageCompletion}
+        totalProjects={projects.length}
+        projectsThisMonth={projectsThisMonth}
+        completedThisMonth={completedThisMonth}
+        hoursSavedThisMonth={hoursSavedThisMonth}
+        completedOnboardings={completedThisMonth}
+        autoRemindersThisMonth={remindersThisMonth}
+      />
+
       {staleBottleneckProjects.length > 0 ? (
         <button
           type="button"
@@ -202,8 +217,10 @@ export function Dashboard() {
           className="mt-4 w-full rounded-[var(--radius-sm)] border border-[var(--status-blocked-border)] bg-[var(--status-blocked-soft)] px-4 py-3 text-left transition hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
         >
           <p className="font-body text-sm text-[var(--status-blocked)]">
-            {staleBottleneckProjects.length} projet
-            {staleBottleneckProjects.length > 1 ? 's bloqués' : ' bloqué'} au-delà du délai de relance
+            {formatCount(staleBottleneckProjects.length, 'projet bloqué', {
+              plural: 'projets bloqués',
+            })}{' '}
+            au-delà du délai de relance
             {staleBottleneckProjects[0]?.blockingStepLabel
               ? ` — ex. « ${staleBottleneckProjects[0].blockingStepLabel} »`
               : ''}
@@ -310,18 +327,6 @@ export function Dashboard() {
           </section>
         )}
       </div>
-
-      <KpiGrid
-        activeProjects={activeProjects}
-        pendingProjects={pendingProjects}
-        averageCompletion={averageCompletion}
-        totalProjects={projects.length}
-        projectsThisMonth={projectsThisMonth}
-        completedThisMonth={completedThisMonth}
-        hoursSavedThisMonth={hoursSavedThisMonth}
-        completedOnboardings={completedThisMonth}
-        autoRemindersThisMonth={remindersThisMonth}
-      />
 
       {deletingProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/50 px-4">

@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   CirclePlus,
   FilePenLine,
+  FolderOpen,
   History,
   LayoutDashboard,
   LogOut,
@@ -10,6 +11,7 @@ import {
   Puzzle,
   Search,
   Settings2,
+  UserRound,
   UsersRound,
 } from 'lucide-react'
 
@@ -101,6 +103,8 @@ export const NAV_ICONS = {
   search: Search,
   logout: LogOut,
   history: History,
+  project: FolderOpen,
+  client: UserRound,
   panelCollapse: PanelLeftClose,
   panelExpand: PanelLeft,
 } as const
