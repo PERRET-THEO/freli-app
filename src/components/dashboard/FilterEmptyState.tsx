@@ -26,7 +26,7 @@ export function FilterEmptyState({
         className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--accent-soft)] text-2xl"
         aria-hidden
       >
-        {view === 'blocked' && hasAnyProjects && !hasSearch ? '✓' : '📂'}
+        {view === 'stalled' && hasAnyProjects && !hasSearch ? '✓' : '📂'}
       </div>
       <h2 className="mt-4 font-display text-2xl font-semibold text-[var(--ink)]">{copy.title}</h2>
       <p className="mt-2 max-w-md text-sm font-body text-[var(--ink-muted)]">{copy.body}</p>

@@ -78,10 +78,10 @@ export function Dashboard() {
   const [now] = useState(() => Date.now())
 
   const filteredProjects = useMemo(() => {
-    const byView = projects.filter((project) => matchesAttentionView(project, view, now))
+    const byView = projects.filter((project) => matchesAttentionView(project, view))
     const bySearch = byView.filter((project) => matchesSearchQuery(project, q))
     return sortProjects(bySearch, sort)
-  }, [projects, view, q, sort, now])
+  }, [projects, view, q, sort])
 
   const activeProjects = projects.filter((project) => project.status === 'in_progress').length
   const pendingProjects = projects.filter((project) => project.status === 'pending').length

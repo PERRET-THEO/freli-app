@@ -22,10 +22,9 @@ type BadgeProps = {
   className?: string
 }
 
-function resolveStatus(variant: BadgeVariant): AgencyProjectStatus | 'pending' {
+function resolveStatus(variant: BadgeVariant): AgencyProjectStatus {
   switch (variant) {
     case 'in_progress':
-      return 'waiting_client'
     case 'pending':
       return 'waiting_client'
     case 'completed':
