@@ -75,30 +75,29 @@ export function ReminderSettingsPanel({
       const monthStart = new Date()
       monthStart.setDate(1)
       monthStart.setHours(0, 0, 0, 0)
+      const monthStartIso = monthStart.toISOString()
 
-      const { count } = await supabase
+      // Même filtre pour le compteur et l'historique (auto + mois en cours).
+      const { data: logs, count } = await supabase
         .from('project_reminder_logs')
-        .select('id', { count: 'exact', head: true })
+        .select('id, project_id, recipient_email, sent_at, source, projects(client_name)', {
+          count: 'exact',
+        })
         .eq('agency_id', agencyId)
         .eq('source', 'auto')
-        .gte('sent_at', monthStart.toISOString())
+        .neq('status', 'failed')
+        .gte('sent_at', monthStartIso)
+        .order('sent_at', { ascending: false })
+        .limit(50)
 
       setAutoCountMonth(count ?? 0)
-
-      const { data: logs } = await supabase
-        .from('project_reminder_logs')
-        .select('id, project_id, recipient_email, sent_at, source, projects(client_name)')
-        .eq('agency_id', agencyId)
-        .order('sent_at', { ascending: false })
-        .limit(5)
-
       setRecentLogs((logs ?? []) as ReminderLogRow[])
     }
     void load()
   }, [agencyId, feedback])
 
   const visibleLogs = showAllLogs ? recentLogs : recentLogs.slice(0, VISIBLE_RECENT_LOGS)
-  const hiddenLogsCount = Math.max(0, recentLogs.length - VISIBLE_RECENT_LOGS)
+  const hiddenLogsCount = Math.max(0, autoCountMonth - VISIBLE_RECENT_LOGS)
 
   return (
     <div className="space-y-4">
@@ -136,31 +135,105 @@ export function ReminderSettingsPanel({
         </span>
       </label>
 
-      <div className={enabled ? '' : 'pointer-events-none opacity-50'}>
-        <p className="text-sm font-body font-medium text-[var(--ink-soft)]">
-          Délai avant la première relance (et entre deux relances)
-        </p>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {REMINDER_DELAY_OPTIONS.map((option) => (
-            <label
-              key={option.value}
-              className={`flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] border px-3 py-2.5 text-sm font-body transition ${
-                delayHours === option.value
-                  ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
-                  : 'border-[var(--border)] bg-[var(--white)] text-[var(--ink-soft)] hover:border-[var(--accent)]'
-              }`}
-            >
-              <input
-                type="radio"
-                name="reminder-delay"
-                value={option.value}
-                checked={delayHours === option.value}
-                onChange={() => onDelayChange(option.value)}
-                className="sr-only"
-              />
-              {option.label}
+      <div className={enabled ? 'space-y-4' : 'pointer-events-none space-y-4 opacity-50'}>
+        <div>
+          <p className="text-sm font-body font-medium text-[var(--ink-soft)]">
+            Délai avant la première relance (et entre deux relances)
+          </p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {REMINDER_DELAY_OPTIONS.map((option) => (
+              <label
+                key={option.value}
+                className={`flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] border px-3 py-2.5 text-sm font-body transition ${
+                  delayHours === option.value
+                    ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                    : 'border-[var(--border)] bg-[var(--white)] text-[var(--ink-soft)] hover:border-[var(--accent)]'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="reminder-delay"
+                  value={option.value}
+                  checked={delayHours === option.value}
+                  onChange={() => onDelayChange(option.value)}
+                  className="sr-only"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-sm font-body font-medium text-[var(--ink-soft)]">
+            Plafond de relances auto par projet (anti-harcèlement)
+          </p>
+          <p className="mt-0.5 text-xs font-body text-[var(--ink-muted)]">
+            Relances auto consécutives sans réponse client (soumission ou visite portail). Au-delà :
+            arrêt + alerte « Client injoignable ».
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {SMART_REMINDER_MAX_OPTIONS.map((value) => (
+              <label
+                key={value}
+                className={`flex cursor-pointer items-center rounded-full border px-3 py-1.5 text-xs font-body transition ${
+                  aiMaxPerProject === value
+                    ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                    : 'border-[var(--border)] bg-[var(--white)] text-[var(--ink-soft)] hover:border-[var(--accent)]'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="ai-reminder-max"
+                  value={value}
+                  checked={aiMaxPerProject === value}
+                  onChange={() => onAiMaxChange(value)}
+                  className="sr-only"
+                />
+                {value} max
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-sm font-body font-medium text-[var(--ink-soft)]">
+            Plage d’envoi (heure de Paris)
+          </p>
+          <p className="mt-0.5 text-xs font-body text-[var(--ink-muted)]">
+            S’applique aux relances classiques et IA. Hors plage, l’envoi est reporté au prochain
+            passage.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-body text-[var(--ink-soft)]">
+            <label className="flex items-center gap-1.5">
+              De
+              <select
+                value={aiSendHourStart}
+                onChange={(e) => onAiSendHourStartChange(Number(e.target.value))}
+                className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1"
+              >
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>
+                    {String(h).padStart(2, '0')}h
+                  </option>
+                ))}
+              </select>
             </label>
-          ))}
+            <label className="flex items-center gap-1.5">
+              à
+              <select
+                value={aiSendHourEnd}
+                onChange={(e) => onAiSendHourEndChange(Number(e.target.value))}
+                className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1"
+              >
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h + 1} value={h + 1}>
+                    {String(h + 1).padStart(2, '0')}h
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -178,13 +251,11 @@ export function ReminderSettingsPanel({
           </span>
         </div>
         <p className="mt-1 text-xs font-body leading-relaxed text-[var(--ink-muted)]">
-          Le contenu des relances s&apos;adapte au comportement email et portail du client (non
-          ouvert, ouvert ou cliqué sans finir, étape bloquante). Ce n&apos;est pas une réponse aux
-          emails du client : l&apos;IA rédige uniquement le contenu ; le déclenchement reste basé
-          sur le délai ci-dessus.
+          Le contenu des relances s&apos;adapte au comportement email et portail du client. L’IA
+          rédige uniquement le contenu ; délai, plafond et plage horaire restent ceux ci-dessus.
           {!aiEnabled ? ' Activez le module dans la section « Intelligence artificielle ».' : ''}
           {aiEnabled && !aiAutoSend
-            ? ' Les relances partent en brouillon sur chaque fiche projet (bandeau dashboard) à valider avant envoi.'
+            ? ' Les relances partent en brouillon sur chaque fiche projet à valider avant envoi.'
             : ''}
         </p>
 
@@ -215,34 +286,6 @@ export function ReminderSettingsPanel({
             </div>
           </div>
 
-          <div>
-            <p className="text-xs font-body font-medium text-[var(--ink-soft)]">
-              Plafond de relances IA par projet (anti-harcèlement)
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {SMART_REMINDER_MAX_OPTIONS.map((value) => (
-                <label
-                  key={value}
-                  className={`flex cursor-pointer items-center rounded-full border px-3 py-1.5 text-xs font-body transition ${
-                    aiMaxPerProject === value
-                      ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
-                      : 'border-[var(--border)] bg-[var(--white)] text-[var(--ink-soft)] hover:border-[var(--accent)]'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="ai-reminder-max"
-                    value={value}
-                    checked={aiMaxPerProject === value}
-                    onChange={() => onAiMaxChange(value)}
-                    className="sr-only"
-                  />
-                  {value} max
-                </label>
-              ))}
-            </div>
-          </div>
-
           <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] p-3">
             <input
               type="checkbox"
@@ -256,47 +299,11 @@ export function ReminderSettingsPanel({
               </span>
               <span className="mt-0.5 block text-xs font-body text-[var(--ink-muted)]">
                 {aiAutoSend
-                  ? 'Attention : la première relance d’un projet reste toujours en brouillon à valider. Les suivantes partent sans relecture. Vous gardez l’historique dans chaque fiche projet.'
+                  ? 'Attention : la première relance d’un projet reste toujours en brouillon à valider. Les suivantes partent sans relecture.'
                   : 'Chaque relance est proposée en brouillon dans la fiche projet, à valider avant envoi.'}
               </span>
             </span>
           </label>
-
-          <div>
-            <p className="text-xs font-body font-medium text-[var(--ink-soft)]">
-              Plage d’envoi (heure de Paris)
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-body text-[var(--ink-soft)]">
-              <label className="flex items-center gap-1.5">
-                De
-                <select
-                  value={aiSendHourStart}
-                  onChange={(e) => onAiSendHourStartChange(Number(e.target.value))}
-                  className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1"
-                >
-                  {Array.from({ length: 24 }, (_, h) => (
-                    <option key={h} value={h}>
-                      {String(h).padStart(2, '0')}h
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-1.5">
-                à
-                <select
-                  value={aiSendHourEnd}
-                  onChange={(e) => onAiSendHourEndChange(Number(e.target.value))}
-                  className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1"
-                >
-                  {Array.from({ length: 24 }, (_, h) => (
-                    <option key={h + 1} value={h + 1}>
-                      {String(h + 1).padStart(2, '0')}h
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -316,7 +323,9 @@ export function ReminderSettingsPanel({
 
       {recentLogs.length > 0 ? (
         <div>
-          <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Dernières relances</p>
+          <p className="text-xs font-body font-medium text-[var(--ink-soft)]">
+            Historique des relances auto (ce mois)
+          </p>
           <ul className="mt-2 space-y-2">
             {visibleLogs.map((log) => (
               <li key={log.id}>
@@ -341,7 +350,7 @@ export function ReminderSettingsPanel({
               </li>
             ))}
           </ul>
-          {hiddenLogsCount > 0 ? (
+          {hiddenLogsCount > 0 || showAllLogs ? (
             <div className="mt-2 text-center">
               <button
                 type="button"

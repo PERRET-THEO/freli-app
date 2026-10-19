@@ -7,8 +7,9 @@ on:
   schedule:
     # Plusieurs passes/jour pour que la génération hors fenêtre puis l'envoi
     # auto (dans ai_reminder_send_hour_*) puissent aboutir le même jour.
-    # 07 / 12 / 16 UTC ≈ 09–18h Paris selon l'heure d'été.
-    - cron: '0 7,12,16 * * *'
+    # 08 / 12 / 16 UTC ≈ 09–18h Paris en heure d'été (CEST)
+    # et ≈ 09–17h Paris en heure d'hiver (CET) — toujours dans 9h–19h.
+    - cron: '0 8,12,16 * * *'
   workflow_dispatch: {}
 
 jobs:

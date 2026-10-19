@@ -7,7 +7,7 @@ import {
   isValidProjectToken,
   type PendingChecklistItem,
 } from '../_shared/clientEmailHtml.ts'
-import { getPendingVisibleItems } from '../_shared/checklistVisibility.ts'
+import { getClientPendingActions } from '../_shared/clientPendingActions.ts'
 import {
   buildProjectPayload,
   fireOutgoingWebhooks,
@@ -20,6 +20,7 @@ import {
   isInternalRequest,
   jsonResponse,
 } from '../_shared/functionAuth.ts'
+import { finalizeAutoReminder } from '../_shared/reminderClaim.ts'
 
 declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void }
 
@@ -35,6 +36,8 @@ type InviteBody = {
   source?: 'auto' | 'manual'
   /** Cron / internal retry: skip 30s rate limit. */
   force?: boolean
+  /** Log déjà claimé par claim_auto_reminder (batch auto uniquement). */
+  claimLogId?: string
 }
 
 type ProjectInviteRow = {
@@ -290,28 +293,30 @@ serve(async (req) => {
 
     // --- Reminder mode: keep synchronous path ---
     const portalUrl = `${appUrl}/p/${token}`
-
-    if (isDev) {
-      console.log('MODE DEV — Email simulé pour:', clientEmail, portalUrl)
-      return jsonResponse({
-        success: true,
-        message: 'Email simulé en développement',
-        recipient: clientEmail,
-        portalUrl,
-      })
-    }
+    const claimLogId =
+      typeof body.claimLogId === 'string' && body.claimLogId.trim()
+        ? body.claimLogId.trim()
+        : null
+    // Claim = envoi auto batch ; sinon source manuelle (ou legacy auto sans claim).
+    const effectiveSource = claimLogId ? 'auto' : reminderSource === 'manual' ? 'manual' : 'auto'
 
     let pendingItems: PendingChecklistItem[] = []
     const { data: allRows } = await supabase
       .from('checklist_items')
-      .select('label, completed, value, review_note, review_status, config')
+      .select('label, type, completed, value, review_note, review_status, config, order_index')
       .eq('project_id', projectId)
       .order('order_index', { ascending: true })
 
-    pendingItems = getPendingVisibleItems(allRows ?? []).map((row) => ({
+    // Uniquement les actions côté client (pas les « à valider » agence).
+    pendingItems = getClientPendingActions(allRows ?? []).map((row) => ({
       label: String(row.label ?? ''),
       reviewNote: row.review_status === 'rejected' ? (row.review_note as string | null) : null,
     }))
+
+    if (pendingItems.length === 0) {
+      if (claimLogId) await finalizeAutoReminder(supabase, claimLogId, 'failed')
+      return jsonResponse({ error: 'Aucune action client en attente' }, 400)
+    }
 
     const needsCorrection = pendingItems.some((item) => item.reviewNote?.trim())
     const subject = needsCorrection
@@ -326,51 +331,85 @@ serve(async (req) => {
       pendingItems,
     })
 
-    const result = await resend.emails.send({
-      from: getResendFrom(),
-      to: clientEmail,
-      subject,
-      html,
-    })
-    console.log('Resend response:', JSON.stringify(result))
-    assertResendOk(result)
-
-    const resendEmailId = (result.data as { id?: string } | null)?.id
-    if (resendEmailId) {
-      await supabase.from('email_events').insert({
-        project_id: projectId,
-        resend_email_id: resendEmailId,
-        event_type: 'sent',
+    if (isDev) {
+      console.log('MODE DEV — Email simulé pour:', clientEmail, portalUrl)
+      if (claimLogId) {
+        await finalizeAutoReminder(supabase, claimLogId, 'sent')
+      } else {
+        await supabase
+          .from('projects')
+          .update({ last_reminder_sent_at: new Date().toISOString() })
+          .eq('id', projectId)
+        await supabase.from('project_reminder_logs').insert({
+          project_id: projectId,
+          agency_id: agencyId,
+          source: effectiveSource,
+          recipient_email: clientEmail,
+          status: 'sent',
+        })
+      }
+      return jsonResponse({
+        success: true,
+        message: 'Email simulé en développement',
+        recipient: clientEmail,
+        portalUrl,
       })
     }
 
-    await supabase
-      .from('projects')
-      .update({ last_reminder_sent_at: new Date().toISOString() })
-      .eq('id', projectId)
+    try {
+      const result = await resend.emails.send({
+        from: getResendFrom(),
+        to: clientEmail,
+        subject,
+        html,
+      })
+      console.log('Resend response:', JSON.stringify(result))
+      assertResendOk(result)
 
-    await supabase.from('project_reminder_logs').insert({
-      project_id: projectId,
-      agency_id: agencyId,
-      source: reminderSource,
-      recipient_email: clientEmail,
-    })
+      const resendEmailId = (result.data as { id?: string } | null)?.id
+      if (resendEmailId) {
+        await supabase.from('email_events').insert({
+          project_id: projectId,
+          resend_email_id: resendEmailId,
+          event_type: 'sent',
+        })
+      }
 
-    const userId = await getAgencyUserId(supabase, agencyId)
-    if (userId) {
-      fireOutgoingWebhooks(
-        supabase,
-        userId,
-        'project.reminder_sent',
-        buildProjectPayload(
-          projectRow,
-          { id: agencyId, name: agencyName },
-          { meta: { source: reminderSource, portal_url: portalUrl } },
-        ),
-      )
+      if (claimLogId) {
+        await finalizeAutoReminder(supabase, claimLogId, 'sent')
+      } else {
+        await supabase
+          .from('projects')
+          .update({ last_reminder_sent_at: new Date().toISOString() })
+          .eq('id', projectId)
+        await supabase.from('project_reminder_logs').insert({
+          project_id: projectId,
+          agency_id: agencyId,
+          source: effectiveSource,
+          recipient_email: clientEmail,
+          status: 'sent',
+        })
+      }
+
+      const userId = await getAgencyUserId(supabase, agencyId)
+      if (userId) {
+        fireOutgoingWebhooks(
+          supabase,
+          userId,
+          'project.reminder_sent',
+          buildProjectPayload(
+            projectRow,
+            { id: agencyId, name: agencyName },
+            { meta: { source: effectiveSource, portal_url: portalUrl } },
+          ),
+        )
+      }
+
+      return jsonResponse({ success: true })
+    } catch (sendError) {
+      if (claimLogId) await finalizeAutoReminder(supabase, claimLogId, 'failed')
+      throw sendError
     }
-
-    return jsonResponse({ success: true })
   } catch (error) {
     console.error('Error:', (error as Error).message)
     return jsonResponse({ error: (error as Error).message }, 400)

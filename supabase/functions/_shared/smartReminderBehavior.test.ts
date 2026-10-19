@@ -76,4 +76,28 @@ describe('isWithinParisSendWindow', () => {
     const nineteenParis = new Date('2026-06-15T17:00:00.000Z')
     expect(isWithinParisSendWindow(nineteenParis, 9, 19)).toBe(false)
   })
+
+  it('heure d’hiver : 08:00 UTC = 09:00 Paris (dans la plage) ; 07:00 UTC = 08:00 Paris (hors plage)', () => {
+    // Après le 25 oct 2026 : CET = UTC+1
+    const eightUtc = new Date('2026-11-02T08:00:00.000Z') // 09:00 Paris
+    const sevenUtc = new Date('2026-11-02T07:00:00.000Z') // 08:00 Paris
+    expect(isWithinParisSendWindow(eightUtc, 9, 19)).toBe(true)
+    expect(isWithinParisSendWindow(sevenUtc, 9, 19)).toBe(false)
+  })
+})
+
+describe('categorizeClientBehavior with clientActionLabels', () => {
+  it('cible la Charte (action client) même si Brief est à valider en amont', () => {
+    const result = categorizeClientBehavior({
+      lastPortalVisitAt: '2026-01-01T00:00:00Z',
+      items: [
+        { label: 'Brief technique', completed: true },
+        { label: 'Charte UI', completed: false },
+      ],
+      clientActionLabels: ['Charte UI'],
+      emailEvents: { opened: 0, clicked: 0 },
+    })
+    expect(result.behaviorCategory).toBe('stuck_on_step')
+    expect(result.blockingStepLabel).toBe('Charte UI')
+  })
 })

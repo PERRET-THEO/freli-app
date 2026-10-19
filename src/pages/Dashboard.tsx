@@ -107,6 +107,21 @@ export function Dashboard() {
     completedThisMonth * 3 + Math.round((remindersThisMonth * 10) / 60)
 
   const urgentProjects = projects.filter((p) => needsAgencyFollowUp(p, now))
+  const unreachableProjects = projects.filter((p) => p.unreachableClient === true)
+  const agencyPendingProjects = projects.filter(
+    (p) =>
+      p.status !== 'completed' &&
+      p.blockingOwner === 'agency' &&
+      p.blockingSince &&
+      isBottleneckStale(
+        {
+          label: p.blockingStepLabel ?? '',
+          owner: 'agency',
+          since: p.blockingSince,
+        },
+        now,
+      ),
+  )
 
   const staleBottleneckProjects = projects.filter(
     (p) =>
@@ -231,6 +246,8 @@ export function Dashboard() {
         <ActivityBanner
           draftReminderCount={draftReminderCount}
           urgentProjects={urgentProjects}
+          unreachableProjects={unreachableProjects}
+          agencyPendingProjects={agencyPendingProjects}
           recentAutoReminder={recentAutoReminder}
           remindersThisMonth={remindersThisMonth}
           now={now}

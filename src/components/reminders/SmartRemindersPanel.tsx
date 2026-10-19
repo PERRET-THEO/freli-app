@@ -9,10 +9,14 @@ import {
   sendSmartReminder,
   type SmartReminderRecord,
 } from '../../lib/smartReminders'
+import { isDraftSendable } from '../../lib/smartReminderDraft'
+import { supabase } from '../../lib/supabase'
 
 type SmartRemindersPanelProps = {
   projectId: string
   aiEnabled?: boolean
+  /** Libellés des actions encore attendues côté client (filtre brouillons stale). */
+  clientActionLabels?: string[]
   onSent?: () => void
   onRequestGenerate?: () => void | Promise<void>
 }
@@ -100,6 +104,7 @@ function DraftCard({
 export function SmartRemindersPanel({
   projectId,
   aiEnabled = true,
+  clientActionLabels = [],
   onSent,
   onRequestGenerate,
 }: SmartRemindersPanelProps) {
@@ -110,7 +115,18 @@ export function SmartRemindersPanel({
 
   const load = async () => {
     try {
-      setReminders(await fetchProjectSmartReminders(projectId))
+      const rows = await fetchProjectSmartReminders(projectId)
+      const staleIds = rows
+        .filter((row) => row.status === 'draft' && !isDraftSendable(row, clientActionLabels))
+        .map((row) => row.id)
+      if (staleIds.length > 0) {
+        await supabase.from('smart_reminders').update({ status: 'stale' }).in('id', staleIds)
+      }
+      setReminders(
+        rows.map((row) =>
+          staleIds.includes(row.id) ? { ...row, status: 'stale' as const } : row,
+        ),
+      )
     } catch {
       // table absente ou erreur réseau : la section reste vide
     } finally {
@@ -121,27 +137,42 @@ export function SmartRemindersPanel({
   useEffect(() => {
     void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId])
+  }, [projectId, clientActionLabels.join('|')])
 
   const handleProcessed = () => {
     void load()
     onSent?.()
   }
 
+  const noClientAction = clientActionLabels.length === 0
+  const generateDisabledReason = noClientAction
+    ? 'Rien à demander au client : des éléments attendent votre validation'
+    : null
+
   const handleGenerateNow = async () => {
+    if (noClientAction) return
     setGenerating(true)
     setGenerateError(null)
     try {
       if (onRequestGenerate) {
         await onRequestGenerate()
       } else {
-        await requestSmartReminder(projectId)
+        const result = await requestSmartReminder(projectId)
+        const rows = await fetchProjectSmartReminders(projectId)
+        const usable = rows.filter((row) => isDraftSendable(row, clientActionLabels))
+        if (result.status === 'draft' && !result.existing && usable.length === 0) {
+          throw new Error(
+            "Le brouillon n'a pas pu être généré — contenu refusé par le contrôle. Réessayez.",
+          )
+        }
       }
       await load()
       onSent?.()
     } catch (reason) {
       setGenerateError(
-        reason instanceof Error ? reason.message : 'Impossible de générer la relance IA.',
+        reason instanceof Error
+          ? reason.message
+          : "Le brouillon n'a pas pu être généré — réessayez.",
       )
     } finally {
       setGenerating(false)
@@ -165,6 +196,12 @@ export function SmartRemindersPanel({
         contenu.
       </p>
 
+      {generating ? (
+        <p className="mt-4 text-sm font-body text-[var(--ink-muted)]" role="status">
+          Génération du brouillon…
+        </p>
+      ) : null}
+
       {drafts.length > 0 ? (
         <div className="mt-4 space-y-3">
           {drafts.map((reminder) => (
@@ -177,14 +214,23 @@ export function SmartRemindersPanel({
             Aucune relance IA en attente. La prochaine sera générée automatiquement après le délai
             configuré, ou vous pouvez en créer une maintenant.
           </p>
-          <Button
-            className="mt-3"
-            variant="secondary"
-            onClick={handleGenerateNow}
-            disabled={generating}
+          <span
+            className="mt-3 inline-block"
+            title={generateDisabledReason ?? undefined}
           >
-            {generating ? 'Génération…' : 'Générer maintenant'}
-          </Button>
+            <Button
+              variant="secondary"
+              onClick={handleGenerateNow}
+              disabled={generating || noClientAction}
+            >
+              {generating ? 'Génération du brouillon…' : 'Générer maintenant'}
+            </Button>
+          </span>
+          {noClientAction ? (
+            <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
+              {generateDisabledReason}
+            </p>
+          ) : null}
           {generateError ? (
             <p className="mt-2 text-xs font-body text-[var(--amber)]">{generateError}</p>
           ) : null}

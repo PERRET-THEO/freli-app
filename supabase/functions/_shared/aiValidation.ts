@@ -76,6 +76,177 @@ export function parseReminderPayload(
   return { ok: true, subject, body }
 }
 
+export type ReminderFacts = {
+  clientActionCount: number
+  clientActionLabels: string[]
+  completedVisible: number
+  totalVisible: number
+  percent: number
+  /** Notes brutes à ne jamais retrouver mot pour mot dans le mail. */
+  forbiddenVerbatimNotes?: string[]
+}
+
+const ALMOST_DONE_RE =
+  /presque\s+termin[ée]|plus\s+qu['’]une\s+(seule\s+)?(action|étape)|une\s+seule\s+(action|étape)|il\s+ne\s+vous\s+reste\s+plus\s+qu['’]une|il\s+ne\s+vous\s+reste\s+que\s+cette\s+action/i
+
+/** Termes FR grossiers / injurieux — notes internes à exclure du prompt et du mail. */
+export const INAPPROPRIATE_TERMS_FR = [
+  'fdp',
+  'pd',
+  'pute',
+  'putain',
+  'salope',
+  'connard',
+  'connasse',
+  'enculé',
+  'encule',
+  'enfoiré',
+  'enfoire',
+  'bordel',
+  'merde',
+  'chier',
+  'nique',
+  'ntm',
+  'tg',
+  'ta gueule',
+  'batard',
+  'bâtard',
+  'fuck',
+  'shit',
+  'asshole',
+] as const
+
+function normalizeForMatch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function containsInappropriateTerms(text: string): boolean {
+  const normalized = normalizeForMatch(text)
+  if (!normalized) return false
+  return INAPPROPRIATE_TERMS_FR.some((term) => {
+    const t = normalizeForMatch(term)
+    if (t.includes(' ')) return normalized.includes(t)
+    // Mot entier (évite faux positifs sur « pd » dans « pdf » via bornes).
+    return new RegExp(`(?:^|[^a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|[^a-z0-9])`).test(
+      normalized,
+    )
+  })
+}
+
+export type SanitizedCorrection = {
+  label: string
+  /** Motif sûr à reformuler ; null = ne citer que le libellé. */
+  noteForPrompt: string | null
+  rawNote: string
+  omittedAsInappropriate: boolean
+}
+
+/** Prépare les corrections pour le prompt : jamais de note injurieuse brute. */
+export function sanitizeCorrectionNotes(
+  corrections: Array<{ label: string; note: string }>,
+): SanitizedCorrection[] {
+  return corrections.map((row) => {
+    const rawNote = String(row.note ?? '').trim()
+    const inappropriate = containsInappropriateTerms(rawNote)
+    return {
+      label: row.label,
+      rawNote,
+      omittedAsInappropriate: inappropriate,
+      noteForPrompt: inappropriate || !rawNote ? null : rawNote,
+    }
+  })
+}
+
+export function noteAppearsVerbatim(text: string, notes: string[]): boolean {
+  const hay = normalizeForMatch(text)
+  for (const note of notes) {
+    const needle = normalizeForMatch(note)
+    if (needle.length < 4) continue
+    if (hay.includes(needle)) return true
+  }
+  return false
+}
+
+/**
+ * Refuse les affirmations non vérifiables / notes brutes / termes inappropriés.
+ */
+export function validateReminderFacts(
+  subject: string,
+  body: string,
+  facts: ReminderFacts,
+): { ok: true } | { ok: false; error: string } {
+  const text = `${subject}\n${body}`
+
+  if (containsInappropriateTerms(text)) {
+    return { ok: false, error: 'Contenu inapproprié détecté dans la relance' }
+  }
+
+  const forbidden = (facts.forbiddenVerbatimNotes ?? []).filter((n) => n.trim().length >= 4)
+  if (forbidden.length > 0 && noteAppearsVerbatim(text, forbidden)) {
+    return { ok: false, error: 'Note de correction reprise mot pour mot' }
+  }
+
+  if (ALMOST_DONE_RE.test(text) && facts.clientActionCount !== 1) {
+    return {
+      ok: false,
+      error: `Affirmation « une seule action / presque terminé » alors qu'il reste ${facts.clientActionCount} action(s) client`,
+    }
+  }
+
+  // Chiffres d'étapes du type « 3/5 » ou « 60 % » doivent coller aux faits.
+  const slashMatch = text.match(/(\d+)\s*\/\s*(\d+)/)
+  if (slashMatch) {
+    const a = Number(slashMatch[1])
+    const b = Number(slashMatch[2])
+    if (a !== facts.completedVisible || b !== facts.totalVisible) {
+      return {
+        ok: false,
+        error: `Avancement cité ${a}/${b} ≠ réel ${facts.completedVisible}/${facts.totalVisible}`,
+      }
+    }
+  }
+
+  const percentMatch = text.match(/(\d+)\s*%/)
+  if (percentMatch) {
+    const p = Number(percentMatch[1])
+    if (p !== facts.percent) {
+      return { ok: false, error: `Pourcentage cité ${p} % ≠ réel ${facts.percent} %` }
+    }
+  }
+
+  return { ok: true }
+}
+
+/** Fallback déterministe si l'IA échoue après régénération. */
+export function buildFallbackReminder(input: {
+  firstName: string
+  agencyName: string
+  clientActionLabels: string[]
+  correctionLabels: string[]
+}): { subject: string; body: string } {
+  const actions =
+    input.clientActionLabels.length > 0
+      ? input.clientActionLabels.map((l) => `« ${l} »`).join(', ')
+      : 'les éléments en attente'
+  const correctionBit =
+    input.correctionLabels.length > 0
+      ? ` Merci d'ajuster notamment : ${input.correctionLabels
+          .map((l) => `« ${l} »`)
+          .join(', ')}.`
+      : ''
+  const subject =
+    input.correctionLabels.length > 0
+      ? `${input.agencyName} — éléments à ajuster`
+      : `${input.agencyName} — suite de votre onboarding`
+  const body = `Bonjour ${input.firstName},\n\nNous revenons vers vous concernant votre dossier. Il reste à compléter : ${actions}.${correctionBit}\n\nLe bouton ci-dessous ouvre directement votre espace sécurisé.\n\nBien cordialement,\n${input.agencyName}`
+  return { subject: subject.slice(0, 60), body }
+}
+
 export type ContractSection = {
   id: string
   heading: string
@@ -139,5 +310,5 @@ export function heuristicFieldConfidence(fields: ExtractionFields): Record<strin
 }
 
 export const EXTRACTION_PROMPT_VERSION = 'extract_v1_2026_08'
-export const REMINDER_PROMPT_VERSION = 'reminder_v1_2026_08'
+export const REMINDER_PROMPT_VERSION = 'reminder_v3_2026_10'
 export const CONTRACT_PROMPT_VERSION = 'contract_v1_2026_08'

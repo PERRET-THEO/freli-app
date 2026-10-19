@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   findProjectBottleneck,
+  getBlockingStep,
   formatBottleneckAge,
   formatBottleneckLabel,
   isBottleneckStale,
@@ -62,6 +63,26 @@ describe('findProjectBottleneck', () => {
       owner: 'agency',
       since: '2026-07-02T08:00:00.000Z',
     })
+  })
+
+  it('affichage mixte : Brief à valider reste l’étape bloquante (getBlockingStep)', () => {
+    const items = [
+      item({
+        label: 'Brief technique',
+        order_index: 0,
+        completed: true,
+        review_status: 'pending',
+        submitted_at: '2026-07-02T08:00:00.000Z',
+      }),
+      item({ label: 'Charte UI', order_index: 1, completed: false }),
+    ]
+    const blocking = getBlockingStep(items, createdAt)
+    expect(blocking).toEqual({
+      label: 'Brief technique',
+      owner: 'agency',
+      since: '2026-07-02T08:00:00.000Z',
+    })
+    expect(getBlockingStep(items, createdAt)).toEqual(findProjectBottleneck(items, createdAt))
   })
 
   it('signale une correction demandée côté client', () => {

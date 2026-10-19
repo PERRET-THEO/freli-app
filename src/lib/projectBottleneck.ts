@@ -28,10 +28,21 @@ export type ProjectBottleneck = {
 }
 
 /**
- * Première étape visible qui bloque l'avancement :
+ * Première étape visible qui bloque l'avancement (AFFICHAGE uniquement) :
  * - côté client : non complétée, ou correction demandée ;
  * - côté agence : transmise et en attente de validation.
+ *
+ * La décision d'envoyer une relance client utilise getClientPendingActions,
+ * pas ce helper.
  */
+export function getBlockingStep(
+  items: BottleneckItem[],
+  projectCreatedAt: string,
+): ProjectBottleneck | null {
+  return findProjectBottleneck(items, projectCreatedAt)
+}
+
+/** @deprecated Préférer getBlockingStep — même logique. */
 export function findProjectBottleneck(
   items: BottleneckItem[],
   projectCreatedAt: string,

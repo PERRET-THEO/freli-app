@@ -1,12 +1,15 @@
 /**
  * Catégorisation comportementale des relances intelligentes.
  * Règles déterministes — aucune IA. Source unique pour batch et requête manuelle.
+ *
+ * blockingStepLabel = première ACTION CLIENT (pas l'étape bloquante d'affichage).
  */
 
 export type BehaviorCategory = 'not_opened' | 'opened_not_clicked' | 'stuck_on_step'
 
 export type BehaviorResult = {
   behaviorCategory: BehaviorCategory
+  /** Première action encore attendue côté client (libellé). */
   blockingStepLabel?: string
 }
 
@@ -21,23 +24,27 @@ type EmailEventCounts = {
 }
 
 /**
- * 1. Portail visité ou étape complétée → stuck_on_step
+ * 1. Portail visité ou étape complétée + actions client restantes → stuck_on_step
  * 2. Sinon opened ou clicked → opened_not_clicked
  * 3. Sinon → not_opened
  */
 export function categorizeClientBehavior(input: {
   lastPortalVisitAt: string | null
   items: ChecklistItemLike[]
+  clientActionLabels?: string[]
   emailEvents: EmailEventCounts
 }): BehaviorResult {
-  const firstIncomplete = input.items.find((item) => !item.completed)
+  const clientLabels =
+    input.clientActionLabels ??
+    input.items.filter((item) => !item.completed).map((item) => item.label)
+  const firstClientAction = clientLabels[0]
   const hasVisitedPortal =
     input.lastPortalVisitAt !== null || input.items.some((item) => item.completed)
 
-  if (hasVisitedPortal && firstIncomplete) {
+  if (hasVisitedPortal && firstClientAction) {
     return {
       behaviorCategory: 'stuck_on_step',
-      blockingStepLabel: firstIncomplete.label,
+      blockingStepLabel: firstClientAction,
     }
   }
 

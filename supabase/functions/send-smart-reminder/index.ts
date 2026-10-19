@@ -1,8 +1,6 @@
 /**
- * Envoi d'un brouillon de relance intelligente validé par l'agence.
- *
- * Appelée depuis le dashboard (JWT requis). L'agence a pu éditer l'objet et
- * le corps avant envoi : les valeurs transmises priment sur le brouillon.
+ * Envoi d'un brouillon de relance intelligente validé par l'agence
+ * (ou auto-envoyé par le cron via claimLogId).
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -16,6 +14,9 @@ import {
   isInternalRequest,
   jsonResponse,
 } from '../_shared/functionAuth.ts'
+import { getClientPendingActions } from '../_shared/clientPendingActions.ts'
+import { finalizeAutoReminder } from '../_shared/reminderClaim.ts'
+import { draftStaleReason } from '../_shared/smartReminderDraft.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -29,6 +30,8 @@ type Body = {
   reminderId: string
   subject?: string
   body?: string
+  /** Présent uniquement pour un envoi auto (batch) déjà claimé. */
+  claimLogId?: string
 }
 
 serve(async (req) => {
@@ -43,13 +46,14 @@ serve(async (req) => {
     const { data: reminder, error: reminderError } = await supabase
       .from('smart_reminders')
       .select(
-        'id, project_id, agency_id, subject, body, status, agencies(name), projects(token, client_name, client_email)',
+        'id, project_id, agency_id, subject, body, status, behavior_category, blocking_step_label, prompt_version, agencies(name), projects(token, client_name, client_email)',
       )
       .eq('id', requestBody.reminderId)
       .single()
     if (reminderError || !reminder) return jsonResponse({ error: 'Relance introuvable' }, 404)
 
-    if (!isInternalRequest(req)) {
+    const internal = isInternalRequest(req)
+    if (!internal) {
       const user = await getAuthenticatedUser(req)
       if (!user) return jsonResponse({ error: 'Unauthorized' }, 401)
       const memberDenied = await assertUserIsAgencyMember(supabase, user.id, reminder.agency_id)
@@ -66,6 +70,36 @@ serve(async (req) => {
       return jsonResponse({ error: `Relance déjà traitée (statut : ${reminder.status})` }, 409)
     }
 
+    const { data: itemRows } = await supabase
+      .from('checklist_items')
+      .select('label, type, completed, value, order_index, review_status, review_note, config')
+      .eq('project_id', reminder.project_id)
+      .order('order_index', { ascending: true })
+    const clientActionLabels = getClientPendingActions(itemRows ?? []).map((row) =>
+      String(row.label ?? ''),
+    )
+    const staleReason = draftStaleReason(
+      {
+        id: reminder.id,
+        status: reminder.status,
+        blocking_step_label: reminder.blocking_step_label,
+        prompt_version: reminder.prompt_version,
+        behavior_category: reminder.behavior_category,
+      },
+      clientActionLabels,
+    )
+    if (staleReason) {
+      await supabase.from('smart_reminders').update({ status: 'stale' }).eq('id', reminder.id)
+      return jsonResponse(
+        {
+          error: 'Brouillon obsolète — régénérez une relance.',
+          code: 'draft_stale',
+          reason: staleReason,
+        },
+        409,
+      )
+    }
+
     const projectRel = reminder.projects as
       | { token?: string; client_name?: string; client_email?: string }
       | { token?: string; client_name?: string; client_email?: string }[]
@@ -80,51 +114,68 @@ serve(async (req) => {
     const agencyName = agency?.name ?? 'Votre agence'
     const portalUrl = `${appUrl}/p/${project.token}`
     const now = new Date().toISOString()
+    const claimLogId =
+      typeof requestBody.claimLogId === 'string' && requestBody.claimLogId.trim()
+        ? requestBody.claimLogId.trim()
+        : null
+    const isAuto = Boolean(claimLogId) || internal
 
     let resendEmailId: string | null = null
-    if (isDevMode()) {
-      console.log('MODE DEV — Relance IA simulée pour:', project.client_email, subject)
-      resendEmailId = `dev-sim-${reminder.id}`
-    } else {
-      const sendResult = await resend.emails.send({
-        from: getResendFrom(),
-        to: project.client_email,
-        subject,
-        html: buildSmartReminderEmail({ bodyText, agencyName, portalUrl }),
-      })
-      assertResendOk(sendResult)
-      resendEmailId = (sendResult.data as { id?: string } | null)?.id ?? null
-    }
+    try {
+      if (isDevMode()) {
+        console.log('MODE DEV — Relance IA simulée pour:', project.client_email, subject)
+        resendEmailId = `dev-sim-${reminder.id}`
+      } else {
+        const sendResult = await resend.emails.send({
+          from: getResendFrom(),
+          to: project.client_email,
+          subject,
+          html: buildSmartReminderEmail({ bodyText, agencyName, portalUrl }),
+        })
+        assertResendOk(sendResult)
+        resendEmailId = (sendResult.data as { id?: string } | null)?.id ?? null
+      }
 
-    await supabase
-      .from('smart_reminders')
-      .update({
-        subject,
-        body: bodyText,
-        status: 'sent',
-        sent_at: now,
-        resend_email_id: isDevMode() ? null : resendEmailId,
-      })
-      .eq('id', reminder.id)
-    await supabase
-      .from('projects')
-      .update({ last_reminder_sent_at: now })
-      .eq('id', reminder.project_id)
-    await supabase.from('project_reminder_logs').insert({
-      project_id: reminder.project_id,
-      agency_id: reminder.agency_id,
-      source: isInternalRequest(req) ? 'auto' : 'manual',
-      recipient_email: project.client_email,
-    })
-    if (resendEmailId) {
-      await supabase.from('email_events').insert({
-        project_id: reminder.project_id,
-        resend_email_id: resendEmailId,
-        event_type: 'sent',
-      })
-    }
+      await supabase
+        .from('smart_reminders')
+        .update({
+          subject,
+          body: bodyText,
+          status: 'sent',
+          sent_at: now,
+          resend_email_id: isDevMode() ? null : resendEmailId,
+        })
+        .eq('id', reminder.id)
 
-    return jsonResponse({ success: true, sentAt: now })
+      if (claimLogId) {
+        await finalizeAutoReminder(supabase, claimLogId, 'sent')
+      } else {
+        await supabase
+          .from('projects')
+          .update({ last_reminder_sent_at: now })
+          .eq('id', reminder.project_id)
+        await supabase.from('project_reminder_logs').insert({
+          project_id: reminder.project_id,
+          agency_id: reminder.agency_id,
+          source: isAuto && internal ? 'auto' : 'manual',
+          recipient_email: project.client_email,
+          status: 'sent',
+        })
+      }
+
+      if (resendEmailId) {
+        await supabase.from('email_events').insert({
+          project_id: reminder.project_id,
+          resend_email_id: resendEmailId,
+          event_type: 'sent',
+        })
+      }
+
+      return jsonResponse({ success: true, sentAt: now })
+    } catch (sendError) {
+      if (claimLogId) await finalizeAutoReminder(supabase, claimLogId, 'failed')
+      throw sendError
+    }
   } catch (error) {
     console.error('send-smart-reminder error:', (error as Error).message)
     return jsonResponse({ error: (error as Error).message }, 400)

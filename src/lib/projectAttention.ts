@@ -45,6 +45,7 @@ export function needsAgencyReview(project: ProjectCardData): boolean {
 export function isActionView(project: ProjectCardData, now: number): boolean {
   if (project.status === 'completed') return false
   if (project.inviteStatus === 'failed') return true
+  if (project.unreachableClient === true) return true
   return needsAgencyReview(project) || needsAgencyFollowUp(project, now)
 }
 

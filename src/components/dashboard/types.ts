@@ -32,6 +32,9 @@ export type ProjectCardData = {
   blockingSince: string | null
   /** Invitation onboarding : failed → visible dans « À traiter ». */
   inviteStatus?: 'pending' | 'sent' | 'failed' | null
+  /** Plafond de relances auto consécutives atteint → à appeler. */
+  unreachableClient?: boolean
+  consecutiveAutoReminders?: number
 }
 
 export type { AttentionView }

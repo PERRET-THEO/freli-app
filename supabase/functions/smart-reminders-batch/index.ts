@@ -1,26 +1,23 @@
 /**
- * Moteur de règles des relances intelligentes (cron quotidien).
+ * Moteur de règles des relances intelligentes (cron).
  *
- * Décision 100 % déterministe — l'IA ne choisit JAMAIS si ni quand relancer,
- * elle ne rédige que le contenu (generate-smart-reminder) :
- *   1. Projet non terminé, checklist incomplète, module IA activé,
- *      relances auto activées, add-on IA actif.
- *   2. Délai agence écoulé depuis la dernière activité (création, relance,
- *      visite portail).
- *   3. Plafond de relances par projet respecté (anti-harcèlement).
- *   4. Catégorisation par comportement observé (shared helper).
- *   5. Draft périmé / catégorie changée → dismiss puis régénérer.
+ * Décision déterministe — l'IA ne choisit JAMAIS si ni quand relancer :
+ *   1. Module IA + auto + add-on actifs, checklist avec ≥ 1 action client.
+ *   2. claim_auto_reminder (délai, plafond consécutif, plage Paris) avant tout envoi.
+ *   3. Catégorisation comportementale → brouillon ou envoi draft existant.
  *
- * La fenêtre horaire Paris s'applique à l'ENVOI auto (dans generate),
- * pas à la génération de brouillons.
+ * La génération de brouillon (hors plage / 1ère relance) ne claim pas.
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { hasClientPendingActions } from '../_shared/clientPendingActions.ts'
 import { resolveProjectBehavior } from '../_shared/resolveProjectBehavior.ts'
+import { claimAutoReminder, finalizeAutoReminder } from '../_shared/reminderClaim.ts'
 import {
   DRAFT_STALE_HOURS,
   isWithinParisSendWindow,
 } from '../_shared/smartReminderBehavior.ts'
+import { draftStaleReason } from '../_shared/smartReminderDraft.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -28,14 +25,9 @@ const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 
-const DEFAULT_DELAY_HOURS = 48
-const DEFAULT_MAX_PER_PROJECT = 3
-
 type AgencySettings = {
   ai_reminders_enabled: boolean | null
   auto_reminders_enabled: boolean | null
-  auto_reminders_delay_hours: number | null
-  ai_reminder_max_per_project: number | null
   ai_reminder_auto_send: boolean | null
   ai_reminder_send_hour_start: number | null
   ai_reminder_send_hour_end: number | null
@@ -57,29 +49,6 @@ function settingsFor(project: ProjectRow): AgencySettings | null {
   return Array.isArray(rel) ? rel[0] ?? null : rel
 }
 
-function delayHoursFor(project: ProjectRow): number {
-  const raw = settingsFor(project)?.auto_reminders_delay_hours
-  if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 12) return Math.round(raw)
-  return DEFAULT_DELAY_HOURS
-}
-
-function maxRemindersFor(project: ProjectRow): number {
-  const raw = settingsFor(project)?.ai_reminder_max_per_project
-  if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 1) return Math.round(raw)
-  return DEFAULT_MAX_PER_PROJECT
-}
-
-/** Délai écoulé depuis la dernière activité connue (création, relance, visite). */
-function isDelayElapsed(project: ProjectRow, nowMs: number): boolean {
-  const delayMs = delayHoursFor(project) * 60 * 60 * 1000
-  const lastActivityMs = Math.max(
-    new Date(project.created_at).getTime(),
-    project.last_reminder_sent_at ? new Date(project.last_reminder_sent_at).getTime() : 0,
-    project.last_portal_visit_at ? new Date(project.last_portal_visit_at).getTime() : 0,
-  )
-  return nowMs - lastActivityMs > delayMs
-}
-
 serve(async (req) => {
   try {
     if (!cronSecret) {
@@ -97,11 +66,12 @@ serve(async (req) => {
 
     const nowMs = Date.now()
     const staleMs = DRAFT_STALE_HOURS * 60 * 60 * 1000
+    const now = new Date(nowMs)
 
     const { data: projects, error } = await supabase
       .from('projects')
       .select(
-        'id, created_at, status, last_reminder_sent_at, last_portal_visit_at, agency_id, agencies(ai_reminders_enabled, auto_reminders_enabled, auto_reminders_delay_hours, ai_reminder_max_per_project, ai_reminder_auto_send, ai_reminder_send_hour_start, ai_reminder_send_hour_end)',
+        'id, created_at, status, last_reminder_sent_at, last_portal_visit_at, agency_id, agencies(ai_reminders_enabled, auto_reminders_enabled, ai_reminder_auto_send, ai_reminder_send_hour_start, ai_reminder_send_hour_end)',
       )
       .neq('status', 'completed')
     if (error) throw new Error(error.message)
@@ -110,7 +80,6 @@ serve(async (req) => {
     let sent = 0
     let skipped = 0
     let failed = 0
-    const now = new Date(nowMs)
 
     const agencyIds = [
       ...new Set(((projects ?? []) as ProjectRow[]).map((p) => p.agency_id).filter(Boolean)),
@@ -131,7 +100,15 @@ serve(async (req) => {
     })
 
     for (const project of candidates) {
-      if (!isDelayElapsed(project, nowMs)) {
+      const { data: itemRows } = await supabase
+        .from('checklist_items')
+        .select(
+          'label, type, completed, value, order_index, review_status, review_note, config, submitted_at, reviewed_at',
+        )
+        .eq('project_id', project.id)
+        .order('order_index', { ascending: true })
+
+      if (!hasClientPendingActions(itemRows ?? [])) {
         skipped += 1
         continue
       }
@@ -139,33 +116,32 @@ serve(async (req) => {
       const behavior = await resolveProjectBehavior(supabase, {
         id: project.id,
         last_portal_visit_at: project.last_portal_visit_at,
+        created_at: project.created_at,
+        items: itemRows ?? [],
       })
-
-      const firstIncomplete = behavior.items.find((item) => !item.completed)
-      if (behavior.items.length === 0 || !firstIncomplete) {
-        skipped += 1
-        continue
-      }
-
-      const { count: sentCount } = await supabase
-        .from('smart_reminders')
-        .select('id', { count: 'exact', head: true })
-        .eq('project_id', project.id)
-        .eq('status', 'sent')
-      if ((sentCount ?? 0) >= maxRemindersFor(project)) {
-        skipped += 1
-        continue
-      }
 
       const { data: draftRows } = await supabase
         .from('smart_reminders')
-        .select('id, behavior_category, created_at')
+        .select(
+          'id, behavior_category, created_at, status, blocking_step_label, prompt_version',
+        )
         .eq('project_id', project.id)
         .eq('status', 'draft')
         .order('created_at', { ascending: false })
         .limit(1)
 
-      const existingDraft = draftRows?.[0] ?? null
+      let existingDraft = draftRows?.[0] ?? null
+      if (existingDraft) {
+        const reason = draftStaleReason(existingDraft, behavior.clientActionLabels)
+        if (reason) {
+          await supabase
+            .from('smart_reminders')
+            .update({ status: 'stale' })
+            .eq('id', existingDraft.id)
+          existingDraft = null
+        }
+      }
+
       const settings = settingsFor(project)
       const autoSend = settings?.ai_reminder_auto_send === true
       const sendHourStart =
@@ -178,12 +154,24 @@ serve(async (req) => {
           : 19
       const withinWindow = isWithinParisSendWindow(now, sendHourStart, sendHourEnd)
 
+      const { count: priorSent } = await supabase
+        .from('smart_reminders')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', project.id)
+        .eq('status', 'sent')
+      const hasPriorSent = (priorSent ?? 0) >= 1
+
       if (existingDraft) {
-        // Drafts créés hors fenêtre / en attente d'auto-send : envoyer maintenant.
-        if (autoSend && withinWindow && (sentCount ?? 0) >= 1) {
+        // Auto-send d'un draft existant (après 1ère validation manuelle).
+        if (autoSend && withinWindow && hasPriorSent) {
+          const claim = await claimAutoReminder(supabase, project.id)
+          if (!claim.ok) {
+            skipped += 1
+            continue
+          }
           try {
             const sendResult = await supabase.functions.invoke('send-smart-reminder', {
-              body: { reminderId: existingDraft.id },
+              body: { reminderId: existingDraft.id, claimLogId: claim.logId },
               headers: { 'x-cron-secret': cronSecret },
             })
             const sendPayload = sendResult.data as { error?: string; success?: boolean } | null
@@ -193,12 +181,14 @@ serve(async (req) => {
                 project.id,
                 sendResult.error?.message ?? sendPayload?.error,
               )
+              await finalizeAutoReminder(supabase, claim.logId, 'failed')
               failed += 1
             } else {
               sent += 1
             }
           } catch (sendError) {
             console.error('Auto-send draft failed for', project.id, (sendError as Error).message)
+            await finalizeAutoReminder(supabase, claim.logId, 'failed')
             failed += 1
           }
           continue
@@ -217,12 +207,16 @@ serve(async (req) => {
           .eq('id', existingDraft.id)
       }
 
+      // Génération de brouillon (claim uniquement si generate auto-envoie).
       try {
         const invokeResult = await supabase.functions.invoke('generate-smart-reminder', {
           body: {
             projectId: project.id,
             behaviorCategory: behavior.behaviorCategory,
             blockingStepLabel: behavior.blockingStepLabel,
+            clientActionLabels: behavior.clientActionLabels,
+            progress: behavior.progress,
+            attemptClaim: autoSend && hasPriorSent && withinWindow,
           },
           headers: { 'x-cron-secret': cronSecret },
         })
@@ -240,6 +234,9 @@ serve(async (req) => {
           failed += 1
         } else if (payload?.skipped) {
           skipped += 1
+        } else if (payload?.status === 'sent') {
+          sent += 1
+          generated += 1
         } else {
           generated += 1
         }

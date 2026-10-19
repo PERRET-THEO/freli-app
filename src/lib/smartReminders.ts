@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 
 export type SmartReminderBehavior = 'not_opened' | 'opened_not_clicked' | 'stuck_on_step'
-export type SmartReminderStatus = 'draft' | 'sent' | 'dismissed'
+export type SmartReminderStatus = 'draft' | 'sent' | 'dismissed' | 'stale'
 export type SmartReminderTone = 'professional' | 'warm' | 'direct'
 
 export type SmartReminderRecord = {
@@ -15,6 +15,7 @@ export type SmartReminderRecord = {
   status: SmartReminderStatus
   sent_at: string | null
   created_at: string
+  prompt_version?: string | null
 }
 
 export const BEHAVIOR_LABELS: Record<SmartReminderBehavior, string> = {
@@ -49,7 +50,7 @@ export async function fetchProjectSmartReminders(
   const { data, error } = await supabase
     .from('smart_reminders')
     .select(
-      'id, project_id, behavior_category, blocking_step_label, subject, body, tone, status, sent_at, created_at',
+      'id, project_id, behavior_category, blocking_step_label, subject, body, tone, status, sent_at, created_at, prompt_version',
     )
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
@@ -137,6 +138,20 @@ export type RequestSmartReminderResult = {
   previewRequired?: boolean
   behaviorCategory?: SmartReminderBehavior
   message?: string
+  code?: string
+}
+
+function humanizeSkippedReason(reason: string, code?: string): string {
+  if (code === 'insufficient_credits' || /crédit/i.test(reason)) {
+    return 'Crédits IA épuisés — rechargez ou réessayez plus tard.'
+  }
+  if (/aucune action/i.test(reason) || /checklist/i.test(reason)) {
+    return 'Rien à demander au client : des éléments attendent votre validation.'
+  }
+  if (/contenu|facts_mismatch|invalide|refus/i.test(reason)) {
+    return `Le brouillon n'a pas pu être généré — ${reason}`
+  }
+  return reason || "Le brouillon n'a pas pu être généré — réessayez."
 }
 
 /** Génère (ou récupère) une relance IA pour un projet — bouton Relancer / CTA panel. */
@@ -148,9 +163,18 @@ export async function requestSmartReminder(
     body: { projectId, forceRefresh: options?.forceRefresh === true },
   })
   if (error) throw new Error(await invokeErrorMessage(error, data))
-  if (data?.error) throw new Error(String(data.error))
+  if (data?.error) {
+    throw new Error(
+      humanizeSkippedReason(String(data.error), typeof data?.code === 'string' ? data.code : undefined),
+    )
+  }
   if (data?.skipped) {
-    throw new Error(String(data.reason ?? 'Génération IA indisponible (add-on ou crédits).'))
+    throw new Error(
+      humanizeSkippedReason(
+        String(data.reason ?? 'Génération IA indisponible (add-on ou crédits).'),
+        typeof data?.code === 'string' ? data.code : undefined,
+      ),
+    )
   }
   return {
     reminderId: typeof data?.reminderId === 'string' ? data.reminderId : undefined,
@@ -159,5 +183,6 @@ export async function requestSmartReminder(
     previewRequired: data?.previewRequired === true,
     behaviorCategory: data?.behaviorCategory as SmartReminderBehavior | undefined,
     message: typeof data?.message === 'string' ? data.message : undefined,
+    code: typeof data?.code === 'string' ? data.code : undefined,
   }
 }

@@ -32,12 +32,24 @@ import { formatRelative } from '../lib/formatRelative'
 import { fetchAgencyAiFlags } from '../lib/agencyQueries'
 import { getVisibleItems } from '../lib/checklistConditions'
 import type { ChecklistItemConfig } from '../lib/checklistFields'
-import { countAwaitingReview, isOnboardingSettled, type ReviewStatus } from '../lib/checklistReview'
+import {
+  countAwaitingReview,
+  isOnboardingSettled,
+  isRejected,
+  type ReviewStatus,
+} from '../lib/checklistReview'
+import { getClientPendingActions } from '../lib/clientPendingActions'
 import {
   findProjectBottleneck,
+  formatBottleneckAge,
   formatBottleneckLabel,
   isBottleneckStale,
 } from '../lib/projectBottleneck'
+import {
+  countConsecutiveAutoReminders,
+  isReminderCapReached,
+  lastClientActivityAnchor,
+} from '../lib/reminderCap'
 import { pushRecentProject } from '../lib/recentProjects'
 import { fetchProjectSignatureProofs, type SignatureProof } from '../lib/signatureProof'
 import { supabase } from '../lib/supabase'
@@ -61,6 +73,8 @@ type ProjectRecord = {
   token: string
   created_at: string
   last_reminder_sent_at: string | null
+  last_portal_visit_at: string | null
+  reminder_cap_reset_at: string | null
   price: number | null
   payment_status: string | null
   stripe_checkout_url: string | null
@@ -75,7 +89,10 @@ type ProjectRecord = {
   invite_error: string | null
   invite_last_attempt_at: string | null
   agency_id: string
-  agencies?: { name: string | null } | { name: string | null }[] | null
+  agencies?:
+    | { name: string | null; ai_reminder_max_per_project?: number | null }
+    | { name: string | null; ai_reminder_max_per_project?: number | null }[]
+    | null
   clients?: ClientJoin | ClientJoin[] | null
 }
 
@@ -98,6 +115,7 @@ type ReminderLog = {
   id: string
   source: 'auto' | 'manual'
   sent_at: string
+  status?: 'sending' | 'sent' | 'failed' | null
 }
 
 export function ProjectDetail() {
@@ -126,6 +144,8 @@ export function ProjectDetail() {
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [aiContractsEnabled, setAiContractsEnabled] = useState(false)
   const [aiRemindersEnabled, setAiRemindersEnabled] = useState(false)
+  const [reminderMaxPerProject, setReminderMaxPerProject] = useState(3)
+  const [resettingCap, setResettingCap] = useState(false)
   const [smartRemindersKey, setSmartRemindersKey] = useState(0)
   const [resendingInvite, setResendingInvite] = useState(false)
   const [inviteFeedback, setInviteFeedback] = useState<string | null>(null)
@@ -154,7 +174,7 @@ export function ProjectDetail() {
 
     const { data: projectData, error: projectError } = await supabase
       .from('projects')
-      .select('id, agency_id, client_id, name, client_name, client_email, status, token, created_at, last_reminder_sent_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, payment_unlock_mode, payment_unlocked_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, invite_status, invite_sent_at, invite_error, invite_last_attempt_at, agencies(name), clients(phone, address_street, address_postal_code, address_city, address_country, company_name)')
+      .select('id, agency_id, client_id, name, client_name, client_email, status, token, created_at, last_reminder_sent_at, last_portal_visit_at, reminder_cap_reset_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, payment_unlock_mode, payment_unlocked_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, invite_status, invite_sent_at, invite_error, invite_last_attempt_at, agencies(name, ai_reminder_max_per_project), clients(phone, address_street, address_postal_code, address_city, address_country, company_name)')
       .eq('id', id)
       .maybeSingle()
 
@@ -167,6 +187,18 @@ export function ProjectDetail() {
     const aiFlags = await fetchAgencyAiFlags(projectData.agency_id)
     setAiContractsEnabled(aiFlags.ai_contracts_enabled === true)
     setAiRemindersEnabled(aiFlags.ai_reminders_enabled === true)
+    const agencySettingsRel = projectData.agencies as
+      | { ai_reminder_max_per_project?: number | null }
+      | { ai_reminder_max_per_project?: number | null }[]
+      | null
+    const agencySettings = Array.isArray(agencySettingsRel)
+      ? agencySettingsRel[0]
+      : agencySettingsRel
+    setReminderMaxPerProject(
+      typeof agencySettings?.ai_reminder_max_per_project === 'number'
+        ? agencySettings.ai_reminder_max_per_project
+        : 3,
+    )
 
     const { data: checklistData, error: checklistError } = await supabase
       .from('checklist_items')
@@ -185,10 +217,10 @@ export function ProjectDetail() {
     const [{ data: logsData }, { data: activityRows }, authResult] = await Promise.all([
       supabase
         .from('project_reminder_logs')
-        .select('id, source, sent_at')
+        .select('id, source, sent_at, status')
         .eq('project_id', projectData.id)
         .order('sent_at', { ascending: false })
-        .limit(10),
+        .limit(20),
       supabase
         .from('client_activity_events')
         .select('id, event_type, title, occurred_at, project_id, metadata')
@@ -198,6 +230,7 @@ export function ProjectDetail() {
           'secret.copy',
           'secret.cleared',
           'payment.amount_changed',
+          'reminder_cap_reset',
         ])
         .order('occurred_at', { ascending: false })
         .limit(50),
@@ -274,13 +307,71 @@ export function ProjectDetail() {
     return findProjectBottleneck(items, project.created_at)
   }, [items, project])
 
+  const clientPendingActions = useMemo(() => getClientPendingActions(items), [items])
+  const clientActionLabels = useMemo(
+    () => clientPendingActions.map((item) => item.label),
+    [clientPendingActions],
+  )
+  const firstClientAction = clientPendingActions[0] ?? null
+
+  const consecutiveAutoReminders = useMemo(() => {
+    if (!project) return 0
+    const maxSubmittedAt = items.reduce<string | null>((latest, item) => {
+      if (!item.submitted_at) return latest
+      if (!latest) return item.submitted_at
+      return new Date(item.submitted_at) > new Date(latest) ? item.submitted_at : latest
+    }, null)
+    const anchor = lastClientActivityAnchor({
+      maxSubmittedAt,
+      lastPortalVisitAt: project.last_portal_visit_at,
+      reminderCapResetAt: project.reminder_cap_reset_at,
+    })
+    return countConsecutiveAutoReminders(reminderLogs, anchor)
+  }, [items, project, reminderLogs])
+
+  const unreachableClient =
+    project != null &&
+    project.status !== 'completed' &&
+    isReminderCapReached(consecutiveAutoReminders, reminderMaxPerProject)
+
+  const handleResetReminderCap = async () => {
+    if (!project) return
+    setResettingCap(true)
+    setReminderFeedback(null)
+    try {
+      const { data, error: rpcError } = await supabase.rpc('reset_reminder_cap', {
+        p_project_id: project.id,
+      })
+      if (rpcError) throw new Error(rpcError.message)
+      const row = (Array.isArray(data) ? data[0] : data) as
+        | { ok?: boolean; error_code?: string | null }
+        | null
+      if (!row || row.ok !== true) {
+        throw new Error(row?.error_code ?? 'reset_failed')
+      }
+      setReminderFeedback('Compteur de relances réarmé — les auto-relances peuvent reprendre.')
+      await loadProject()
+    } catch (reason: unknown) {
+      setReminderFeedback(
+        reason instanceof Error ? reason.message : 'Impossible de réarmer le compteur.',
+      )
+    } finally {
+      setResettingCap(false)
+    }
+  }
+
   const handleSendReminder = async () => {
     if (!project) return
+    if (aiRemindersEnabled && clientActionLabels.length === 0) {
+      setError('Rien à demander au client : des éléments attendent votre validation.')
+      return
+    }
     setSendingReminder(true)
     setReminderFeedback(null)
     setError(null)
     try {
       if (aiRemindersEnabled) {
+        setReminderFeedback('Génération du brouillon…')
         const result = await requestSmartReminder(project.id)
         setSmartRemindersKey((key) => key + 1)
         if (result.status === 'sent') {
@@ -289,6 +380,8 @@ export function ProjectDetail() {
           setReminderFeedback(
             'Un brouillon de relance IA est déjà prêt ci-dessous — validez-le pour l’envoyer.',
           )
+        } else if (!result.reminderId) {
+          throw new Error("Le brouillon n'a pas pu être généré — réessayez.")
         } else {
           setReminderFeedback(
             'Brouillon de relance IA généré — validez-le dans la section Relances intelligentes.',
@@ -301,8 +394,11 @@ export function ProjectDetail() {
       await loadProject()
     } catch (reason: unknown) {
       const exactError =
-        reason instanceof Error ? reason.message : "Impossible d'envoyer la relance."
+        reason instanceof Error
+          ? reason.message
+          : "Le brouillon n'a pas pu être généré — réessayez."
       setError(exactError)
+      setReminderFeedback(null)
     } finally {
       setSendingReminder(false)
     }
@@ -623,7 +719,26 @@ export function ProjectDetail() {
                 Progression globale : {completedCount}/{totalCount} étapes
               </p>
 
-              {bottleneck ? (
+              {bottleneck &&
+              bottleneck.owner === 'agency' &&
+              firstClientAction &&
+              firstClientAction.label !== bottleneck.label ? (
+                <p
+                  className={`mt-3 rounded-[var(--radius-sm)] px-3 py-2 text-xs font-body ${
+                    isBottleneckStale(bottleneck)
+                      ? 'bg-[var(--amber-soft)] font-semibold text-[var(--amber)]'
+                      : 'bg-[var(--accent-soft)] text-[var(--accent)]'
+                  }`}
+                >
+                  À valider par vous : {bottleneck.label}
+                  {formatBottleneckAge(bottleneck.since)
+                    ? ` · ${formatBottleneckAge(bottleneck.since)}`
+                    : ''}
+                  {' · '}
+                  Côté client : {firstClientAction.label} (
+                  {isRejected(firstClientAction) ? 'à corriger' : 'à envoyer'})
+                </p>
+              ) : bottleneck ? (
                 <p
                   className={`mt-3 rounded-[var(--radius-sm)] px-3 py-2 text-xs font-body ${
                     isBottleneckStale(bottleneck)
@@ -635,6 +750,11 @@ export function ProjectDetail() {
                 >
                   Étape bloquante — {formatBottleneckLabel(bottleneck)}
                 </p>
+              ) : firstClientAction ? (
+                <p className="mt-3 rounded-[var(--radius-sm)] bg-[var(--surface-warm)] px-3 py-2 text-xs font-body text-[var(--ink-soft)]">
+                  Côté client : {firstClientAction.label} (
+                  {isRejected(firstClientAction) ? 'à corriger' : 'à envoyer'})
+                </p>
               ) : null}
 
               {awaitingReviewCount > 0 ? (
@@ -642,6 +762,28 @@ export function ProjectDetail() {
                   {awaitingReviewCount} élément{awaitingReviewCount > 1 ? 's' : ''} transmis
                   {awaitingReviewCount > 1 ? ' attendent' : ' attend'} votre validation.
                 </p>
+              ) : null}
+
+              {unreachableClient ? (
+                <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--status-blocked-border)] bg-[var(--status-blocked-soft)] px-3 py-3">
+                  <p className="text-xs font-body font-semibold text-[var(--status-blocked)]">
+                    Client injoignable — à appeler
+                  </p>
+                  <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
+                    {consecutiveAutoReminders} relance
+                    {consecutiveAutoReminders > 1 ? 's' : ''} auto sans réponse (plafond{' '}
+                    {reminderMaxPerProject}). Les relances auto sont suspendues.
+                  </p>
+                  <Button
+                    className="mt-2"
+                    onClick={handleResetReminderCap}
+                    disabled={resettingCap}
+                  >
+                    {resettingCap
+                      ? 'Réarmement…'
+                      : 'J’ai contacté le client — relancer à nouveau'}
+                  </Button>
+                </div>
               ) : null}
 
               {project.last_reminder_sent_at ? (
@@ -654,15 +796,35 @@ export function ProjectDetail() {
                 </p>
               )}
 
-              <Button className="mt-3" onClick={handleSendReminder} disabled={reminderDisabled}>
-                {sendingReminder
-                  ? aiRemindersEnabled
-                    ? 'Génération…'
-                    : 'Envoi…'
-                  : aiRemindersEnabled
-                    ? 'Générer une relance IA'
-                    : 'Envoyer une relance'}
-              </Button>
+              <span
+                className="mt-3 inline-block"
+                title={
+                  aiRemindersEnabled && clientActionLabels.length === 0
+                    ? 'Rien à demander au client : des éléments attendent votre validation'
+                    : undefined
+                }
+              >
+                <Button
+                  onClick={handleSendReminder}
+                  disabled={
+                    reminderDisabled ||
+                    (aiRemindersEnabled && clientActionLabels.length === 0)
+                  }
+                >
+                  {sendingReminder
+                    ? aiRemindersEnabled
+                      ? 'Génération du brouillon…'
+                      : 'Envoi…'
+                    : aiRemindersEnabled
+                      ? 'Générer une relance IA'
+                      : 'Envoyer une relance'}
+                </Button>
+              </span>
+              {aiRemindersEnabled && clientActionLabels.length === 0 && !allSettled ? (
+                <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
+                  Rien à demander au client : des éléments attendent votre validation.
+                </p>
+              ) : null}
               {allSettled ? (
                 <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
                   Checklist complétée — plus besoin de relancer.
@@ -952,6 +1114,7 @@ export function ProjectDetail() {
             key={smartRemindersKey}
             projectId={project.id}
             aiEnabled={aiRemindersEnabled}
+            clientActionLabels={clientActionLabels}
             onSent={loadProject}
             onRequestGenerate={async () => {
               await handleSendReminder()

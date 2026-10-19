@@ -4,6 +4,7 @@ export type ClientActivityEvent = {
   id: string
   eventType:
     | 'reminder_sent'
+    | 'reminder_cap_reset'
     | 'step_completed'
     | 'document_received'
     | 'contract_signed'
@@ -26,6 +27,7 @@ const STORED_ACTIVITY_TYPES = new Set([
   'secret.copy',
   'secret.cleared',
   'payment.amount_changed',
+  'reminder_cap_reset',
 ])
 
 export type StoredActivityRow = {

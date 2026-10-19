@@ -14,6 +14,7 @@ import {
   jsonResponse,
 } from '../_shared/functionAuth.ts'
 import { resolveProjectBehavior } from '../_shared/resolveProjectBehavior.ts'
+import { draftStaleReason } from '../_shared/smartReminderDraft.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -43,7 +44,7 @@ serve(async (req) => {
     const { data: project, error: projectError } = await supabase
       .from('projects')
       .select(
-        'id, last_portal_visit_at, agency_id, status, agencies(ai_reminders_enabled)',
+        'id, created_at, last_portal_visit_at, agency_id, status, agencies(ai_reminders_enabled)',
       )
       .eq('id', body.projectId)
       .single()
@@ -62,39 +63,50 @@ serve(async (req) => {
       return jsonResponse({ error: 'Projet déjà terminé' }, 400)
     }
 
+    const behavior = await resolveProjectBehavior(supabase, {
+      id: project.id,
+      last_portal_visit_at: project.last_portal_visit_at,
+      created_at: project.created_at,
+    })
+
+    if (behavior.clientActionLabels.length === 0) {
+      return jsonResponse(
+        { error: 'Aucune action côté client — rien à relancer' },
+        400,
+      )
+    }
+
     const { data: existingDraft } = await supabase
       .from('smart_reminders')
-      .select('id, behavior_category, subject, status')
+      .select(
+        'id, behavior_category, subject, status, blocking_step_label, prompt_version',
+      )
       .eq('project_id', project.id)
       .eq('status', 'draft')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
-    if (existingDraft && !body.forceRefresh) {
-      return jsonResponse({
-        reminderId: existingDraft.id,
-        status: 'draft',
-        existing: true,
-        message: 'Un brouillon est déjà en attente de validation.',
-      })
-    }
-
-    const behavior = await resolveProjectBehavior(supabase, {
-      id: project.id,
-      last_portal_visit_at: project.last_portal_visit_at,
-    })
-
-    const firstIncomplete = behavior.items.find((item) => !item.completed)
-    if (behavior.items.length === 0 || !firstIncomplete) {
-      return jsonResponse({ error: 'Checklist déjà complète — rien à relancer' }, 400)
-    }
-
-    if (existingDraft && body.forceRefresh) {
-      await supabase
-        .from('smart_reminders')
-        .update({ status: 'dismissed' })
-        .eq('id', existingDraft.id)
+    if (existingDraft) {
+      const reason = draftStaleReason(existingDraft, behavior.clientActionLabels)
+      if (reason) {
+        await supabase
+          .from('smart_reminders')
+          .update({ status: 'stale' })
+          .eq('id', existingDraft.id)
+      } else if (!body.forceRefresh) {
+        return jsonResponse({
+          reminderId: existingDraft.id,
+          status: 'draft',
+          existing: true,
+          message: 'Un brouillon est déjà en attente de validation.',
+        })
+      } else {
+        await supabase
+          .from('smart_reminders')
+          .update({ status: 'dismissed' })
+          .eq('id', existingDraft.id)
+      }
     }
 
     const invokeResult = await supabase.functions.invoke('generate-smart-reminder', {
@@ -102,6 +114,8 @@ serve(async (req) => {
         projectId: project.id,
         behaviorCategory: behavior.behaviorCategory,
         blockingStepLabel: behavior.blockingStepLabel,
+        clientActionLabels: behavior.clientActionLabels,
+        progress: behavior.progress,
       },
       headers: internalSecretHeaders(),
     })
