@@ -42,6 +42,13 @@ import {
 } from '../lib/portalWelcomeTemplate'
 import { getVisibleItems } from '../lib/checklistConditions'
 import { isOnboardingSettled, isRejected, type ReviewStatus } from '../lib/checklistReview'
+import {
+  deriveChecklistItemStatus,
+  labelForChecklistItemStatus,
+  statusColorClasses,
+  statusColorToken,
+  type ChecklistItemStatus,
+} from '../lib/status'
 import type { ChecklistItemType } from '../lib/checklist'
 import {
   FIELD_INPUT_MODES,
@@ -182,15 +189,19 @@ function Confetti() {
   )
 }
 
-type StepStatus = 'completed' | 'active' | 'locked' | 'rejected'
+type StepUiStatus = ChecklistItemStatus | 'active' | 'locked'
 
-function StepCircle({ index, status }: { index: number; status: StepStatus }) {
+function StepCircle({ index, status }: { index: number; status: StepUiStatus }) {
   const base = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-display font-bold transition-all duration-300'
-  if (status === 'completed')
+  if (status === 'validated')
     return <div className={`${base} bg-[var(--mint)] text-white`}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
     </div>
-  if (status === 'rejected')
+  if (status === 'submitted')
+    return <div className={`${base} bg-[var(--status-info)] text-white`}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+    </div>
+  if (status === 'changes_requested')
     return <div className={`${base} bg-[var(--amber)] text-white shadow-[0_0_0_4px_var(--amber-soft)]`}>!</div>
   if (status === 'active')
     return <div className={`${base} bg-[var(--accent)] text-white shadow-[0_0_0_4px_var(--accent-soft)]`}>{index + 1}</div>
@@ -873,9 +884,11 @@ export function ClientPortal() {
     }
   }
 
-  const stepStatus = (item: ChecklistItemRecord): StepStatus => {
-    if (item.completed) return 'completed'
-    if (isRejected(item)) return 'rejected'
+  const stepStatus = (item: ChecklistItemRecord): StepUiStatus => {
+    const derived = deriveChecklistItemStatus(item)
+    if (derived === 'submitted' || derived === 'validated' || derived === 'changes_requested') {
+      return derived
+    }
     if (item.type === 'payment' && !paymentUnlockInfo.unlocked) return 'locked'
     if (item.id === firstIncompleteId) return 'active'
     return 'locked'
@@ -1026,17 +1039,18 @@ export function ClientPortal() {
                 >
                   <StepCircle index={index} status={status} />
                   <div className="flex flex-1 items-center justify-between pt-1.5">
-                    <h2 className={`font-display text-base font-semibold transition-colors ${status === 'completed' ? 'text-[var(--ink-muted)] line-through decoration-[var(--mint)]' : status === 'active' || status === 'rejected' ? 'text-[var(--ink)]' : 'text-[var(--ink-muted)]'}`}>
+                    <h2 className={`font-display text-base font-semibold transition-colors ${
+                      status === 'validated' || status === 'submitted'
+                        ? 'text-[var(--ink-muted)]'
+                        : status === 'active' || status === 'changes_requested'
+                          ? 'text-[var(--ink)]'
+                          : 'text-[var(--ink-muted)]'
+                    }`}>
                       {item.label}
                     </h2>
-                    {item.completed ? (
-                      <span className="flex items-center gap-1 rounded-full bg-[var(--mint-soft)] px-2.5 py-0.5 font-body text-xs font-medium text-[var(--mint)]">
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                        Complété
-                      </span>
-                    ) : status === 'rejected' ? (
-                      <span className="rounded-full bg-[var(--amber-soft)] px-2.5 py-0.5 font-body text-xs font-medium text-[var(--amber)]">
-                        À corriger
+                    {status === 'submitted' || status === 'validated' || status === 'changes_requested' ? (
+                      <span className={`rounded-full px-2.5 py-0.5 font-body text-xs font-medium ${statusColorClasses(statusColorToken(status))}`}>
+                        {labelForChecklistItemStatus(status, 'client')}
                       </span>
                     ) : wasSaved ? (
                       <span className="flex items-center gap-1 rounded-full bg-[var(--mint-soft)] px-2.5 py-0.5 font-body text-xs font-medium text-[var(--mint)] animate-pulse">✓ Enregistré</span>

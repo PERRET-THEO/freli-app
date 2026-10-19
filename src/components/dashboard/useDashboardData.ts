@@ -8,10 +8,9 @@ import {
 } from '../../lib/agencyAttention'
 import { findProjectBottleneck } from '../../lib/projectBottleneck'
 import {
-  countConsecutiveAutoReminders,
-  isReminderCapReached,
-  lastClientActivityAnchor,
-} from '../../lib/reminderCap'
+  normalizeAgencyProjectStatus,
+  type AgencyProjectStatus,
+} from '../../lib/status'
 import { supabase } from '../../lib/supabase'
 import type { ProjectCardData } from './types'
 
@@ -59,16 +58,6 @@ export function useDashboardData() {
       .eq('agency_id', agencyId)
       .order('created_at', { ascending: false })
 
-    const { data: agencyRow } = await supabase
-      .from('agencies')
-      .select('ai_reminder_max_per_project')
-      .eq('id', agencyId)
-      .maybeSingle()
-    const maxPerProject =
-      typeof agencyRow?.ai_reminder_max_per_project === 'number'
-        ? agencyRow.ai_reminder_max_per_project
-        : 3
-
     if (projectsError) {
       setProjects([])
       setLoading(false)
@@ -92,8 +81,28 @@ export function useDashboardData() {
     }
 
     const projectIds = rawProjects.map((project) => project.id)
-    const checklistRows = await fetchChecklistAttentionRows(projectIds)
+    const [checklistRows, derivedRes, reminderRowsRes] = await Promise.all([
+      fetchChecklistAttentionRows(projectIds),
+      supabase.rpc('project_derived_statuses', { p_project_ids: projectIds }),
+      supabase
+        .from('project_reminder_logs')
+        .select('project_id, source, sent_at, status')
+        .in('project_id', projectIds)
+        .order('sent_at', { ascending: false }),
+    ])
     const itemsByProject = groupChecklistByProject(checklistRows)
+
+    const derivedByProject = new Map<string, AgencyProjectStatus>()
+    const unreachableByProject = new Map<string, boolean>()
+    for (const row of (derivedRes.data ?? []) as {
+      project_id: string
+      derived_status: string
+      unreachable?: boolean
+    }[]) {
+      const status = normalizeAgencyProjectStatus(row.derived_status)
+      if (status) derivedByProject.set(row.project_id, status)
+      unreachableByProject.set(row.project_id, row.unreachable === true)
+    }
 
     const countsByProject = new Map<string, { total: number; completed: number }>()
     for (const row of checklistRows) {
@@ -103,25 +112,15 @@ export function useDashboardData() {
       countsByProject.set(row.project_id, current)
     }
 
-    const { data: reminderRows } = await supabase
-      .from('project_reminder_logs')
-      .select('project_id, source, sent_at, status')
-      .in('project_id', projectIds)
-      .order('sent_at', { ascending: false })
-
     const latestReminderByProject = new Map<string, 'auto' | 'manual'>()
-    const logsByProject = new Map<string, ReminderLogRow[]>()
     const monthStart = new Date()
     monthStart.setDate(1)
     monthStart.setHours(0, 0, 0, 0)
     let autoCount = 0
-    for (const row of (reminderRows ?? []) as ReminderLogRow[]) {
+    for (const row of (reminderRowsRes.data ?? []) as ReminderLogRow[]) {
       if (!latestReminderByProject.has(row.project_id)) {
         latestReminderByProject.set(row.project_id, row.source)
       }
-      const list = logsByProject.get(row.project_id) ?? []
-      list.push(row)
-      logsByProject.set(row.project_id, list)
       if (
         row.source === 'auto' &&
         row.status !== 'failed' &&
@@ -141,22 +140,9 @@ export function useDashboardData() {
         project.status === 'completed'
           ? null
           : findProjectBottleneck(checklistItems, project.created_at)
-      const maxSubmittedAt = checklistItems.reduce<string | null>((latest, item) => {
-        if (!item.submitted_at) return latest
-        if (!latest) return item.submitted_at
-        return new Date(item.submitted_at) > new Date(latest) ? item.submitted_at : latest
-      }, null)
-      const anchor = lastClientActivityAnchor({
-        maxSubmittedAt,
-        lastPortalVisitAt: project.last_portal_visit_at,
-        reminderCapResetAt: project.reminder_cap_reset_at,
-      })
-      const consecutive = countConsecutiveAutoReminders(
-        logsByProject.get(project.id) ?? [],
-        anchor,
-      )
-      const unreachable =
-        project.status !== 'completed' && isReminderCapReached(consecutive, maxPerProject)
+      const derivedStatus =
+        derivedByProject.get(project.id) ??
+        (project.status === 'completed' ? 'completed' : 'waiting_client')
       return {
         id: project.id,
         clientId: project.client_id,
@@ -166,6 +152,7 @@ export function useDashboardData() {
         clientPhone: clientJoin?.phone ?? null,
         companyName: clientJoin?.company_name ?? null,
         status: project.status,
+        derivedStatus,
         token: project.token,
         createdAt: project.created_at,
         lastReminderSentAt: project.last_reminder_sent_at,
@@ -180,8 +167,7 @@ export function useDashboardData() {
         blockingOwner: bottleneck?.owner ?? null,
         blockingSince: bottleneck?.since ?? null,
         inviteStatus: project.invite_status ?? null,
-        unreachableClient: unreachable,
-        consecutiveAutoReminders: consecutive,
+        unreachableClient: unreachableByProject.get(project.id) === true,
       }
     })
 

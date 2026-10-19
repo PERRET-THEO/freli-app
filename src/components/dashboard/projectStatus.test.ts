@@ -1,70 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { getShortStatusLabel, getStatusLabel } from './projectStatus'
+import type { ProjectCardData } from './types'
+import {
+  getSecondaryIndicator,
+  getShortStatusLabel,
+  getStatusLabel,
+} from './projectStatus'
 
-describe('getStatusLabel', () => {
-  const now = Date.now()
-
-  it('labels pending with no progress as waiting on client', () => {
-    expect(
-      getStatusLabel({
-        status: 'pending',
-        completedCount: 0,
-        lastReminderSentAt: null,
-        now,
-      }),
-    ).toBe('En attente du client')
+describe('projectStatus labels', () => {
+  it('uses derivedStatus labels', () => {
+    expect(getStatusLabel({ derivedStatus: 'action_required' })).toBe('Action requise')
+    expect(getStatusLabel({ derivedStatus: 'waiting_client' })).toBe('En attente client')
+    expect(getStatusLabel({ derivedStatus: 'stalled' })).toBe('Bloqué')
+    expect(getShortStatusLabel({ derivedStatus: 'completed' })).toBe('Terminé')
   })
 
-  it('labels pending with recent reminder', () => {
-    expect(
-      getStatusLabel({
-        status: 'pending',
-        completedCount: 0,
-        lastReminderSentAt: new Date(now - 60 * 60 * 1000).toISOString(),
-        now,
-      }),
-    ).toBe('Relancé · en attente')
-  })
-
-  it('labels in_progress as client-side', () => {
-    expect(
-      getStatusLabel({
-        status: 'in_progress',
-        completedCount: 2,
-        lastReminderSentAt: null,
-        now,
-      }),
-    ).toBe('En cours côté client')
-  })
-})
-
-describe('getShortStatusLabel', () => {
-  const now = Date.now()
-
-  it('shortens long pending and in_progress labels', () => {
-    expect(
-      getShortStatusLabel({
-        status: 'pending',
-        completedCount: 0,
-        lastReminderSentAt: new Date(now - 60 * 60 * 1000).toISOString(),
-        now,
-      }),
-    ).toBe('Relancé')
-    expect(
-      getShortStatusLabel({
-        status: 'pending',
-        completedCount: 0,
-        lastReminderSentAt: null,
-        now,
-      }),
-    ).toBe('En attente')
-    expect(
-      getShortStatusLabel({
-        status: 'in_progress',
-        completedCount: 1,
-        lastReminderSentAt: null,
-        now,
-      }),
-    ).toBe('En cours')
+  it('flags empty checklist as secondary label', () => {
+    const project = {
+      status: 'pending',
+      totalCount: 0,
+      derivedStatus: 'action_required',
+      paymentStatus: null,
+    } as ProjectCardData
+    expect(getSecondaryIndicator(project, false, Date.now())).toEqual({
+      type: 'empty_checklist',
+      label: 'Checklist vide',
+    })
   })
 })

@@ -18,16 +18,19 @@
   --amber-soft: #fef3dc;
   --border: #e2e0d8;
 
-  /* Dashboard attention / status tokens (filtres, badges, bannière) */
-  --status-action: var(--accent);
-  --status-action-soft: var(--accent-soft);
-  --status-waiting: var(--amber);
-  --status-waiting-soft: var(--amber-soft);
-  --status-blocked: #c47a0a;
+  /* Dashboard attention / status tokens (filtres, badges, bannière)
+     action = ambre/rouge ; waiting = gris ; done = vert ; info = bleu */
+  --status-action: #d97706;
+  --status-action-soft: #fff7ed;
+  --status-waiting: #6b7280;
+  --status-waiting-soft: #f3f4f6;
+  --status-blocked: #b45309;
   --status-blocked-soft: #fef3dc;
-  --status-blocked-border: rgba(196, 122, 10, 0.35);
+  --status-blocked-border: rgba(180, 83, 9, 0.35);
   --status-done: var(--mint);
   --status-done-soft: var(--mint-soft);
+  --status-info: var(--accent);
+  --status-info-soft: var(--accent-soft);
 
   --radius-xs: 4px;
   --radius-sm: 8px;

@@ -1,5 +1,5 @@
-import { findProjectBottleneck, type BottleneckItem } from './projectBottleneck'
-import { isActionView } from './projectAttention'
+import type { BottleneckItem } from './projectBottleneck'
+import { normalizeAgencyProjectStatus } from './status'
 import { supabase } from './supabase'
 import type { ReviewStatus } from './checklistReview'
 import type { ProjectCardData } from '../components/dashboard/types'
@@ -9,8 +9,6 @@ export type NavAttentionCounts = Record<NavBadgeKey, number>
 
 export const EMPTY_NAV_ATTENTION: NavAttentionCounts = {
   actionProjects: 0,
-  pendingSignatures: 0,
-  draftReminders: 0,
 }
 
 export type ChecklistAttentionRow = {
@@ -28,13 +26,6 @@ export type ChecklistAttentionRow = {
 
 export const CHECKLIST_ATTENTION_SELECT =
   'project_id, completed, label, type, order_index, value, review_status, submitted_at, reviewed_at, config'
-
-type ProjectAttentionRow = {
-  id: string
-  status: 'pending' | 'in_progress' | 'completed'
-  created_at: string
-  last_reminder_sent_at: string | null
-}
 
 type SeedEntry = {
   agencyId: string
@@ -104,97 +95,43 @@ export async function fetchChecklistAttentionRows(
   return (data ?? []) as ChecklistAttentionRow[]
 }
 
-export function countPendingSignatures(rows: ChecklistAttentionRow[]): number {
-  return rows.reduce(
-    (n, row) => n + (row.type === 'signature' && !row.completed ? 1 : 0),
+export function countActionProjectsFromCards(projects: ProjectCardData[]): number {
+  return projects.reduce(
+    (n, project) => n + (project.derivedStatus === 'action_required' ? 1 : 0),
     0,
   )
 }
 
-export function countActionProjectsFromCards(
-  projects: ProjectCardData[],
-  now = Date.now(),
-): number {
-  return projects.reduce((n, project) => n + (isActionView(project, now) ? 1 : 0), 0)
-}
-
-function toAttentionCard(
-  row: ProjectAttentionRow,
-  bottleneck: ReturnType<typeof findProjectBottleneck>,
-): ProjectCardData {
-  return {
-    id: row.id,
-    clientId: null,
-    projectName: '',
-    clientName: '',
-    clientEmail: '',
-    clientPhone: null,
-    companyName: null,
-    status: row.status,
-    token: '',
-    createdAt: row.created_at,
-    lastReminderSentAt: row.last_reminder_sent_at,
-    lastReminderSource: null,
-    price: null,
-    paymentStatus: null,
-    completedCount: 0,
-    totalCount: 0,
-    progress: 0,
-    nextStepLabel: null,
-    blockingStepLabel: bottleneck?.label ?? null,
-    blockingOwner: bottleneck?.owner ?? null,
-    blockingSince: bottleneck?.since ?? null,
-    inviteStatus: null,
-  }
-}
-
 async function fetchNavAttentionCounts(agencyId: string): Promise<NavAttentionCounts> {
   const startedAt = Date.now()
-  const [projectsRes, signaturesRes, remindersRes] = await Promise.all([
-    supabase
-      .from('projects')
-      .select('id, status, created_at, last_reminder_sent_at')
-      .eq('agency_id', agencyId)
-      .neq('status', 'completed'),
-    supabase
-      .from('checklist_items')
-      .select('id, projects!inner(agency_id)', { count: 'exact', head: true })
-      .eq('type', 'signature')
-      .eq('completed', false)
-      .eq('projects.agency_id', agencyId),
-    supabase
-      .from('smart_reminders')
-      .select('id', { count: 'exact', head: true })
-      .eq('agency_id', agencyId)
-      .eq('status', 'draft'),
-  ])
+  const projectsRes = await supabase
+    .from('projects')
+    .select('id')
+    .eq('agency_id', agencyId)
+    .neq('status', 'completed')
 
   const seededDuringFetch =
     seed?.agencyId === agencyId && seed.at >= startedAt ? seed.counts : null
   if (seededDuringFetch) return seededDuringFetch
 
-  const projectRows = (projectsRes.data ?? []) as ProjectAttentionRow[]
+  const projectRows = (projectsRes.data ?? []) as { id: string }[]
   let actionCount = 0
 
   if (projectRows.length > 0) {
-    const checklistRows = await fetchChecklistAttentionRows(projectRows.map((row) => row.id))
-    const seededAfterChecklist =
-      seed?.agencyId === agencyId && seed.at >= startedAt ? seed.counts : null
-    if (seededAfterChecklist) return seededAfterChecklist
+    const { data } = await supabase.rpc('project_derived_statuses', {
+      p_project_ids: projectRows.map((row) => row.id),
+    })
+    const seededAfter = seed?.agencyId === agencyId && seed.at >= startedAt ? seed.counts : null
+    if (seededAfter) return seededAfter
 
-    const itemsByProject = groupChecklistByProject(checklistRows)
-    const now = Date.now()
-    for (const row of projectRows) {
-      const bottleneck = findProjectBottleneck(itemsByProject.get(row.id) ?? [], row.created_at)
-      if (isActionView(toAttentionCard(row, bottleneck), now)) actionCount += 1
+    for (const row of (data ?? []) as { derived_status: string }[]) {
+      if (normalizeAgencyProjectStatus(row.derived_status) === 'action_required') {
+        actionCount += 1
+      }
     }
   }
 
-  return {
-    actionProjects: actionCount,
-    pendingSignatures: signaturesRes.error ? 0 : (signaturesRes.count ?? 0),
-    draftReminders: remindersRes.error ? 0 : (remindersRes.count ?? 0),
-  }
+  return { actionProjects: actionCount }
 }
 
 /** Single-flight + seed-aware loader for sidebar badge counts. */
@@ -220,13 +157,11 @@ export function loadNavAttentionCounts(agencyId: string): Promise<NavAttentionCo
 export function buildNavAttentionFromDashboard(args: {
   agencyId: string
   projects: ProjectCardData[]
-  checklistRows: ChecklistAttentionRow[]
-  draftReminderCount: number
+  checklistRows?: ChecklistAttentionRow[]
+  draftReminderCount?: number
 }): NavAttentionCounts {
   const counts: NavAttentionCounts = {
     actionProjects: countActionProjectsFromCards(args.projects),
-    pendingSignatures: countPendingSignatures(args.checklistRows),
-    draftReminders: args.draftReminderCount,
   }
   seedNavAttentionCounts(args.agencyId, counts)
   return counts

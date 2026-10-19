@@ -4,14 +4,21 @@ import {
   type ClientAttentionFilter,
   type ClientListSort,
 } from './clientsSearchParams'
+import {
+  normalizeAgencyProjectStatus,
+  statusColorToken,
+  type AgencyProjectStatus,
+} from './status'
 import { supabase } from './supabase'
 
 export type ClientListAttentionStatus =
+  | AgencyProjectStatus
+  | 'none'
+  // legacy
   | 'action'
   | 'waiting'
   | 'blocked'
   | 'done'
-  | 'none'
   | 'in_progress'
 
 export type ClientListRow = {
@@ -64,6 +71,10 @@ type RpcRow = {
 }
 
 function mapRow(row: RpcRow): ClientListRow {
+  const normalized =
+    row.attention_status === 'none'
+      ? 'none'
+      : normalizeAgencyProjectStatus(row.attention_status) ?? 'none'
   return {
     id: row.id,
     first_name: row.first_name,
@@ -74,7 +85,7 @@ function mapRow(row: RpcRow): ClientListRow {
     industry: row.industry,
     created_at: row.created_at,
     project_count: Number(row.project_count) || 0,
-    attention_status: (row.attention_status || 'none') as ClientListAttentionStatus,
+    attention_status: normalized,
     last_activity_at: row.last_activity_at || row.created_at,
     portal_token: row.portal_token,
   }
@@ -112,28 +123,46 @@ export async function listClients(params: ListClientsParams): Promise<ListClient
   return { rows, totalCount }
 }
 
-export const ATTENTION_STATUS_LABELS: Record<ClientListAttentionStatus, string> = {
-  action: 'À traiter',
-  waiting: 'Chez le client',
+export const ATTENTION_STATUS_LABELS: Record<string, string> = {
+  action_required: 'Action requise',
+  waiting_client: 'En attente client',
+  stalled: 'Bloqué',
+  completed: 'Terminé',
+  draft: 'Brouillon',
+  none: 'Sans projet',
+  action: 'Action requise',
+  waiting: 'En attente client',
   blocked: 'Bloqué',
   done: 'Terminé',
-  none: 'Sans projet',
-  in_progress: 'En cours',
+  in_progress: 'En attente client',
 }
 
 export function attentionBadgeVariant(
   status: ClientListAttentionStatus,
-): 'in_progress' | 'completed' | 'pending' {
-  switch (status) {
-    case 'done':
-      return 'completed'
+): 'action_required' | 'stalled' | 'waiting_client' | 'completed' | 'draft' | 'pending' {
+  const normalized =
+    status === 'none' ? null : normalizeAgencyProjectStatus(status)
+  if (!normalized) return 'pending'
+  return normalized
+}
+
+export function attentionBadgeClassName(status: ClientListAttentionStatus): string {
+  const normalized =
+    status === 'none' ? null : normalizeAgencyProjectStatus(status)
+  if (!normalized) {
+    return 'bg-[var(--status-waiting-soft)] text-[var(--status-waiting)]'
+  }
+  const token = statusColorToken(normalized)
+  switch (token) {
     case 'action':
-    case 'blocked':
-      return 'in_progress'
-    case 'waiting':
-    case 'in_progress':
-    case 'none':
+      return 'bg-[var(--status-action-soft)] text-[var(--status-action)]'
+    case 'stalled':
+      return 'bg-[var(--status-blocked-soft)] text-[var(--status-blocked)]'
+    case 'done':
+      return 'bg-[var(--status-done-soft)] text-[var(--status-done)]'
+    case 'info':
+      return 'bg-[var(--status-info-soft)] text-[var(--status-info)]'
     default:
-      return 'pending'
+      return 'bg-[var(--status-waiting-soft)] text-[var(--status-waiting)]'
   }
 }

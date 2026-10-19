@@ -29,6 +29,10 @@ export async function createProjectWithClient(opts: {
   priceEur: number | null
   items: DraftChecklistItem[]
 }): Promise<CreateProjectWithClientResult> {
+  if (!opts.items.length) {
+    throw new Error('Ajoute au moins un item de checklist.')
+  }
+
   const token = crypto.randomUUID()
   const email = opts.form.email.trim().toLowerCase()
 

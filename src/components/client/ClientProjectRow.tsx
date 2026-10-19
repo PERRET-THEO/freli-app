@@ -5,11 +5,13 @@ import {
   formatBottleneckLabel,
   isBottleneckStale,
 } from '../../lib/projectBottleneck'
+import type { AgencyProjectStatus } from '../../lib/status'
 
 export type ClientProjectListItem = {
   id: string
   clientName: string
   status: 'pending' | 'in_progress' | 'completed'
+  derivedStatus: AgencyProjectStatus
   createdAt: string
   token: string
   progress: number
@@ -56,7 +58,7 @@ export function ClientProjectRow({ project, now }: ClientProjectRowProps) {
                 : null}
             </p>
           </div>
-          <Badge variant={project.status} />
+          <Badge variant={project.derivedStatus} className="normal-case tracking-normal" />
         </div>
 
         {project.totalCount > 0 ? (

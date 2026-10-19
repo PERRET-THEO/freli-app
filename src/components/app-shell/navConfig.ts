@@ -13,7 +13,8 @@ import {
   UsersRound,
 } from 'lucide-react'
 
-export type NavBadgeKey = 'actionProjects' | 'pendingSignatures' | 'draftReminders'
+/** Seul badge actionnable : projets en `action_required`. */
+export type NavBadgeKey = 'actionProjects'
 
 export type NavDestination = {
   id: string
@@ -36,7 +37,7 @@ export const PRIMARY_NAV: NavDestination[] = [
     id: 'overview',
     label: "Vue d'ensemble",
     shortLabel: 'Accueil',
-    to: '/dashboard?view=action',
+    to: '/dashboard?view=action_required',
     icon: LayoutDashboard,
     end: true,
     badgeKey: 'actionProjects',
@@ -54,7 +55,6 @@ export const PRIMARY_NAV: NavDestination[] = [
     label: 'Contrats',
     to: '/dashboard/templates',
     icon: FilePenLine,
-    badgeKey: 'pendingSignatures',
     placement: 'primary',
   },
   {
@@ -62,7 +62,6 @@ export const PRIMARY_NAV: NavDestination[] = [
     label: 'Intégrations',
     to: '/dashboard/integrations',
     icon: Puzzle,
-    badgeKey: 'draftReminders',
     placement: 'primary',
   },
 ]

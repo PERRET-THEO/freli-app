@@ -88,6 +88,12 @@ type ProjectRecord = {
   invite_sent_at: string | null
   invite_error: string | null
   invite_last_attempt_at: string | null
+  derivedStatus?:
+    | 'action_required'
+    | 'waiting_client'
+    | 'stalled'
+    | 'completed'
+    | 'draft'
   agency_id: string
   agencies?:
     | { name: string | null; ai_reminder_max_per_project?: number | null }
@@ -214,7 +220,8 @@ export function ProjectDetail() {
       return
     }
 
-    const [{ data: logsData }, { data: activityRows }, authResult] = await Promise.all([
+    const [{ data: logsData }, { data: activityRows }, authResult, { data: derivedRows }] =
+      await Promise.all([
       supabase
         .from('project_reminder_logs')
         .select('id, source, sent_at, status')
@@ -235,9 +242,15 @@ export function ProjectDetail() {
         .order('occurred_at', { ascending: false })
         .limit(50),
       supabase.auth.getUser(),
+      supabase.rpc('project_derived_statuses', { p_project_ids: [projectData.id] }),
     ])
 
-    const record = projectData as ProjectRecord
+    const derivedStatus = (
+      (derivedRows as { derived_status?: string }[] | null)?.[0]?.derived_status ??
+      (projectData.status === 'completed' ? 'completed' : 'waiting_client')
+    ) as NonNullable<ProjectRecord['derivedStatus']>
+
+    const record = { ...(projectData as ProjectRecord), derivedStatus }
     const agenciesRel = record.agencies
     const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
     // Prefer the signed-in user for amount edits; fall back to agency name.
@@ -668,7 +681,10 @@ export function ProjectDetail() {
               />
 
               <div className="mt-5 flex items-center justify-between">
-                <Badge variant={project.status} />
+                <Badge
+                  variant={project.derivedStatus ?? project.status}
+                  className="normal-case tracking-normal"
+                />
                 <p className="text-xs font-body text-[var(--ink-muted)]">Créé le {createdAtLabel}</p>
               </div>
 

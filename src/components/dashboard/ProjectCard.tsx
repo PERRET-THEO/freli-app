@@ -50,14 +50,8 @@ export function ProjectCard({
   const segments = Math.min(totalSteps, 8)
   const completedSegments = Math.round((project.completedCount / totalSteps) * segments)
 
-  const statusInput = {
-    status: project.status,
-    completedCount: project.completedCount,
-    lastReminderSentAt: project.lastReminderSentAt,
-    now,
-  }
-  const statusLabel = getStatusLabel(statusInput)
-  const shortStatusLabel = getShortStatusLabel(statusInput)
+  const statusLabel = getStatusLabel(project)
+  const shortStatusLabel = getShortStatusLabel(project)
 
   const secondary = getSecondaryIndicator(project, pendingExtraction, now)
   const activityLabel = getActivityLabel(project, now)
@@ -84,29 +78,14 @@ export function ProjectCard({
     }
   }, [menuOpen, onMenuToggle])
 
-  const statusBadge =
-    project.status === 'in_progress' ? (
-      <span
-        className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-[var(--status-action-soft)] px-2 py-[3px] font-display text-[10px] font-extrabold uppercase tracking-wide text-[var(--status-action)]"
-        title={statusLabel}
-      >
-        <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden>
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--status-action)] opacity-75" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--status-action)]" />
-        </span>
-        <span className="truncate">
-          <span className="sm:hidden">{shortStatusLabel}</span>
-          <span className="hidden sm:inline">En cours</span>
-        </span>
+  const statusBadge = (
+    <Badge variant={project.derivedStatus} className="max-w-full truncate normal-case tracking-normal">
+      <span className="truncate" title={statusLabel}>
+        <span className="sm:hidden">{shortStatusLabel}</span>
+        <span className="hidden sm:inline">{statusLabel}</span>
       </span>
-    ) : (
-      <Badge variant={project.status} className="max-w-full truncate">
-        <span className="truncate" title={statusLabel}>
-          <span className="sm:hidden">{shortStatusLabel}</span>
-          <span className="hidden sm:inline">{statusLabel}</span>
-        </span>
-      </Badge>
-    )
+    </Badge>
+  )
 
   return (
     <div className="relative min-w-0">
@@ -245,12 +224,9 @@ export function ProjectCard({
         </div>
 
         <div className="relative z-[1] mt-4 flex flex-wrap items-center gap-2">
-          {secondary.type === 'relancer' && (
-            <span className="inline-flex items-center rounded-full bg-[var(--status-action-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--status-action)]">
-              {secondary.label}
-            </span>
-          )}
-          {secondary.type === 'extraction' && (
+          {(secondary.type === 'relancer' ||
+            secondary.type === 'extraction' ||
+            secondary.type === 'empty_checklist') && (
             <span className="inline-flex items-center rounded-full bg-[var(--status-action-soft)] px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-wide text-[var(--status-action)]">
               {secondary.label}
             </span>

@@ -17,11 +17,9 @@ import {
   DASHBOARD_SORT_LABELS,
   matchesAttentionView,
   matchesSearchQuery,
-  needsAgencyFollowUp,
   sortProjects,
   type AttentionView,
 } from '../lib/projectAttention'
-import { isBottleneckStale } from '../lib/projectBottleneck'
 import { supabase } from '../lib/supabase'
 import { Button, Card, Input } from '../components/ui'
 
@@ -106,38 +104,13 @@ export function Dashboard() {
   const hoursSavedThisMonth =
     completedThisMonth * 3 + Math.round((remindersThisMonth * 10) / 60)
 
-  const urgentProjects = projects.filter((p) => needsAgencyFollowUp(p, now))
+  const urgentProjects = projects.filter((p) => p.derivedStatus === 'action_required')
   const unreachableProjects = projects.filter((p) => p.unreachableClient === true)
   const agencyPendingProjects = projects.filter(
-    (p) =>
-      p.status !== 'completed' &&
-      p.blockingOwner === 'agency' &&
-      p.blockingSince &&
-      isBottleneckStale(
-        {
-          label: p.blockingStepLabel ?? '',
-          owner: 'agency',
-          since: p.blockingSince,
-        },
-        now,
-      ),
+    (p) => p.derivedStatus === 'action_required' && p.blockingOwner === 'agency',
   )
 
-  const staleBottleneckProjects = projects.filter(
-    (p) =>
-      p.status !== 'completed' &&
-      p.blockingStepLabel &&
-      p.blockingOwner &&
-      p.blockingSince &&
-      isBottleneckStale(
-        {
-          label: p.blockingStepLabel,
-          owner: p.blockingOwner,
-          since: p.blockingSince,
-        },
-        now,
-      ),
-  )
+  const staleBottleneckProjects = projects.filter((p) => p.derivedStatus === 'stalled')
 
   const recentAutoReminder =
     [...projects]
@@ -206,7 +179,7 @@ export function Dashboard() {
           {urgentNeedsAction > 0 ? (
             <button
               type="button"
-              onClick={() => setView('action')}
+              onClick={() => setView('action_required')}
               className="text-sm font-body font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
             >
               Voir les {urgentNeedsAction} projet{urgentNeedsAction > 1 ? 's' : ''}
@@ -225,12 +198,12 @@ export function Dashboard() {
       {staleBottleneckProjects.length > 0 ? (
         <button
           type="button"
-          onClick={() => setView('blocked')}
+          onClick={() => setView('stalled')}
           className="mt-4 w-full rounded-[var(--radius-sm)] border border-[var(--status-blocked-border)] bg-[var(--status-blocked-soft)] px-4 py-3 text-left transition hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
         >
           <p className="font-body text-sm text-[var(--status-blocked)]">
             {staleBottleneckProjects.length} projet
-            {staleBottleneckProjects.length > 1 ? 's bloqués' : ' bloqué'} depuis plus de 48 h
+            {staleBottleneckProjects.length > 1 ? 's bloqués' : ' bloqué'} au-delà du délai de relance
             {staleBottleneckProjects[0]?.blockingStepLabel
               ? ` — ex. « ${staleBottleneckProjects[0].blockingStepLabel} »`
               : ''}

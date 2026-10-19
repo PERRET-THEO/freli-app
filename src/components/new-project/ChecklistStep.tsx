@@ -56,6 +56,7 @@ export function ChecklistStep({
   onSubmit,
 }: ChecklistStepProps) {
   const hasPaymentStep = items.some((item) => item.type === 'payment')
+  const emptyChecklist = items.length === 0
 
   return (
     <div className="mt-6 min-w-0">
@@ -123,13 +124,22 @@ export function ChecklistStep({
         />
       </div>
 
+      {emptyChecklist ? (
+        <p className="mt-3 text-sm font-body text-[var(--amber)]">
+          Ajoute au moins une étape avant de créer le projet.
+        </p>
+      ) : null}
       {error ? <p className="mt-3 text-sm font-body text-[var(--amber)]">{error}</p> : null}
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row">
         <Button variant="secondary" onClick={onBack} disabled={loading}>
           ← Retour
         </Button>
-        <Button className="w-full py-4 text-base" onClick={onSubmit} disabled={loading}>
+        <Button
+          className="w-full py-4 text-base"
+          onClick={onSubmit}
+          disabled={loading || emptyChecklist}
+        >
           {loading ? 'En cours…' : submitLabel}
         </Button>
       </div>

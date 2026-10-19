@@ -21,7 +21,8 @@ export function StatusFilterBar({
   now,
   resultsId,
 }: StatusFilterBarProps) {
-  const counts = countAttentionViews(projects, now)
+  const counts = countAttentionViews(projects)
+  void now
   const radiosRef = useRef<Array<HTMLButtonElement | null>>([])
 
   const focusRadio = (index: number) => {

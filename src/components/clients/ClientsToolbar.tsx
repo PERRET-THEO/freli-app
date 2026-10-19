@@ -2,7 +2,7 @@ import { Columns3, Download, Search } from 'lucide-react'
 import type { VisibilityState } from '@tanstack/react-table'
 import {
   CLIENT_ATTENTION_FILTER_LABELS,
-  CLIENT_ATTENTION_FILTERS,
+  CLIENT_ATTENTION_FILTERS_UI,
   type ClientAttentionFilter,
 } from '../../lib/clientsSearchParams'
 import { Input } from '../ui'
@@ -124,7 +124,7 @@ export function ClientsToolbar({
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5" role="toolbar" aria-label="Filtres d’avancement">
-        {CLIENT_ATTENTION_FILTERS.map((value) => (
+        {CLIENT_ATTENTION_FILTERS_UI.map((value) => (
           <button
             key={value}
             type="button"

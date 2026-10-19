@@ -122,15 +122,23 @@ export function ClientDetail() {
     }
 
     const projectIds = rawProjects.map((p) => p.id)
-    const { data: checklistRows } = await supabase
-      .from('checklist_items')
-      .select(
-        'id, project_id, label, type, completed, value, order_index, review_status, submitted_at, reviewed_at, config',
-      )
-      .in('project_id', projectIds)
-      .order('order_index', { ascending: true })
+    const [{ data: checklistRows }, { data: derivedRows }] = await Promise.all([
+      supabase
+        .from('checklist_items')
+        .select(
+          'id, project_id, label, type, completed, value, order_index, review_status, submitted_at, reviewed_at, config',
+        )
+        .in('project_id', projectIds)
+        .order('order_index', { ascending: true }),
+      supabase.rpc('project_derived_statuses', { p_project_ids: projectIds }),
+    ])
 
     if (!alive()) return
+
+    const derivedByProject = new Map<string, string>()
+    for (const row of (derivedRows ?? []) as { project_id: string; derived_status: string }[]) {
+      derivedByProject.set(row.project_id, row.derived_status)
+    }
 
     const itemsByProject = new Map<string, BottleneckItem[]>()
     const countsByProject = new Map<string, { total: number; completed: number }>()
@@ -162,10 +170,14 @@ export function ClientDetail() {
           project.status === 'completed'
             ? null
             : findProjectBottleneck(itemsByProject.get(project.id) ?? [], project.created_at)
+        const derivedStatus =
+          (derivedByProject.get(project.id) as ClientProjectListItem['derivedStatus'] | undefined) ??
+          (project.status === 'completed' ? 'completed' : 'waiting_client')
         return {
           id: project.id,
           clientName: project.name?.trim() || project.client_name,
           status: project.status,
+          derivedStatus,
           createdAt: project.created_at,
           token: project.token,
           completedCount: counts.completed,

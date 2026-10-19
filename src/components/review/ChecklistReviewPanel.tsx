@@ -95,9 +95,9 @@ function SignatureProofBlock({ proof }: { proof: SignatureProof }) {
 }
 
 const BADGE_CLASSES: Record<ReviewStatus, string> = {
-  pending: 'bg-[var(--accent-soft)] text-[var(--accent)]',
-  approved: 'bg-[var(--mint-soft)] text-[var(--mint)]',
-  rejected: 'bg-[#FEF2F2] text-[#EF4444]',
+  pending: 'bg-[var(--status-info-soft)] text-[var(--status-info)]',
+  approved: 'bg-[var(--status-done-soft)] text-[var(--status-done)]',
+  rejected: 'bg-[var(--status-action-soft)] text-[var(--status-action)]',
 }
 
 function DocumentOpenLink({ path, label }: { path: string; label: string }) {

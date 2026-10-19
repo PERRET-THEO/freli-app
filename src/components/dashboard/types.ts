@@ -1,8 +1,9 @@
 import {
   ATTENTION_VIEW_LABELS,
   ATTENTION_VIEW_SHORT_LABELS,
-  type AttentionView,
-} from '../../lib/projectAttention'
+  type AgencyProjectStatus,
+  type AttentionFilter,
+} from '../../lib/status'
 
 export type ProjectStatus = 'pending' | 'in_progress' | 'completed'
 
@@ -16,6 +17,8 @@ export type ProjectCardData = {
   clientPhone: string | null
   companyName: string | null
   status: ProjectStatus
+  /** Statut UI exclusif — source SQL `project_derived_status`. */
+  derivedStatus: AgencyProjectStatus
   token: string
   createdAt: string
   lastReminderSentAt: string | null
@@ -26,18 +29,16 @@ export type ProjectCardData = {
   totalCount: number
   progress: number
   nextStepLabel: string | null
-  /** Étape qui bloque actuellement l'onboarding (client ou revue agence). */
+  /** Étape qui bloque actuellement l'onboarding (affichage uniquement). */
   blockingStepLabel: string | null
   blockingOwner: 'client' | 'agency' | null
   blockingSince: string | null
-  /** Invitation onboarding : failed → visible dans « À traiter ». */
   inviteStatus?: 'pending' | 'sent' | 'failed' | null
-  /** Plafond de relances auto consécutives atteint → à appeler. */
   unreachableClient?: boolean
   consecutiveAutoReminders?: number
 }
 
-export type { AttentionView }
+export type AttentionView = AttentionFilter
 
 export const FILTER_LABELS = ATTENTION_VIEW_LABELS
 export const FILTER_SHORT_LABELS = ATTENTION_VIEW_SHORT_LABELS

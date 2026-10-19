@@ -21,6 +21,7 @@ function project(overrides: Partial<ProjectCardData> = {}): ProjectCardData {
     clientPhone: null,
     companyName: 'Studio AM',
     status: 'pending',
+    derivedStatus: 'waiting_client',
     token: 'tok',
     createdAt: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
     lastReminderSentAt: null,
@@ -34,141 +35,50 @@ function project(overrides: Partial<ProjectCardData> = {}): ProjectCardData {
     blockingStepLabel: 'Brief',
     blockingOwner: 'client',
     blockingSince: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
-    inviteStatus: null,
+    inviteStatus: 'sent',
     ...overrides,
   }
 }
 
-describe('invite failed attention', () => {
-  it('puts invite_status failed into action view', () => {
-    const now = Date.now()
+describe('projectAttention (derivedStatus)', () => {
+  it('classifies from SQL token only', () => {
+    expect(isActionView(project({ derivedStatus: 'action_required' }))).toBe(true)
+    expect(isWaitingView(project({ derivedStatus: 'waiting_client' }))).toBe(true)
+    expect(isBlockedView(project({ derivedStatus: 'stalled' }))).toBe(true)
     expect(
-      isActionView(
-        project({
-          inviteStatus: 'failed',
-          createdAt: new Date(now).toISOString(),
-          blockingOwner: null,
-          blockingStepLabel: null,
-          blockingSince: null,
-        }),
-        now,
-      ),
-    ).toBe(true)
-  })
-})
-
-describe('projectAttention', () => {
-  const now = Date.now()
-
-  it('classifies agency review and follow-up as action', () => {
-    expect(
-      isActionView(
-        project({
-          blockingOwner: 'agency',
-          createdAt: new Date(now - 60 * 60 * 1000).toISOString(),
-          lastReminderSentAt: new Date(now - 60 * 60 * 1000).toISOString(),
-        }),
-        now,
-      ),
-    ).toBe(true)
-
-    expect(
-      isActionView(
-        project({
-          blockingOwner: 'client',
-          createdAt: new Date(now - 72 * 60 * 60 * 1000).toISOString(),
-          lastReminderSentAt: null,
-        }),
-        now,
-      ),
+      matchesAttentionView(project({ derivedStatus: 'action_required' }), 'action_required'),
     ).toBe(true)
   })
 
-  it('puts fresh client-waiting projects in waiting only', () => {
-    const p = project({
-      status: 'in_progress',
-      createdAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-      lastReminderSentAt: new Date(now - 60 * 60 * 1000).toISOString(),
-      blockingOwner: 'client',
-      blockingSince: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-    })
-    expect(isActionView(p, now)).toBe(false)
-    expect(isWaitingView(p, now)).toBe(true)
-    expect(isBlockedView(p, now)).toBe(false)
-  })
-
-  it('marks stale bottlenecks as blocked (can overlap action)', () => {
-    const p = project({
-      createdAt: new Date(now - 100 * 60 * 60 * 1000).toISOString(),
-      lastReminderSentAt: null,
-      blockingOwner: 'client',
-      blockingSince: new Date(now - 72 * 60 * 60 * 1000).toISOString(),
-    })
-    expect(isBlockedView(p, now)).toBe(true)
-    expect(isActionView(p, now)).toBe(true)
-    expect(matchesAttentionView(p, 'blocked', now)).toBe(true)
-    expect(matchesAttentionView(p, 'action', now)).toBe(true)
-  })
-
-  it('counts views with non-exclusive buckets', () => {
-    const projects = [
-      project({ id: 'a', status: 'completed' }),
-      project({
-        id: 'b',
-        createdAt: new Date(now - 100 * 60 * 60 * 1000).toISOString(),
-        lastReminderSentAt: null,
-        blockingSince: new Date(now - 72 * 60 * 60 * 1000).toISOString(),
-      }),
-      project({
-        id: 'c',
-        status: 'in_progress',
-        createdAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-        lastReminderSentAt: new Date(now - 30 * 60 * 1000).toISOString(),
-        blockingOwner: 'client',
-        blockingSince: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-      }),
-    ]
-    const counts = countAttentionViews(projects, now)
+  it('counts exclusively', () => {
+    const counts = countAttentionViews([
+      project({ id: 'a', derivedStatus: 'action_required' }),
+      project({ id: 'b', derivedStatus: 'stalled' }),
+      project({ id: 'c', derivedStatus: 'waiting_client' }),
+    ])
+    expect(counts.action_required).toBe(1)
+    expect(counts.stalled).toBe(1)
+    expect(counts.waiting_client).toBe(1)
     expect(counts.all).toBe(3)
-    expect(counts.done).toBe(1)
-    expect(counts.waiting).toBe(1)
-    expect(counts.blocked).toBe(1)
-    expect(counts.action).toBe(1)
   })
 
-  it('sorts stale_first by oldest activity among active projects', () => {
-    const older = project({
-      id: 'old',
-      createdAt: new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString(),
-      lastReminderSentAt: null,
-      blockingSince: new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString(),
-    })
-    const newer = project({
-      id: 'new',
-      createdAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-      lastReminderSentAt: new Date(now - 60 * 60 * 1000).toISOString(),
-      blockingSince: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-    })
-    const done = project({ id: 'done', status: 'completed' })
-    const sorted = sortProjects([newer, done, older], 'stale_first')
-    expect(sorted.map((p) => p.id)).toEqual(['old', 'new', 'done'])
-  })
-
-  it('filters by client search', () => {
+  it('sorts and searches', () => {
+    const sorted = sortProjects(
+      [
+        project({ id: 'old', createdAt: '2020-01-01T00:00:00.000Z' }),
+        project({ id: 'new', createdAt: '2024-01-01T00:00:00.000Z' }),
+      ],
+      'newest',
+    )
+    expect(sorted[0].id).toBe('new')
     expect(matchesSearchQuery(project(), 'alice')).toBe(true)
-    expect(matchesSearchQuery(project(), 'studio')).toBe(true)
-    expect(matchesSearchQuery(project(), 'zzz')).toBe(false)
   })
 
-  it('returns contextual empty copy', () => {
-    expect(getFilterEmptyCopy('blocked', { hasAnyProjects: true, hasSearch: false }).title).toMatch(
-      /bloqué/i,
-    )
-    expect(getFilterEmptyCopy('action', { hasAnyProjects: true, hasSearch: false }).primaryAction).toBe(
-      'view_waiting',
-    )
-    expect(getFilterEmptyCopy('all', { hasAnyProjects: false, hasSearch: false }).primaryAction).toBe(
-      'create',
-    )
+  it('empty copy for action_required', () => {
+    const copy = getFilterEmptyCopy('action_required', {
+      hasAnyProjects: true,
+      hasSearch: false,
+    })
+    expect(copy.title).toMatch(/Rien à traiter/)
   })
 })

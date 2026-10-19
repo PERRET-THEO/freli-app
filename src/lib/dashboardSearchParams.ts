@@ -1,15 +1,18 @@
-import { parseAsString, parseAsStringEnum } from 'nuqs'
+import { createParser, parseAsString, parseAsStringEnum } from 'nuqs'
 import {
   ATTENTION_VIEWS,
   DEFAULT_ATTENTION_VIEW,
   DEFAULT_DASHBOARD_SORT,
-  type AttentionView,
+  normalizeAttentionFilter,
+  type AttentionFilter,
   type DashboardSort,
-} from './projectAttention'
+} from './status'
 
-export const attentionViewParser = parseAsStringEnum<AttentionView>([
-  ...ATTENTION_VIEWS,
-]).withDefault(DEFAULT_ATTENTION_VIEW)
+/** Accepte les nouveaux tokens et les aliases legacy (action, waiting, blocked, done). */
+export const attentionViewParser = createParser({
+  parse: (value) => normalizeAttentionFilter(value),
+  serialize: (value: AttentionFilter) => value,
+}).withDefault(DEFAULT_ATTENTION_VIEW)
 
 export const dashboardSortParser = parseAsStringEnum<DashboardSort>([
   'newest',
@@ -23,3 +26,5 @@ export const dashboardSearchParams = {
   sort: dashboardSortParser,
   q: dashboardQueryParser,
 } as const
+
+export { ATTENTION_VIEWS }

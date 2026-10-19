@@ -89,10 +89,14 @@ export function isOnboardingSettled(items: ReviewableItem[]): boolean {
 
 /** Libellé court affiché sur l'étape côté agence. */
 export function getReviewBadgeLabel(item: ReviewableItem): string | null {
-  if (!item.completed && isRejected(item)) return REVIEW_STATUS_LABELS.rejected
+  // Labels canoniques dans status.ts ; mapping local pour éviter une dépendance circulaire lourde.
+  if (!item.completed && isRejected(item)) return 'Correction demandée'
   if (!item.completed) return null
   if (!isReviewableType(item.type)) return null
-  return REVIEW_STATUS_LABELS[getReviewStatus(item)]
+  const status = getReviewStatus(item)
+  if (status === 'pending') return 'À valider'
+  if (status === 'approved') return 'Validé'
+  return 'Correction demandée'
 }
 
 export async function approveChecklistItem(itemId: string): Promise<void> {

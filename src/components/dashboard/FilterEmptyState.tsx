@@ -38,8 +38,8 @@ export function FilterEmptyState({
         ) : null}
         {copy.primaryAction === 'view_waiting' ? (
           <>
-            <Button variant="secondary" onClick={() => onViewChange('waiting')}>
-              Voir chez le client
+            <Button variant="secondary" onClick={() => onViewChange('waiting_client')}>
+              Voir en attente client
             </Button>
             <button
               type="button"
