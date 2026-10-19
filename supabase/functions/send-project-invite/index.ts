@@ -7,7 +7,9 @@ import {
   isValidProjectToken,
   type PendingChecklistItem,
 } from '../_shared/clientEmailHtml.ts'
+import { formatDisplayName, stripSireneAcronym } from '../_shared/formatPersonName.ts'
 import { getClientPendingActions } from '../_shared/clientPendingActions.ts'
+import { renderPortalWelcomeHtml } from '../_shared/portalWelcomeTemplate.ts'
 import {
   buildProjectPayload,
   fireOutgoingWebhooks,
@@ -43,8 +45,10 @@ type InviteBody = {
 type ProjectInviteRow = {
   id: string
   token: string
+  name: string | null
   client_name: string
   client_email: string
+  client_id: string | null
   agency_id: string
   status: string | null
   price: number | null
@@ -52,7 +56,22 @@ type ProjectInviteRow = {
   invite_status: string | null
   invite_attempts: number | null
   invite_last_attempt_at: string | null
-  agencies: { id?: string; name?: string } | { id?: string; name?: string }[] | null
+  agencies:
+    | {
+        id?: string
+        name?: string
+        portal_welcome_message?: string | null
+      }
+    | {
+        id?: string
+        name?: string
+        portal_welcome_message?: string | null
+      }[]
+    | null
+  clients:
+    | { first_name?: string | null; company_name?: string | null }
+    | { first_name?: string | null; company_name?: string | null }[]
+    | null
 }
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
@@ -68,6 +87,34 @@ const RESEND_COOLDOWN_MS = 30_000
 function agencyNameFrom(rel: ProjectInviteRow['agencies'], fallback: string): string {
   const row = Array.isArray(rel) ? rel[0] : rel
   return row?.name?.trim() || fallback
+}
+
+function agencyWelcomeFrom(rel: ProjectInviteRow['agencies']): string | null {
+  const row = Array.isArray(rel) ? rel[0] : rel
+  return row?.portal_welcome_message ?? null
+}
+
+function clientJoinFrom(rel: ProjectInviteRow['clients']): {
+  first_name?: string | null
+  company_name?: string | null
+} | null {
+  if (!rel) return null
+  return Array.isArray(rel) ? rel[0] ?? null : rel
+}
+
+function buildInviteWelcomeHtml(projectRow: ProjectInviteRow, agencyName: string): string {
+  const client = clientJoinFrom(projectRow.clients)
+  const firstRaw =
+    client?.first_name?.trim() ||
+    projectRow.client_name.trim().split(/\s+/)[0] ||
+    ''
+  const companyRaw = stripSireneAcronym(client?.company_name ?? '')
+  return renderPortalWelcomeHtml(agencyWelcomeFrom(projectRow.agencies), {
+    'client.prenom': formatDisplayName(firstRaw),
+    'client.entreprise': companyRaw,
+    'projet.nom': projectRow.name?.trim() || projectRow.client_name.trim() || 'votre projet',
+    'agence.nom': agencyName,
+  })
 }
 
 async function markInviteAttempt(projectId: string): Promise<void> {
@@ -120,6 +167,8 @@ async function deliverInviteEmail(opts: {
   isDev: boolean
 }): Promise<void> {
   const portalUrl = `${appUrl}/p/${opts.token}`
+  const displayClientName = formatDisplayName(opts.clientName) || opts.clientName
+  const welcomeHtml = buildInviteWelcomeHtml(opts.projectRow, opts.agencyName)
 
   if (opts.isDev) {
     console.log('MODE DEV — Email simulé pour:', opts.clientEmail, portalUrl)
@@ -130,10 +179,11 @@ async function deliverInviteEmail(opts: {
   const subject = `${opts.agencyName} vous invite à compléter votre onboarding`
   const html = buildClientOnboardingEmail({
     mode: 'invite',
-    clientName: opts.clientName,
+    clientName: displayClientName,
     agencyName: opts.agencyName,
     portalUrl,
     pendingItems: [],
+    welcomeHtml,
   })
 
   const result = await resend.emails.send({
@@ -205,7 +255,7 @@ serve(async (req) => {
     const { data: projectData, error: projectError } = await supabase
       .from('projects')
       .select(
-        'id, token, client_name, client_email, agency_id, status, price, payment_status, invite_status, invite_attempts, invite_last_attempt_at, agencies(id, name)',
+        'id, token, name, client_name, client_email, client_id, agency_id, status, price, payment_status, invite_status, invite_attempts, invite_last_attempt_at, agencies(id, name, portal_welcome_message), clients(first_name, company_name)',
       )
       .eq('id', projectId)
       .single()
@@ -232,7 +282,7 @@ serve(async (req) => {
     }
 
     const token = projectRow.token
-    const clientName = projectRow.client_name
+    const clientName = formatDisplayName(projectRow.client_name) || projectRow.client_name
     const clientEmail = projectRow.client_email
     const agencyId = projectRow.agency_id
     const agencyName = agencyNameFrom(projectRow.agencies, body.agencyName ?? 'Mon Agence')

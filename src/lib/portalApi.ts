@@ -21,6 +21,10 @@ export type PortalLoadedProject = {
   name?: string | null
   client_name: string
   client_email?: string | null
+  /** clients.first_name — pour {{client.prenom}} */
+  client_first_name?: string | null
+  /** clients.company_name — pour {{client.entreprise}} */
+  client_company_name?: string | null
   status: 'pending' | 'in_progress' | 'completed'
   agency_id?: string | null
   price?: number | null

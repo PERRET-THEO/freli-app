@@ -28,6 +28,8 @@ export type ChecklistItemConfig = {
   extractDocument?: boolean
   /** Efface le ciphertext à la validation agence (type credentials). */
   eraseSecretOnApprove?: boolean
+  /** Texte indicatif / aide affiché dans le portail (max 140 car.). */
+  placeholder?: string
 }
 
 export type CredentialsFormValues = {
@@ -52,11 +54,29 @@ export function validateCredentialsForm(values: CredentialsFormValues): string |
   return null
 }
 
+export const PLACEHOLDER_MAX_LENGTH = 140
+
 export const FIELD_PLACEHOLDERS: Partial<Record<ChecklistItemType, string>> = {
-  text: 'Décrivez votre projet, vos objectifs...',
+  text: 'Votre réponse…',
   email: 'prenom@entreprise.fr',
   phone: '06 12 34 56 78',
-  url: 'https://exemple.fr',
+  url: 'https://…',
+  file: 'PDF, PNG, JPG ou ZIP',
+}
+
+/** Placeholder effectif : config item, sinon défaut du type. */
+export function resolveFieldPlaceholder(
+  type: ChecklistItemType,
+  config?: ChecklistItemConfig | null,
+): string {
+  const custom = config?.placeholder?.trim()
+  if (custom) return custom.slice(0, PLACEHOLDER_MAX_LENGTH)
+  return FIELD_PLACEHOLDERS[type] ?? ''
+}
+
+export function normalizePlaceholderInput(raw: string): string | undefined {
+  const trimmed = raw.trim().slice(0, PLACEHOLDER_MAX_LENGTH)
+  return trimmed || undefined
 }
 
 export const FIELD_INPUT_MODES: Partial<Record<ChecklistItemType, 'email' | 'tel' | 'url'>> = {

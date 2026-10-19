@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  FIELD_PLACEHOLDERS,
   formatChoiceOptions,
   isInputType,
   isSingleLineType,
   isValidHttpUrl,
   normalizeClientAnswer,
+  normalizePlaceholderInput,
   normalizeUrl,
   parseChoiceOptions,
+  resolveFieldPlaceholder,
   validateClientAnswer,
 } from './checklistFields'
 
@@ -123,5 +126,24 @@ describe('normalizeClientAnswer', () => {
 
   it('nettoie les espaces des autres champs', () => {
     expect(normalizeClientAnswer('text', '  bonjour  ')).toBe('bonjour')
+  })
+})
+
+describe('resolveFieldPlaceholder', () => {
+  it('utilise un défaut neutre pour le texte', () => {
+    expect(FIELD_PLACEHOLDERS.text).toBe('Votre réponse…')
+    expect(resolveFieldPlaceholder('text')).toBe('Votre réponse…')
+  })
+
+  it('préfère le placeholder de config', () => {
+    expect(
+      resolveFieldPlaceholder('text', {
+        placeholder: 'Décrivez votre projet, vos objectifs…',
+      }),
+    ).toBe('Décrivez votre projet, vos objectifs…')
+  })
+
+  it('limite à 140 caractères', () => {
+    expect(normalizePlaceholderInput('x'.repeat(200))?.length).toBe(140)
   })
 })

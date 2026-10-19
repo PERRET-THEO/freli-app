@@ -17,19 +17,70 @@ export const DEFAULT_PORTAL_WELCOME =
 
 export const DEFAULT_PORTAL_HELP_TITLE = 'Besoin d’aide ?'
 
-const TOKEN_RE = /\{\{\s*([a-z.]+)\s*\}\}/gi
+/** `{{key}}` ou `{{key|texte de repli}}` */
+const TOKEN_RE = /\{\{\s*([a-z.]+)(?:\|([^}]*))?\s*\}\}/gi
 
-/** Remplace les variables ; valeurs vides → chaîne vide. Sortie texte brut (pas de HTML). */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function resolveTokenValue(
+  key: string,
+  fallback: string | undefined,
+  vars: PortalWelcomeVars,
+): string {
+  const normalized = key.trim().toLowerCase() as keyof PortalWelcomeVars
+  const raw = vars[normalized]
+  const value = (raw ?? '').trim()
+  if (value) return value
+  return (fallback ?? '').trim()
+}
+
+/** Espace fine insécable (typo FR avant ? ! : ;) */
+const NNBSP = '\u202F'
+
+function cleanupEmptyArtifacts(text: string): string {
+  return text
+    .replace(/\(\s*\)/g, '')
+    // Compacter les espaces multiples (souvent laissés par une variable vide).
+    .replace(/[^\S\n]+/g, ' ')
+    // FR : espace avant . et , → retirer ; avant ? ! : ; → NNBSP.
+    .replace(/ +([.,])/g, '$1')
+    .replace(/ +([!?:;])/g, `${NNBSP}$1`)
+    .replace(/^[ \t]+|[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    // NNBSP orpheline en tête/fin (ex. « {{var}} ! » → « ! »).
+    .replace(new RegExp(`^${NNBSP}+|${NNBSP}+$`, 'g'), '')
+}
+
+/**
+ * Remplace les variables ; valeur vide → repli `|…` puis nettoyage.
+ * Sortie texte brut (pas de HTML).
+ */
 export function renderPortalWelcome(
   template: string | null | undefined,
   vars: PortalWelcomeVars,
 ): string {
   const source = (template ?? '').trim() || DEFAULT_PORTAL_WELCOME
-  return source.replace(TOKEN_RE, (_match, key: string) => {
-    const normalized = key.trim().toLowerCase() as keyof PortalWelcomeVars
-    const value = vars[normalized]
-    return (value ?? '').trim()
-  })
+  const replaced = source.replace(TOKEN_RE, (_match, key: string, fallback?: string) =>
+    resolveTokenValue(key, fallback, vars),
+  )
+  return cleanupEmptyArtifacts(replaced)
+}
+
+/**
+ * Pour emails HTML : rend en texte, échappe le résultat, puis `\n` → `<br>`.
+ */
+export function renderPortalWelcomeHtml(
+  template: string | null | undefined,
+  vars: PortalWelcomeVars,
+): string {
+  return escapeHtml(renderPortalWelcome(template, vars)).replace(/\n/g, '<br>')
 }
 
 export function insertWelcomeVariable(template: string, token: string, cursor?: number): string {

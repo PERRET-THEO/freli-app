@@ -4,7 +4,12 @@ import {
   type VisibilityCondition,
 } from './checklistConditions'
 import { buildPendingTemplateContractValue } from './contractSignatureValue'
-import { isValidHttpUrl, normalizeUrl, type ChecklistItemConfig } from './checklistFields'
+import {
+  isValidHttpUrl,
+  normalizePlaceholderInput,
+  normalizeUrl,
+  type ChecklistItemConfig,
+} from './checklistFields'
 import { formatEuro } from './payments'
 import { isFreliPortalUrl } from './scheduleEmbed'
 
@@ -31,6 +36,8 @@ export type DraftChecklistItem = {
   contractBrief?: string
   choiceOptions?: string[]
   scheduleUrl?: string
+  /** Texte indicatif / aide (portail), optionnel. */
+  placeholder?: string
   /** Efface le ciphertext à la validation agence. */
   eraseSecretOnApprove?: boolean
   /** Affiche l'étape uniquement si la condition est remplie. */
@@ -74,7 +81,28 @@ export type BuiltinTemplateKey =
   | 'photoVideo'
   | 'general'
 
-type TemplateItemSeed = { label: string; type: ChecklistItemType }
+type TemplateItemSeed = {
+  label: string
+  type: ChecklistItemType
+  placeholder?: string
+}
+
+/** Placeholders spécifiques aux libellés des modèles builtins (et migration legacy). */
+export const BUILTIN_LABEL_PLACEHOLDERS: Record<string, string> = {
+  Brief: 'Décrivez votre projet, vos objectifs…',
+  'Brief technique': 'Décrivez le besoin technique, stack et contraintes…',
+  'Brief créatif': 'Décrivez l’ambiance, les références et le message…',
+  'Brief détaillé': 'Décrivez votre projet, vos objectifs…',
+  'Formulaire de brief rempli': 'Résumez les réponses clés du brief…',
+  'Contenu pages': 'Listez les pages souhaitées et leur contenu…',
+  'Nom de domaine actuel': 'exemple.fr',
+  Spécifications: 'Listez les fonctionnalités et contraintes…',
+  'Formats souhaités': 'Ex. logo SVG, charte PDF, déclinaisons…',
+  'Objectifs de la mission': 'Quels résultats attendez-vous ?',
+  'Interlocuteur principal': 'Prénom Nom',
+  'Moyens de paiement souhaités': 'Ex. CB, virement, PayPal…',
+  'Lieu & date de tournage': 'Ville, adresse, date et créneau…',
+}
 
 export const BUILTIN_TEMPLATES: Record<
   BuiltinTemplateKey,
@@ -83,31 +111,55 @@ export const BUILTIN_TEMPLATES: Record<
   website: {
     label: 'Site web',
     items: [
-      { label: 'Brief', type: 'text' },
+      { label: 'Brief', type: 'text', placeholder: BUILTIN_LABEL_PLACEHOLDERS.Brief },
       { label: 'Logo', type: 'file' },
-      { label: 'Nom de domaine actuel', type: 'url' },
+      {
+        label: 'Nom de domaine actuel',
+        type: 'url',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Nom de domaine actuel'],
+      },
       { label: 'Accès hébergeur', type: 'credentials' },
       { label: 'Contrat', type: 'signature' },
-      { label: 'Contenu pages', type: 'text' },
+      {
+        label: 'Contenu pages',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Contenu pages'],
+      },
     ],
   },
   mobile: {
     label: 'Application mobile',
     items: [
-      { label: 'Brief technique', type: 'text' },
+      {
+        label: 'Brief technique',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Brief technique'],
+      },
       { label: 'Charte UI', type: 'file' },
       { label: 'Comptes stores', type: 'credentials' },
       { label: 'Contrat', type: 'signature' },
-      { label: 'Spécifications', type: 'text' },
+      {
+        label: 'Spécifications',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS.Spécifications,
+      },
     ],
   },
   branding: {
     label: 'Identité visuelle',
     items: [
-      { label: 'Brief créatif', type: 'text' },
+      {
+        label: 'Brief créatif',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Brief créatif'],
+      },
       { label: 'Références visuelles', type: 'file' },
       { label: 'Contrat', type: 'signature' },
-      { label: 'Formats souhaités', type: 'text' },
+      {
+        label: 'Formats souhaités',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Formats souhaités'],
+      },
     ],
   },
   ecommerce: {
@@ -116,7 +168,11 @@ export const BUILTIN_TEMPLATES: Record<
       { label: 'Catalogue produits', type: 'file' },
       { label: 'Logo & charte', type: 'file' },
       { label: 'Accès plateforme (Shopify, etc.)', type: 'credentials' },
-      { label: 'Moyens de paiement souhaités', type: 'text' },
+      {
+        label: 'Moyens de paiement souhaités',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Moyens de paiement souhaités'],
+      },
       { label: 'Contrat', type: 'signature' },
     ],
   },
@@ -124,9 +180,17 @@ export const BUILTIN_TEMPLATES: Record<
     label: 'Conseil / Prestation',
     items: [
       { label: 'Cahier des charges', type: 'file' },
-      { label: 'Objectifs de la mission', type: 'text' },
+      {
+        label: 'Objectifs de la mission',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Objectifs de la mission'],
+      },
       { label: 'Devis validé', type: 'signature' },
-      { label: 'Interlocuteur principal', type: 'text' },
+      {
+        label: 'Interlocuteur principal',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Interlocuteur principal'],
+      },
       { label: 'Email de l’interlocuteur', type: 'email' },
       { label: 'Téléphone de l’interlocuteur', type: 'phone' },
     ],
@@ -134,19 +198,35 @@ export const BUILTIN_TEMPLATES: Record<
   photoVideo: {
     label: 'Photo / Vidéo',
     items: [
-      { label: 'Brief créatif', type: 'text' },
+      {
+        label: 'Brief créatif',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Brief créatif'],
+      },
       { label: 'Références / moodboard', type: 'file' },
-      { label: 'Lieu & date de tournage', type: 'text' },
+      {
+        label: 'Lieu & date de tournage',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Lieu & date de tournage'],
+      },
       { label: 'Autorisation de droit à l\u2019image', type: 'signature' },
     ],
   },
   general: {
     label: 'Général',
     items: [
-      { label: 'Formulaire de brief rempli', type: 'text' },
+      {
+        label: 'Formulaire de brief rempli',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Formulaire de brief rempli'],
+      },
       { label: 'Logo & charte graphique', type: 'file' },
       { label: 'Contrat signé', type: 'signature' },
-      { label: 'Brief détaillé', type: 'text' },
+      {
+        label: 'Brief détaillé',
+        type: 'text',
+        placeholder: BUILTIN_LABEL_PLACEHOLDERS['Brief détaillé'],
+      },
     ],
   },
 }
@@ -159,6 +239,7 @@ type DraftOverrides = Partial<
     | 'contractBrief'
     | 'choiceOptions'
     | 'scheduleUrl'
+    | 'placeholder'
     | 'eraseSecretOnApprove'
     | 'visibleWhen'
   >
@@ -193,11 +274,17 @@ export function createDraftItem(
 }
 
 export function buildItemsFromSeeds(seeds: TemplateItemSeed[]): DraftChecklistItem[] {
-  return seeds.map((seed) =>
-    seed.type === 'signature'
-      ? createDraftItem(seed.label, seed.type, { contractSource: 'default' })
-      : createDraftItem(seed.label, seed.type),
-  )
+  return seeds.map((seed) => {
+    const placeholder =
+      seed.placeholder ?? BUILTIN_LABEL_PLACEHOLDERS[seed.label]
+    const overrides: DraftOverrides =
+      seed.type === 'signature'
+        ? { contractSource: 'default', ...(placeholder ? { placeholder } : {}) }
+        : placeholder
+          ? { placeholder }
+          : {}
+    return createDraftItem(seed.label, seed.type, overrides)
+  })
 }
 
 export function duplicateItem(item: DraftChecklistItem): DraftChecklistItem {
@@ -469,6 +556,9 @@ export function buildChecklistItemConfig(
     config.eraseSecretOnApprove = true
   }
 
+  const placeholder = normalizePlaceholderInput(item.placeholder ?? '')
+  if (placeholder) config.placeholder = placeholder
+
   const visibleWhen = toStoredCondition(item, siblings)
   if (visibleWhen) config.visibleWhen = visibleWhen
 
@@ -479,11 +569,28 @@ export function buildChecklistItemConfig(
 export function readChecklistItemConfig(
   type: ChecklistItemType,
   config: ChecklistItemConfig | null | undefined,
-): Pick<DraftChecklistItem, 'choiceOptions' | 'scheduleUrl' | 'eraseSecretOnApprove'> {
-  if (type === 'choice') return { choiceOptions: config?.choiceOptions ?? [] }
-  if (type === 'schedule') return { scheduleUrl: config?.scheduleUrl ?? '' }
-  if (type === 'credentials') {
-    return { eraseSecretOnApprove: Boolean(config?.eraseSecretOnApprove) }
+): Pick<
+  DraftChecklistItem,
+  'choiceOptions' | 'scheduleUrl' | 'eraseSecretOnApprove' | 'placeholder'
+> {
+  const withPlaceholder = (
+    base: Pick<DraftChecklistItem, 'choiceOptions' | 'scheduleUrl' | 'eraseSecretOnApprove'>,
+  ) => {
+    const placeholder = config?.placeholder?.trim()
+    return placeholder ? { ...base, placeholder } : base
   }
-  return {}
+
+  if (type === 'choice') {
+    return withPlaceholder({ choiceOptions: config?.choiceOptions ?? [] })
+  }
+  if (type === 'schedule') {
+    return withPlaceholder({ scheduleUrl: config?.scheduleUrl ?? '' })
+  }
+  if (type === 'credentials') {
+    return withPlaceholder({
+      eraseSecretOnApprove: Boolean(config?.eraseSecretOnApprove),
+    })
+  }
+  const placeholder = config?.placeholder?.trim()
+  return placeholder ? { placeholder } : {}
 }

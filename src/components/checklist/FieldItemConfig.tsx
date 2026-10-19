@@ -1,12 +1,17 @@
 import { Input } from '../ui'
 import type { DraftChecklistItem } from '../../lib/checklist'
 import {
+  FIELD_PLACEHOLDERS,
   formatChoiceOptions,
   isValidHttpUrl,
+  normalizePlaceholderInput,
   parseChoiceOptions,
+  PLACEHOLDER_MAX_LENGTH,
 } from '../../lib/checklistFields'
 import { formatEuro } from '../../lib/payments'
 import { isFreliPortalUrl } from '../../lib/scheduleEmbed'
+
+const PLACEHOLDER_TYPES = new Set(['text', 'email', 'phone', 'url', 'file'])
 
 type FieldItemConfigProps = {
   item: DraftChecklistItem
@@ -116,6 +121,35 @@ export function FieldItemConfig({ item, priceEur, onChange }: FieldItemConfigPro
             </span>
           </span>
         </label>
+      </div>
+    )
+  }
+
+  if (PLACEHOLDER_TYPES.has(item.type)) {
+    const typeDefault = FIELD_PLACEHOLDERS[item.type] ?? ''
+    return (
+      <div className="mt-3 border-t border-[var(--border)] pt-3">
+        <label className="text-xs font-body font-medium text-[var(--ink-soft)]">
+          Texte indicatif / aide (optionnel)
+        </label>
+        <Input
+          className="mt-1.5"
+          value={item.placeholder ?? ''}
+          maxLength={PLACEHOLDER_MAX_LENGTH}
+          placeholder={typeDefault}
+          onChange={(event) => {
+            const raw = event.target.value.slice(0, PLACEHOLDER_MAX_LENGTH)
+            onChange({ placeholder: raw.length ? raw : undefined })
+          }}
+          onBlur={() => {
+            const normalized = normalizePlaceholderInput(item.placeholder ?? '')
+            if (normalized !== item.placeholder) onChange({ placeholder: normalized })
+          }}
+        />
+        <p className={hintCls}>
+          Affiché dans le portail client. Max {PLACEHOLDER_MAX_LENGTH} caractères.
+          {typeDefault ? ` Défaut du type : « ${typeDefault} ».` : ''}
+        </p>
       </div>
     )
   }

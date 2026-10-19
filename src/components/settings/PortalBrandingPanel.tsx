@@ -140,7 +140,8 @@ export function PortalBrandingPanel({
         />
         <p className="mt-1 break-all text-xs font-body text-[var(--ink-muted)]">
           Variables : {'{{client.prenom}}'}, {'{{client.entreprise}}'}, {'{{projet.nom}}'},{' '}
-          {'{{agence.nom}}'}
+          {'{{agence.nom}}'}. Repli : {'{{client.entreprise|votre entreprise}}'}. Les retours à
+          la ligne sont conservés.
         </p>
       </div>
       <BrandColorPicker value={brandColor} onChange={onBrandColorChange} />

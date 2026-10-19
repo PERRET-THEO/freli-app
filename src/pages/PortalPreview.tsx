@@ -108,9 +108,14 @@ export function PortalPreview() {
                   {agencyInitials(agencyName)}
                 </div>
               )}
-              <span className="hidden font-display text-sm font-bold text-[var(--ink)] sm:block">
-                Client exemple
-              </span>
+              <div className="hidden min-w-0 sm:block">
+                <p className="truncate font-display text-sm font-bold text-[var(--ink)]">
+                  {agencyName}
+                </p>
+                <p className="truncate font-body text-xs text-[var(--ink-muted)]">
+                  Site vitrine
+                </p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <span className="font-body text-xs font-medium text-[var(--ink-muted)]">33%</span>
@@ -140,7 +145,9 @@ export function PortalPreview() {
             {data.tagline ? (
               <p className="mt-1 font-body text-sm text-[var(--ink-muted)]">{data.tagline}</p>
             ) : null}
-            <p className="mt-2 font-body text-sm text-[var(--ink-muted)]">{welcomeMessage}</p>
+            <p className="mt-2 whitespace-pre-line font-body text-sm text-[var(--ink-muted)]">
+              {welcomeMessage}
+            </p>
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <button
                 type="button"

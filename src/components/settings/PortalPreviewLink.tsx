@@ -108,16 +108,23 @@ export function PortalPreviewLink({
                 {agencyInitials(data.name)}
               </div>
             )}
-            <span className="truncate text-xs font-display font-semibold text-[var(--ink)]">
-              {data.name || 'Mon agence'}
-            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-display font-semibold text-[var(--ink)]">
+                {data.name || 'Mon agence'}
+              </p>
+              <p className="truncate text-[10px] font-body text-[var(--ink-muted)]">
+                {projectNameExample}
+              </p>
+            </div>
           </div>
           <div className="p-3">
             <p className="font-display text-sm font-bold text-[var(--ink)]">Bonjour Client !</p>
             {data.tagline ? (
               <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">{data.tagline}</p>
             ) : null}
-            <p className="mt-2 text-[11px] leading-relaxed text-[var(--ink-soft)]">{welcome}</p>
+            <p className="mt-2 whitespace-pre-line text-[11px] leading-relaxed text-[var(--ink-soft)]">
+              {welcome}
+            </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <div
                 className="inline-block rounded-full px-3 py-1 text-[11px] font-medium"

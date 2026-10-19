@@ -36,6 +36,7 @@ import {
 } from '../lib/payments'
 import { normalizeBrandColor, DEFAULT_BRAND_COLOR } from '../lib/agencyBranding'
 import { agencyInitials, portalThemeStyle } from '../lib/portalTheme'
+import { formatDisplayName, stripSireneAcronym } from '../lib/formatPersonName'
 import {
   DEFAULT_PORTAL_HELP_TITLE,
   renderPortalWelcome,
@@ -52,10 +53,10 @@ import {
 import type { ChecklistItemType } from '../lib/checklist'
 import {
   FIELD_INPUT_MODES,
-  FIELD_PLACEHOLDERS,
   isInputType,
   isSingleLineType,
   normalizeClientAnswer,
+  resolveFieldPlaceholder,
   validateClientAnswer,
   validateCredentialsForm,
   type ChecklistItemConfig,
@@ -96,8 +97,11 @@ type AgencyPortalRelation = {
 
 type ProjectRecord = {
   id: string
+  name?: string | null
   client_name: string
   client_email?: string | null
+  client_first_name?: string | null
+  client_company_name?: string | null
   status: 'pending' | 'in_progress' | 'completed'
   token: string
   agency_id?: string | null
@@ -264,11 +268,19 @@ export function ClientPortal() {
 
   const brandColor = normalizeBrandColor(agencyRelation?.brand_color ?? DEFAULT_BRAND_COLOR)
 
-  const clientFirstName = (project?.client_name ?? '').trim().split(/\s+/)[0] || ''
+  const clientDisplayName = formatDisplayName(project?.client_name ?? '')
+  const clientFirstNameRaw =
+    project?.client_first_name?.trim() ||
+    (project?.client_name ?? '').trim().split(/\s+/)[0] ||
+    ''
+  const clientFirstName = formatDisplayName(clientFirstNameRaw)
+  const clientCompanyDisplay = stripSireneAcronym(project?.client_company_name ?? '')
+  const projectDisplayName =
+    project?.name?.trim() || project?.client_name?.trim() || 'votre projet'
   const portalWelcomeMessage = renderPortalWelcome(agencyRelation?.portal_welcome_message, {
     'client.prenom': clientFirstName,
-    'client.entreprise': '',
-    'projet.nom': project?.client_name?.trim() || 'votre projet',
+    'client.entreprise': clientCompanyDisplay,
+    'projet.nom': projectDisplayName,
     'agence.nom': agencyRelation?.name ?? 'votre agence',
   })
 
@@ -938,9 +950,14 @@ export function ClientPortal() {
                 {agencyInitials(agencyName)}
               </div>
             )}
-            <span className="hidden font-display text-sm font-bold text-[var(--ink)] sm:block">
-              {project.client_name}
-            </span>
+            <div className="hidden min-w-0 sm:block">
+              <p className="truncate font-display text-sm font-bold text-[var(--ink)]">
+                {agencyName}
+              </p>
+              <p className="truncate font-body text-xs text-[var(--ink-muted)]">
+                {projectDisplayName}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <span className="font-body text-xs font-medium text-[var(--ink-muted)]">{progressPercent}%</span>
@@ -985,7 +1002,7 @@ export function ClientPortal() {
 
         {showHero && !isCompleted && (
           <PortalWelcomeHero
-            clientName={project.client_name}
+            clientName={clientDisplayName || project.client_name}
             agencyName={agencyName}
             agencyTagline={agencyTagline}
             portalWelcomeMessage={portalWelcomeMessage}
@@ -997,7 +1014,7 @@ export function ClientPortal() {
 
         {isCompleted && (
           <PortalCompletedState
-            clientName={project.client_name}
+            clientName={clientDisplayName || project.client_name}
             agencyName={agencyName}
             items={visibleItems}
             paymentLifecycle={paymentLifecycle}
@@ -1101,14 +1118,14 @@ export function ClientPortal() {
                             type="text"
                             inputMode={FIELD_INPUT_MODES[item.type]}
                             className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-base text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)] transition-all"
-                            placeholder={FIELD_PLACEHOLDERS[item.type]}
+                            placeholder={resolveFieldPlaceholder(item.type, item.config)}
                             value={textValues[item.id] ?? ''}
                             onChange={(e) => handleFieldChange(item.id, e.target.value)}
                           />
                         ) : (
                           <textarea
                             className="min-h-28 w-full resize-y rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-4 py-3 font-body text-base text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)] transition-all"
-                            placeholder={FIELD_PLACEHOLDERS.text}
+                            placeholder={resolveFieldPlaceholder(item.type, item.config)}
                             value={textValues[item.id] ?? ''}
                             onChange={(e) => handleFieldChange(item.id, e.target.value)}
                           />
@@ -1263,7 +1280,12 @@ export function ClientPortal() {
                         <label className="flex cursor-pointer flex-col items-center gap-2 rounded-[var(--radius-md)] border-2 border-dashed border-[var(--accent)]/40 bg-[var(--accent-soft)]/30 p-8 text-center transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]/50">
                           <span className="text-3xl">📎</span>
                           <span className="font-body text-sm font-medium text-[var(--ink)]">{isSaving ? 'Upload en cours...' : 'Glissez votre fichier ici'}</span>
-                          <span className="font-body text-xs text-[var(--ink-muted)]">ou cliquez pour parcourir — PDF, PNG, JPG, ZIP (max 10 Mo)</span>
+                          <span className="font-body text-xs text-[var(--ink-muted)]">
+                            ou cliquez pour parcourir —{' '}
+                            {resolveFieldPlaceholder('file', item.config) ||
+                              'PDF, PNG, JPG ou ZIP'}{' '}
+                            (max 10 Mo)
+                          </span>
                           <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.zip" onChange={(e) => handleFileUpload(item.id, e.target.files?.[0] ?? null)} disabled={isSaving} />
                         </label>
                       </div>
@@ -1391,7 +1413,7 @@ export function ClientPortal() {
         portalAvailability={portalAvailability}
         agencyContactEmail={agencyContactEmail}
         agencyContactPhone={agencyContactPhone}
-        projectName={project.client_name}
+        projectName={projectDisplayName}
       />
 
       {signingItemId && project && (

@@ -155,10 +155,15 @@ export function buildClientOnboardingEmail(params: {
   agencyName: string
   portalUrl: string
   pendingItems?: PendingChecklistItem[]
+  /** Message d’accueil déjà rendu HTML (valeurs échappées, newlines en br). */
+  welcomeHtml?: string | null
 }): string {
   const name = escapeHtml(params.clientName)
   const agency = escapeHtml(params.agencyName)
   const url = escapeHtml(params.portalUrl)
+  const welcomeBlock = params.welcomeHtml?.trim()
+    ? `<p style="font-family:'DM Sans',Arial,sans-serif;font-size:14px;color:#4A4D5C;line-height:1.75;margin:0 0 28px;padding:16px 18px;background:#F5F4F0;border-radius:16px;border:1px solid #E8E6DF;">${params.welcomeHtml}</p>`
+    : ''
 
   if (params.mode === 'reminder') {
     const pendingItems = params.pendingItems ?? []
@@ -186,10 +191,11 @@ ${pendingItemsBlock(pendingItems)}`
   }
 
   const body = `
-<p style="font-family:'DM Sans',Arial,sans-serif;font-size:15px;color:#4A4D5C;line-height:1.85;margin:0 0 36px;">
+<p style="font-family:'DM Sans',Arial,sans-serif;font-size:15px;color:#4A4D5C;line-height:1.85;margin:0 0 24px;">
 Bonjour <strong style="color:#1C1F2A;">${name}</strong>,<br><br>
 <strong style="color:#1C1F2A;">${agency}</strong> vous a préparé un espace d'onboarding. Cliquez ci-dessous pour accéder à votre checklist et compléter les informations demandées.
 </p>
+${welcomeBlock}
 ${CLIENT_FEATURES_BLOCK}`
 
   return emailShell(

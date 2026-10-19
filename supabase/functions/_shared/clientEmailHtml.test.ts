@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 ;(globalThis as { Deno?: unknown }).Deno ??= { env: { get: () => undefined } }
 
 const { buildClientOnboardingEmail, buildWaitlistConfirmationEmail, isValidProjectToken } = await import('./clientEmailHtml.ts')
+const { renderPortalWelcomeHtml } = await import('./portalWelcomeTemplate.ts')
+const { formatDisplayName, stripSireneAcronym } = await import('./formatPersonName.ts')
 
 const BASE = {
   clientName: 'Marie Dupont',
@@ -87,6 +89,34 @@ describe('buildClientOnboardingEmail — invitation', () => {
       mode: 'invite',
     })
     expect(html).toContain('Marie &amp; Co &lt;b&gt;')
+  })
+
+  it('inclut le message d’accueil avec entreprise échappée', () => {
+    const welcomeHtml = renderPortalWelcomeHtml(
+      'Bonjour {{client.prenom}}\nEntreprise : {{client.entreprise}}',
+      {
+        'client.prenom': formatDisplayName('MARIE CLAIRE DE SOUSA'),
+        'client.entreprise': stripSireneAcronym('Acme <b>Corp</b> (AC)'),
+      },
+    )
+    expect(welcomeHtml).toContain('Marie Claire de Sousa')
+    expect(welcomeHtml).toContain('Acme &lt;b&gt;Corp&lt;/b&gt;')
+    expect(welcomeHtml).not.toContain('<b>Corp</b>')
+    expect(welcomeHtml).toContain('<br>')
+
+    const html = buildClientOnboardingEmail({
+      ...BASE,
+      mode: 'invite',
+      welcomeHtml,
+    })
+    expect(html).toContain('Acme &lt;b&gt;Corp&lt;/b&gt;')
+    expect(html).toContain('Marie Claire de Sousa')
+  })
+})
+
+describe('formatDisplayName / stripSireneAcronym (email)', () => {
+  it('ne reformate pas une raison sociale', () => {
+    expect(stripSireneAcronym('HEPPNER EN FOREZ')).toBe('HEPPNER EN FOREZ')
   })
 })
 

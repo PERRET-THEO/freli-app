@@ -32,7 +32,9 @@ export function PortalWelcomeHero({
       {agencyTagline ? (
         <p className="mt-1 font-body text-sm text-[var(--ink-muted)]">{agencyTagline}</p>
       ) : null}
-      <p className="mt-2 font-body text-sm text-[var(--ink-muted)]">{portalWelcomeMessage}</p>
+      <p className="mt-2 whitespace-pre-line font-body text-sm text-[var(--ink-muted)]">
+        {portalWelcomeMessage}
+      </p>
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <Button className="w-full sm:w-auto" onClick={onStart}>
           Commencer →

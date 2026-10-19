@@ -126,6 +126,20 @@ describe('buildChecklistItemConfig / readChecklistItemConfig', () => {
     })
   })
 
+  it('sérialise le placeholder optionnel', () => {
+    const item = createDraftItem('Brief', 'text', {
+      placeholder: 'Décrivez votre projet, vos objectifs…',
+    })
+    expect(buildChecklistItemConfig(item)).toEqual({
+      placeholder: 'Décrivez votre projet, vos objectifs…',
+    })
+    expect(
+      readChecklistItemConfig('text', {
+        placeholder: 'Décrivez votre projet, vos objectifs…',
+      }),
+    ).toEqual({ placeholder: 'Décrivez votre projet, vos objectifs…' })
+  })
+
   it('relit la config vers les champs de brouillon', () => {
     expect(readChecklistItemConfig('choice', { choiceOptions: ['A', 'B'] })).toEqual({
       choiceOptions: ['A', 'B'],

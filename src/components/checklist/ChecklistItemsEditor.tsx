@@ -133,6 +133,7 @@ export function ChecklistItemsEditor({
                       contractBrief: undefined,
                       choiceOptions: undefined,
                       scheduleUrl: undefined,
+                      placeholder: undefined,
                     } satisfies Partial<DraftChecklistItem>
 
                     if (nextType === 'signature') {
