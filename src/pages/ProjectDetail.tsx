@@ -171,6 +171,7 @@ export function ProjectDetail() {
   const [inviteRetryAfterMs, setInviteRetryAfterMs] = useState<number | null>(null)
   const [inviteResendCount24h, setInviteResendCount24h] = useState(0)
   const [hasManualResend, setHasManualResend] = useState(false)
+  const [resendModalError, setResendModalError] = useState<string | null>(null)
   const [editingPrice, setEditingPrice] = useState(false)
   const [priceDraft, setPriceDraft] = useState('')
   const [resendPaymentEmail, setResendPaymentEmail] = useState(true)
@@ -653,10 +654,11 @@ export function ProjectDetail() {
         inviteGate.reason === 'sending'
           ? "Invitation en cours d'envoi…"
           : formatRetryAfterMessage(inviteGate.retryAfterMs ?? 60_000)
-      setInviteFeedback(msg)
+      setResendModalError(msg)
       return
     }
     setResendingInvite(true)
+    setResendModalError(null)
     setInviteFeedback(null)
     try {
       const result = await sendProjectInviteEmail({
@@ -665,17 +667,19 @@ export function ProjectDetail() {
         clientEmail: email,
       })
       setShowResendInviteModal(false)
+      setResendModalError(null)
       setInviteRetryAfterMs(null)
       setHasManualResend(true)
       setInviteToast(`Invitation renvoyée à ${result.recipient ?? email}`)
       window.setTimeout(() => setInviteToast(null), 3000)
       await loadProject()
     } catch (err) {
+      // Garder la modale ouverte pour corriger l'email / attendre le cooldown.
       if (err instanceof InviteRateLimitError) {
         setInviteRetryAfterMs(err.retryAfterMs)
-        setInviteFeedback(err.message)
+        setResendModalError(err.message)
       } else {
-        setInviteFeedback(err instanceof Error ? err.message : 'Renvoi impossible.')
+        setResendModalError(err instanceof Error ? err.message : 'Renvoi impossible.')
       }
     } finally {
       setResendingInvite(false)
@@ -774,7 +778,10 @@ export function ProjectDetail() {
                             ? formatRetryAfterMessage(60_000)
                             : undefined
                       }
-                      onClick={() => setShowResendInviteModal(true)}
+                      onClick={() => {
+                        setResendModalError(null)
+                        setShowResendInviteModal(true)
+                      }}
                       disabled={resendingInvite || !inviteGate.ok}
                     >
                       Renvoyer l&apos;invitation
@@ -1247,7 +1254,18 @@ export function ProjectDetail() {
           email={project.client_email}
           hasClientRecord={Boolean(project.client_id)}
           submitting={resendingInvite}
-          onClose={() => setShowResendInviteModal(false)}
+          error={resendModalError}
+          confirmDisabled={!inviteGate.ok}
+          disabledTitle={
+            !inviteGate.ok
+              ? formatRetryAfterMessage(inviteGate.retryAfterMs ?? 60_000)
+              : undefined
+          }
+          onClose={() => {
+            setShowResendInviteModal(false)
+            setResendModalError(null)
+          }}
+          onClearError={() => setResendModalError(null)}
           onConfirm={(email) => void handleConfirmResendInvite(email)}
         />
       ) : null}

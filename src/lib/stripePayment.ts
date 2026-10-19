@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { edgeFunctionErrorMessage, readEdgeFunctionError } from './edgeFunctionError'
 
 export type PaymentLinkResult = {
   checkoutUrl: string
@@ -13,7 +14,10 @@ export async function sendPaymentLink(
   const { data, error } = await supabase.functions.invoke('stripe-payment-link', {
     body: { projectId, sendEmail },
   })
-  if (error) throw new Error(error.message)
-  if (data?.error) throw new Error(String(data.error))
+  if (error) {
+    const parsed = await readEdgeFunctionError(error, data)
+    throw new Error(edgeFunctionErrorMessage(parsed))
+  }
+  if (data?.error) throw new Error(String(data.message ?? data.error))
   return { checkoutUrl: data.checkoutUrl, emailSent: Boolean(data.emailSent) }
 }
