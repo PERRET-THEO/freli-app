@@ -64,10 +64,20 @@ export function ClientRecordHeader({
             size="lg"
           />
           <div className="min-w-0">
-            <h1 className="truncate font-display text-xl font-bold tracking-tight text-[var(--ink)] sm:text-2xl">
+            <h1
+              className="line-clamp-2 font-display text-xl font-bold tracking-tight text-[var(--ink)] sm:text-2xl"
+              title={displayName}
+            >
               {displayName}
             </h1>
-            <p className="mt-0.5 truncate text-sm font-body text-[var(--ink-muted)]">
+            <p
+              className="mt-0.5 line-clamp-2 break-words text-sm font-body text-[var(--ink-muted)]"
+              title={
+                [client.company_name, client.siret ? `SIRET ${client.siret}` : null]
+                  .filter(Boolean)
+                  .join(' · ') || relationLabel
+              }
+            >
               {[client.company_name, client.siret ? `SIRET ${client.siret}` : null]
                 .filter(Boolean)
                 .join(' · ') || relationLabel}

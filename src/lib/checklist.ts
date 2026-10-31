@@ -458,7 +458,7 @@ export function validateChecklist(
     context = 'project',
   } = options
 
-  if (!items.length) return 'Ajoute au moins un item de checklist.'
+  if (!items.length) return 'Ajoutez au moins un item de checklist.'
   if (items.some((item) => !item.label.trim())) {
     return 'Chaque item doit avoir un libellé.'
   }
@@ -473,7 +473,7 @@ export function validateChecklist(
     return 'Une seule étape de paiement par projet.'
   }
   if (paymentCount === 1 && context === 'project' && (!priceEur || priceEur <= 0)) {
-    return 'Renseigne un prix pour utiliser une étape de paiement.'
+    return 'Renseignez un prix pour utiliser une étape de paiement.'
   }
 
   for (const item of items) {
@@ -504,7 +504,7 @@ export function validateChecklist(
 
     if (source === 'ai_generate') {
       if (!aiContractsEnabled) {
-        return 'Active la génération de contrats dans Paramètres → Intelligence artificielle.'
+        return 'Activez la génération de contrats dans Paramètres → Intelligence artificielle.'
       }
       if (!item.contractBrief?.trim() || item.contractBrief.trim().length < 20) {
         return `Le brief du contrat pour « ${item.label.trim()} » doit contenir au moins 20 caractères.`
@@ -512,7 +512,7 @@ export function validateChecklist(
     }
 
     if (source === 'default' && !hasDefaultContract && !item.contractTemplateId) {
-      return 'Aucun modèle par défaut défini. Choisis un modèle existant ou génère un contrat avec l\u2019IA.'
+      return 'Aucun modèle par défaut défini. Choisissez un modèle existant ou générez un contrat avec l\u2019IA.'
     }
   }
 

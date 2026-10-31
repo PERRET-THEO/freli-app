@@ -77,8 +77,12 @@ export function ClientsTable({
                 size={avatarSize}
               />
               <div className="min-w-0">
-                <p className="truncate font-medium text-[var(--ink)]">{displayName}</p>
-                <p className="truncate text-xs text-[var(--ink-muted)]">{sub}</p>
+                <p className="truncate font-medium text-[var(--ink)]" title={displayName}>
+                  {displayName}
+                </p>
+                <p className="truncate text-xs text-[var(--ink-muted)]" title={sub || undefined}>
+                  {sub}
+                </p>
               </div>
             </div>
           )
@@ -240,10 +244,24 @@ export function ClientsTable({
     return () => document.removeEventListener('mousedown', onDoc)
   }, [openMenuId])
 
+  const colClass = (columnId: string) => {
+    const base = `px-3 ${rowPad}`
+    if (columnId === 'name') return `${base} max-w-0 w-[38%] min-w-[10rem]`
+    if (columnId === 'project_count') return `${base} text-center whitespace-nowrap`
+    if (columnId === 'actions') return `${base} w-10`
+    if (columnId === 'last_activity') {
+      // Container query : largeur utile du wrapper (sidebar ouverte/réduite), pas le viewport.
+      // Afficher dès ≈ 830 px utiles (ex. 1150 px viewport + barre ouverte).
+      return `${base} hidden whitespace-nowrap @[830px]:table-cell`
+    }
+    if (columnId === 'attention') return `${base} whitespace-nowrap`
+    return base
+  }
+
   return (
-    <div className="hidden overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] md:block">
+    <div className="@container hidden overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] md:block">
       <div className="max-h-[calc(100dvh-14rem)] overflow-auto">
-        <table className="w-full border-collapse text-left text-sm font-body">
+        <table className="w-full table-fixed border-collapse text-left text-sm font-body">
           <thead className="sticky top-0 z-10 bg-[var(--surface)]">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id} className="border-b border-[var(--border)]">
@@ -262,14 +280,12 @@ export function ClientsTable({
                       key={header.id}
                       scope="col"
                       aria-sort={ariaSort}
-                      className={`px-3 ${rowPad} font-display text-xs font-semibold uppercase tracking-wide text-[var(--ink-muted)] ${
-                        header.column.id === 'project_count' ? 'text-center' : ''
-                      } ${header.column.id === 'actions' ? 'w-10' : ''}`}
+                      className={`font-display text-xs font-semibold uppercase tracking-wide text-[var(--ink-muted)] ${colClass(header.column.id)}`}
                     >
                       {sortKey ? (
                         <button
                           type="button"
-                          className="inline-flex items-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                          className="inline-flex max-w-full items-center truncate rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                           onClick={() => onSortChange(sortKey)}
                         >
                           {flexRender(header.column.columnDef.header, header.getContext())}
@@ -299,12 +315,7 @@ export function ClientsTable({
                   onDoubleClick={() => onRowOpen(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td
-                      key={cell.id}
-                      className={`px-3 ${rowPad} ${
-                        cell.column.id === 'project_count' ? 'text-center' : ''
-                      }`}
-                    >
+                    <td key={cell.id} className={colClass(cell.column.id)}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

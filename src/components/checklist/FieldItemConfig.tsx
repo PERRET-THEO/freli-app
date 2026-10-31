@@ -41,7 +41,7 @@ export function FieldItemConfig({ item, priceEur, onChange }: FieldItemConfigPro
           className="mt-1.5 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-xs font-body text-[var(--ink)] placeholder-[var(--ink-muted)] focus:border-[var(--accent)] focus:outline-none"
         />
         {options.filter((option) => option.trim()).length < 2 ? (
-          <p className={warnCls}>Ajoute au moins deux options.</p>
+          <p className={warnCls}>Ajoutez au moins deux options.</p>
         ) : (
           <p className={hintCls}>
             {options.length} option{options.length > 1 ? 's' : ''} — le client en choisit une.
@@ -91,7 +91,7 @@ export function FieldItemConfig({ item, priceEur, onChange }: FieldItemConfigPro
           </p>
         ) : (
           <p className={warnCls}>
-            Renseigne le prix du projet pour utiliser une étape de paiement.
+            Renseignez le prix du projet pour utiliser une étape de paiement.
           </p>
         )}
         <p className={hintCls}>

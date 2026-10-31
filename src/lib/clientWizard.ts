@@ -317,7 +317,7 @@ export function parseCreateProjectRpcError(error: {
     if (/^[0-9a-f-]{36}$/i.test(id)) return new ClientExistsError(id)
   }
   if (/checklist_empty/i.test(blob)) {
-    return new Error('Ajoute au moins un item de checklist.')
+    return new Error('Ajoutez au moins un item de checklist.')
   }
 
   return new Error(message || 'Impossible de créer le projet.')

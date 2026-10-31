@@ -1,8 +1,9 @@
 /**
  * Déclenchement manuel d'une relance intelligente depuis le dashboard.
- * Catégorise le comportement puis invoque generate-smart-reminder.
  *
- * Si un brouillon existe déjà : le retourne sans régénérer (sauf forceRefresh).
+ * mode async : crée un placeholder `generating`, répond immédiatement,
+ * génère in-process dans waitUntil (module partagé — pas de fetch inter-EF).
+ * Crédit débité uniquement au succès.
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -10,11 +11,16 @@ import {
   assertUserOwnsProject,
   corsHeaders,
   getAuthenticatedUser,
-  internalSecretHeaders,
   jsonResponse,
 } from '../_shared/functionAuth.ts'
 import { resolveProjectBehavior } from '../_shared/resolveProjectBehavior.ts'
 import { draftStaleReason } from '../_shared/smartReminderDraft.ts'
+import {
+  generateSmartReminderDraft,
+  type BehaviorCategory,
+} from '../_shared/generateSmartReminderDraft.ts'
+
+declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void }
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -22,8 +28,8 @@ const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 type Body = {
   projectId: string
-  /** Si true, dismiss le draft existant et régénère. */
   forceRefresh?: boolean
+  async?: boolean
 }
 
 serve(async (req) => {
@@ -76,6 +82,13 @@ serve(async (req) => {
       )
     }
 
+    const { data: existingGenerating } = await supabase
+      .from('smart_reminders')
+      .select('id, created_at, generating_started_at')
+      .eq('project_id', project.id)
+      .eq('status', 'generating')
+      .maybeSingle()
+
     const { data: existingDraft } = await supabase
       .from('smart_reminders')
       .select(
@@ -109,71 +122,171 @@ serve(async (req) => {
       }
     }
 
-    const invokeResult = await supabase.functions.invoke('generate-smart-reminder', {
-      body: {
-        projectId: project.id,
-        behaviorCategory: behavior.behaviorCategory,
-        blockingStepLabel: behavior.blockingStepLabel,
-        clientActionLabels: behavior.clientActionLabels,
-        progress: behavior.progress,
-      },
-      headers: internalSecretHeaders(),
-    })
-
-    type GeneratePayload = {
-      error?: string
-      skipped?: boolean
-      reason?: string
-      code?: string
-      reminderId?: string
-      status?: string
-      previewRequired?: boolean
+    const generateArgs = {
+      projectId: project.id,
+      behaviorCategory: behavior.behaviorCategory as BehaviorCategory,
+      blockingStepLabel: behavior.blockingStepLabel,
+      clientActionLabels: behavior.clientActionLabels,
+      progress: behavior.progress,
     }
 
-    let payload = invokeResult.data as GeneratePayload | null
+    if (body.async) {
+      const startedAt = new Date().toISOString()
+      let placeholderId: string | null = existingGenerating?.id ?? null
+      let existing = Boolean(existingGenerating)
+      let shouldKickBackground = true
 
-    // FunctionsHttpError : le body JSON de generate est souvent dans error.context.
-    if (invokeResult.error && (!payload || !payload.error)) {
-      const ctx = (invokeResult.error as { context?: Response }).context
-      if (ctx && typeof ctx.json === 'function') {
-        try {
-          const nested = (await ctx.json()) as GeneratePayload
-          if (nested && typeof nested === 'object') {
-            payload = { ...nested, ...payload }
+      if (placeholderId) {
+        const startedMs = existingGenerating?.generating_started_at
+          ? new Date(existingGenerating.generating_started_at).getTime()
+          : existingGenerating?.created_at
+            ? new Date(existingGenerating.created_at).getTime()
+            : 0
+        // Job encore jeune (< 90 s) : ne pas double-générer.
+        if (startedMs && Date.now() - startedMs < 90_000) {
+          shouldKickBackground = false
+        } else {
+          await supabase
+            .from('smart_reminders')
+            .update({ generating_started_at: startedAt })
+            .eq('id', placeholderId)
+            .eq('status', 'generating')
+        }
+      } else {
+        const { data: placeholder, error: placeholderError } = await supabase
+          .from('smart_reminders')
+          .insert({
+            project_id: project.id,
+            agency_id: project.agency_id,
+            behavior_category: behavior.behaviorCategory,
+            blocking_step_label:
+              behavior.blockingStepLabel ?? behavior.clientActionLabels[0] ?? null,
+            subject: 'Brouillon en préparation…',
+            body: 'Génération en cours.',
+            status: 'generating',
+            generating_started_at: startedAt,
+          })
+          .select('id')
+          .single()
+
+        if (placeholderError || !placeholder) {
+          const { data: again } = await supabase
+            .from('smart_reminders')
+            .select('id, generating_started_at')
+            .eq('project_id', project.id)
+            .eq('status', 'generating')
+            .maybeSingle()
+          if (again) {
+            placeholderId = again.id
+            existing = true
+            const againStarted = again.generating_started_at
+              ? new Date(again.generating_started_at).getTime()
+              : 0
+            if (againStarted && Date.now() - againStarted < 90_000) {
+              shouldKickBackground = false
+            } else {
+              await supabase
+                .from('smart_reminders')
+                .update({ generating_started_at: startedAt })
+                .eq('id', again.id)
+                .eq('status', 'generating')
+            }
+          } else {
+            return jsonResponse(
+              { error: placeholderError?.message ?? 'Placeholder impossible' },
+              400,
+            )
           }
-        } catch {
-          // ignore parse errors
+        } else {
+          placeholderId = placeholder.id
         }
       }
+
+      const reminderId = placeholderId!
+      if (shouldKickBackground) {
+        const background = (async () => {
+          const t0 = Date.now()
+          try {
+            console.log(
+              `request-smart-reminder: in-process generate start reminderId=${reminderId}`,
+            )
+            const result = await generateSmartReminderDraft(supabase, {
+              ...generateArgs,
+              reminderId,
+              attemptClaim: false,
+            })
+            if (!result.ok) {
+              await supabase
+                .from('smart_reminders')
+                .update({ status: 'stale' })
+                .eq('id', reminderId)
+                .eq('status', 'generating')
+              console.error(
+                'request-smart-reminder async generate failed:',
+                result.reason,
+                result.code,
+                `durationMs=${Date.now() - t0}`,
+              )
+              return
+            }
+            console.log(
+              `request-smart-reminder: draft ready reminderId=${result.reminderId} durationMs=${Date.now() - t0}`,
+            )
+          } catch (error) {
+            console.error(
+              'request-smart-reminder async error:',
+              (error as Error).message,
+              `durationMs=${Date.now() - t0}`,
+            )
+            await supabase
+              .from('smart_reminders')
+              .update({ status: 'stale' })
+              .eq('id', reminderId)
+              .eq('status', 'generating')
+          }
+        })()
+
+        try {
+          EdgeRuntime.waitUntil(background)
+        } catch {
+          // Environnements sans EdgeRuntime : fire-and-forget.
+          void background
+        }
+      }
+
+      return jsonResponse({
+        accepted: true,
+        reminderId,
+        status: 'generating',
+        existing,
+        creditsNote: '1 crédit IA sera consommé si la génération réussit',
+      })
     }
 
-    if (invokeResult.error || payload?.error) {
-      return jsonResponse(
-        {
-          error:
-            payload?.error ??
-            invokeResult.error?.message ??
-            'Génération échouée',
-        },
-        400,
-      )
-    }
+    // Sync : même module, pas de HTTP.
+    const result = await generateSmartReminderDraft(supabase, {
+      ...generateArgs,
+      attemptClaim: false,
+    })
 
-    if (payload?.skipped) {
-      return jsonResponse(
-        {
-          skipped: true,
-          reason: payload.reason ?? 'Génération ignorée',
-          code: payload.code,
-        },
-        400,
-      )
+    if (!result.ok) {
+      if (result.skipped) {
+        return jsonResponse(
+          {
+            skipped: true,
+            reason: result.reason,
+            code: result.code,
+          },
+          400,
+        )
+      }
+      return jsonResponse({ error: result.reason }, 400)
     }
 
     return jsonResponse({
-      reminderId: payload?.reminderId,
-      status: payload?.status ?? 'draft',
-      previewRequired: payload?.previewRequired === true,
+      reminderId: result.reminderId,
+      status: 'draft',
+      previewRequired: result.previewRequired,
       behaviorCategory: behavior.behaviorCategory,
       existing: false,
     })

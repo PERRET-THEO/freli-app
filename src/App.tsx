@@ -41,7 +41,8 @@ const TermsOfUse = lazy(() =>
   import('./pages/TermsOfUse').then((m) => ({ default: m.TermsOfUse })),
 )
 
-const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })))
+const dashboardImport = () => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard }))
+const Dashboard = lazy(dashboardImport)
 const NewProject = lazy(() =>
   import('./pages/NewProject').then((m) => ({ default: m.NewProject })),
 )
@@ -84,8 +85,11 @@ function RequireAuth() {
     let isMounted = true
     supabase.auth.getSession().then(({ data }) => {
       if (!isMounted) return
-      setIsAuthenticated(Boolean(data.session))
+      const ok = Boolean(data.session)
+      setIsAuthenticated(ok)
       setLoading(false)
+      // Précharge le chunk Dashboard en parallèle du bootstrap session.
+      if (ok) void dashboardImport()
     })
     return () => {
       isMounted = false

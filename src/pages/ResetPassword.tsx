@@ -80,7 +80,7 @@ export function ResetPassword() {
     return (
       <AuthShell
         title="Mot de passe mis à jour"
-        subtitle="Tu peux maintenant te connecter avec ton nouveau mot de passe."
+        subtitle="Vous pouvez maintenant vous connecter avec votre nouveau mot de passe."
       >
         <Link to="/signin">
           <Button className="w-full">Se connecter</Button>
@@ -113,7 +113,7 @@ export function ResetPassword() {
   return (
     <AuthShell
       title="Nouveau mot de passe"
-      subtitle="Choisis un nouveau mot de passe pour ton compte."
+      subtitle="Choisissez un nouveau mot de passe pour votre compte."
     >
       <form className="space-y-3" onSubmit={handleSubmit}>
         <div>

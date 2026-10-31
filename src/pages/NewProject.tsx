@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Check } from 'lucide-react'
 import { fetchAgencyAiFlags } from '../lib/agencyQueries'
 import { useAgencySession } from '../contexts/AgencyContext'
 import { sendProjectInviteEmail } from '../lib/resend'
@@ -533,12 +534,12 @@ export function NewProject() {
     setError(null)
 
     if (clientMode === 'existing' && !selectedClientId) {
-      setError('Sélectionne un client existant ou passe en « Nouveau client ».')
+      setError('Sélectionnez un client existant ou passez en « Nouveau client ».')
       return
     }
 
     if (emailConflict && clientMode === 'new') {
-      setError('Choisis une action pour le client existant avant de continuer.')
+      setError('Choisissez une action pour le client existant avant de continuer.')
       return
     }
 
@@ -650,9 +651,9 @@ export function NewProject() {
     const resolvedAgencyId = agencyId ?? agency?.id
     if (!resolvedAgencyId) {
       if (agencySessionLoading) {
-        throw new Error('Chargement de ton agence… réessaie dans une seconde.')
+        throw new Error('Chargement de votre agence… réessayez dans une seconde.')
       }
-      throw new Error('Agence introuvable. Recharge la page ou reconnecte-toi.')
+      throw new Error('Agence introuvable. Rechargez la page ou reconnectez-vous.')
     }
 
     const mode = resolveMode()
@@ -825,7 +826,7 @@ export function NewProject() {
           setClientMode('new')
           setClientResolution(null)
           setStep(1)
-          setError('Ce client existe déjà. Choisis une action ci-dessous.')
+          setError('Ce client existe déjà. Choisissez une action ci-dessous.')
         } else {
           setError('Ce client existe déjà. Reviens à l’étape 1 pour le rattacher.')
           setStep(1)
@@ -901,13 +902,14 @@ export function NewProject() {
         <div
           className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-display font-bold ${
             isActive
-              ? 'bg-[var(--accent)] text-[var(--white)]'
+              ? 'bg-[var(--accent-strong)] text-[var(--white)]'
               : isDone
-                ? 'bg-[var(--mint-soft)] text-[var(--mint)]'
+                ? 'bg-[var(--mint)] text-[var(--ink)]'
                 : 'bg-[var(--surface-warm)] text-[var(--ink-muted)]'
           }`}
+          aria-current={isActive ? 'step' : undefined}
         >
-          {n}
+          {isDone ? <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden /> : n}
         </div>
         <span className="text-sm font-body text-[var(--ink-soft)]">{label}</span>
       </div>

@@ -18,7 +18,8 @@ type ClientsToolbarProps = {
   onSearchChange: (value: string) => void
   status: ClientAttentionFilter
   onStatusChange: (value: ClientAttentionFilter) => void
-  resultCount: number
+  /** null = ne pas annoncer (chargement / debounce). */
+  resultCount: number | null
   density: 'compact' | 'comfortable'
   onDensityChange: (value: 'compact' | 'comfortable') => void
   columnVisibility: VisibilityState
@@ -139,9 +140,11 @@ export function ClientsToolbar({
             {CLIENT_ATTENTION_FILTER_LABELS[value]}
           </button>
         ))}
-        <span className="sr-only" aria-live="polite">
-          {resultCount} résultat{resultCount !== 1 ? 's' : ''}
-        </span>
+        {resultCount != null ? (
+          <span className="sr-only" aria-live="polite">
+            {resultCount} résultat{resultCount !== 1 ? 's' : ''}
+          </span>
+        ) : null}
       </div>
     </div>
   )

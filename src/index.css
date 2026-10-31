@@ -10,6 +10,8 @@
   --surface-warm: #edeae3;
   --white: #fdfcfa;
   --accent: #5b6ef5;
+  /* Accent assombri pour texte blanc ≥ 4,5:1 (mesuré ≈ 4,91:1 sur --white) */
+  --accent-strong: #5163dc;
   --accent-light: #8b9bff;
   --accent-soft: #eef0ff;
   --mint: #2dd4a0;

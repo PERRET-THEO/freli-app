@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAgencySession } from '../../contexts/AgencyContext'
 import {
   FRELI_SUBSCRIPTION,
   isBillingAccessGranted,
@@ -16,11 +17,23 @@ type RequireBillingAccessProps = {
 /**
  * Bloque le dashboard si un billing_accounts existe et n'est pas actif.
  * Sans ligne billing (comptes legacy invitation) → accès conservé.
+ * Préfère le bootstrap `get_session_context` pour éviter un RTT billing dédié.
  */
 export function RequireBillingAccess({ agencyId, children }: RequireBillingAccessProps) {
+  const { billing: sessionBilling } = useAgencySession()
   const [loading, setLoading] = useState(true)
   const [allowed, setAllowed] = useState(true)
   const [status, setStatus] = useState<string | null>(null)
+
+  const applyBilling = useCallback((billingStatus: string | null, hasRow: boolean) => {
+    const ok = isBillingAccessGranted(
+      billingStatus as BillingAccountStatus | null,
+      hasRow,
+    )
+    setStatus(billingStatus)
+    setAllowed(ok)
+    setLoading(false)
+  }, [])
 
   const check = useCallback(async () => {
     if (!agencyId) {
@@ -28,21 +41,18 @@ export function RequireBillingAccess({ agencyId, children }: RequireBillingAcces
       setLoading(false)
       return
     }
+    if (sessionBilling.ready) {
+      applyBilling(sessionBilling.status, sessionBilling.hasRow)
+      return
+    }
     const billing = await fetchBillingAccount(agencyId)
     if (!billing) {
-      // Erreur lecture : ne pas bloquer (évite lockout sur panne).
       setAllowed(true)
       setLoading(false)
       return
     }
-    const ok = isBillingAccessGranted(
-      billing.status as BillingAccountStatus | null,
-      billing.hasRow,
-    )
-    setStatus(billing.status)
-    setAllowed(ok)
-    setLoading(false)
-  }, [agencyId])
+    applyBilling(billing.status, billing.hasRow)
+  }, [agencyId, applyBilling, sessionBilling.hasRow, sessionBilling.ready, sessionBilling.status])
 
   useEffect(() => {
     setLoading(true)

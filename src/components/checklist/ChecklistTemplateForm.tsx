@@ -101,7 +101,7 @@ export function ChecklistTemplateForm({
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      setError('Donne un nom à ton modèle.')
+      setError('Donnez un nom à votre modèle.')
       return
     }
     const validationError = validateChecklist(items, { context: 'template' })

@@ -14,32 +14,54 @@ import {
   fetchContractProjectContext,
   type ContractProjectContext,
 } from '../../lib/contractProjectContext'
+import { createDocumentSignedUrl } from '../../lib/documentSignedUrl'
 
 type ContractGeneratorPanelProps = {
   projectId: string
   aiContractsEnabled: boolean
   checklistContext?: string[]
+  initialDocuments?: GeneratedDocumentRecord[]
+  initialProjectContext?: ContractProjectContext | null
+  /** Path storage ou URL du contrat signé (checklist signature). */
+  signedChecklistPath?: string | null
 }
 
 type GenerationPhase = 'idle' | 'thinking' | 'error'
+
+async function openSignedPath(path: string): Promise<void> {
+  if (path.startsWith('http')) {
+    window.open(path, '_blank', 'noopener,noreferrer')
+    return
+  }
+  const url = await createDocumentSignedUrl(path)
+  if (url) window.open(url, '_blank', 'noopener,noreferrer')
+}
 
 export function ContractGeneratorPanel({
   projectId,
   aiContractsEnabled,
   checklistContext = [],
+  initialDocuments,
+  initialProjectContext,
+  signedChecklistPath = null,
 }: ContractGeneratorPanelProps) {
-  const [documents, setDocuments] = useState<GeneratedDocumentRecord[]>([])
-  const [loaded, setLoaded] = useState(false)
+  const [documents, setDocuments] = useState<GeneratedDocumentRecord[]>(initialDocuments ?? [])
+  const [loaded, setLoaded] = useState(Boolean(initialDocuments))
   const [brief, setBrief] = useState('')
   const [generationPhase, setGenerationPhase] = useState<GenerationPhase>('idle')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [projectContext, setProjectContext] = useState<ContractProjectContext | null>(null)
-  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null)
+  const [projectContext, setProjectContext] = useState<ContractProjectContext | null>(
+    initialProjectContext ?? null,
+  )
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(
+    () => initialDocuments?.[0]?.id ?? null,
+  )
   const [showAiDisclaimer, setShowAiDisclaimer] = useState(false)
+  const [openingSigned, setOpeningSigned] = useState(false)
 
-  const load = async () => {
+  const load = async (seedDocs?: GeneratedDocumentRecord[]) => {
     try {
-      const docs = await fetchProjectGeneratedDocuments(projectId)
+      const docs = seedDocs ?? (await fetchProjectGeneratedDocuments(projectId))
       setDocuments(docs)
       setActiveDocumentId((cur) => {
         if (cur && docs.some((d) => d.id === cur)) return cur
@@ -53,12 +75,16 @@ export function ContractGeneratorPanel({
   }
 
   useEffect(() => {
-    void load()
-    void fetchContractProjectContext(projectId).then(setProjectContext)
+    if (initialProjectContext) {
+      setProjectContext(initialProjectContext)
+    } else {
+      void fetchContractProjectContext(projectId).then(setProjectContext)
+    }
+    void load(initialDocuments)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId])
+  }, [projectId, initialDocuments, initialProjectContext])
 
-  if (!aiContractsEnabled && documents.length === 0) return null
+  if (!aiContractsEnabled && documents.length === 0 && !signedChecklistPath) return null
   if (!loaded) return null
 
   const handleGenerate = async () => {
@@ -89,6 +115,9 @@ export function ContractGeneratorPanel({
 
   const activeDocument = documents.find((d) => d.id === activeDocumentId) ?? null
   const activeIsDraft = activeDocument?.status === 'draft'
+  const signedGenerated = documents.find((d) => Boolean(d.signed_storage_path)) ?? null
+  const signedPath = signedGenerated?.signed_storage_path || signedChecklistPath || null
+  const hasSignedContract = Boolean(signedPath)
 
   const intakeForm = (
     <div>
@@ -167,6 +196,40 @@ export function ContractGeneratorPanel({
         ) : null}
       </div>
     ) : null
+
+  if (hasSignedContract) {
+    return (
+      <Card className="w-full min-w-0">
+        <h2 className="font-display text-xl font-semibold text-[var(--ink)]">Contrat signé</h2>
+        <p className="mt-1 text-sm font-body text-[var(--ink-muted)]">
+          Un contrat a déjà été signé pour ce projet.
+        </p>
+        <Button
+          className="mt-4"
+          disabled={openingSigned || !signedPath}
+          onClick={() => {
+            if (!signedPath) return
+            setOpeningSigned(true)
+            void openSignedPath(signedPath).finally(() => setOpeningSigned(false))
+          }}
+        >
+          {openingSigned ? 'Ouverture…' : 'Voir le contrat signé'}
+        </Button>
+        {aiContractsEnabled ? (
+          <details className="mt-5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] p-3">
+            <summary className="cursor-pointer text-sm font-body font-medium text-[var(--ink)]">
+              Créer un autre brouillon
+            </summary>
+            <div className="mt-3">{intakeForm}</div>
+            {documentsBlock}
+          </details>
+        ) : documentsBlock}
+        {errorMsg && generationPhase !== 'error' ? (
+          <p className="mt-2 text-sm font-body text-[var(--amber)]">{errorMsg}</p>
+        ) : null}
+      </Card>
+    )
+  }
 
   return (
     <Card

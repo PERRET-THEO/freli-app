@@ -133,7 +133,7 @@ export function validateConditions(items: DraftLike[]): string | null {
       return `L'item « ${label} » ne peut dépendre que d'une étape « Choix dans une liste ».`
     }
     if (!condition.equals.trim()) {
-      return `Choisis l'option qui déclenche l'item « ${label} ».`
+      return `Choisissez l'option qui déclenche l'item « ${label} ».`
     }
     if (!(source.choiceOptions ?? []).includes(condition.equals)) {
       return `L'option « ${condition.equals} » n'existe plus dans « ${source.label.trim()} ».`

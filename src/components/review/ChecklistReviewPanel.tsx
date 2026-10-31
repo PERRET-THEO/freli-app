@@ -5,6 +5,7 @@ import { createDocumentSignedUrl } from '../../lib/documentSignedUrl'
 import { formatRelative } from '../../lib/formatRelative'
 import { sendProjectReminderEmail } from '../../lib/resend'
 import { requestSmartReminder } from '../../lib/smartReminders'
+import { supabase } from '../../lib/supabase'
 import { describeDevice, shortHash, type SignatureProof } from '../../lib/signatureProof'
 import { getVisibleItems, hasStoredCondition } from '../../lib/checklistConditions'
 import type { ChecklistItemConfig } from '../../lib/checklistFields'
@@ -375,19 +376,22 @@ function ReviewRow({
   aiRemindersEnabled?: boolean
   onReviewed: () => void | Promise<void>
 }) {
-  const [busy, setBusy] = useState(false)
+  const [busyApprove, setBusyApprove] = useState(false)
+  const [busyReject, setBusyReject] = useState(false)
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [note, setNote] = useState('')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [draftPreparing, setDraftPreparing] = useState(false)
 
   const status = getReviewStatus(item)
   const badgeLabel = getReviewBadgeLabel(item)
   const awaiting = isAwaitingReview(item)
   const rejected = isRejected(item)
+  const busy = busyApprove || busyReject
 
   const handleApprove = async () => {
-    setBusy(true)
+    setBusyApprove(true)
     setErrorMsg(null)
     try {
       if (item.type === 'credentials') {
@@ -399,39 +403,98 @@ function ReviewRow({
     } catch (reason) {
       setErrorMsg(reason instanceof Error ? reason.message : 'Validation impossible.')
     } finally {
-      setBusy(false)
+      setBusyApprove(false)
     }
   }
 
   const handleReject = async () => {
-    setBusy(true)
+    setBusyReject(true)
     setErrorMsg(null)
     setFeedback(null)
     try {
       await rejectChecklistItem(item.id, note)
       setShowRejectForm(false)
       setNote('')
-      // L'étape se rouvre côté client : sans email il ne saurait pas qu'on l'attend.
-      try {
-        if (aiRemindersEnabled) {
-          const result = await requestSmartReminder(projectId, { forceRefresh: true })
-          setFeedback(
-            result.status === 'sent'
-              ? 'Correction demandée — relance IA envoyée au client.'
-              : 'Correction demandée — brouillon de relance IA prêt à valider.',
-          )
-        } else {
-          await sendProjectReminderEmail({ projectId })
-          setFeedback('Correction demandée — le client a été prévenu par email.')
-        }
-      } catch {
-        setFeedback('Correction demandée. Email non envoyé — relancez le client manuellement.')
+      setFeedback('Correction demandée')
+      // Libérer « Envoi… » dès que le reject est persisté — pas attendre onReviewed / IA.
+      setBusyReject(false)
+      void onReviewed()
+
+      // Notification / brouillon IA en arrière-plan (ne bloque plus le bouton).
+      if (aiRemindersEnabled) {
+        setDraftPreparing(true)
+        void requestSmartReminder(projectId, { forceRefresh: true, async: true })
+          .then(async (result) => {
+            // Rafraîchir le panel Relances dès que la ligne generating/draft existe
+            // (le 1er onReviewed ci-dessus est trop tôt — avant l'insert async).
+            void onReviewed()
+
+            if (result.status === 'sent') {
+              setFeedback('Correction demandée — relance IA envoyée au client.')
+              setDraftPreparing(false)
+              return
+            }
+            if (result.status === 'draft') {
+              setFeedback('Correction demandée — brouillon de relance IA prêt à valider.')
+              setDraftPreparing(false)
+              return
+            }
+            // Async : un seul bandeau gris « en préparation » (pas de doublon vert).
+            const reminderId = result.reminderId
+            // Aligné sur le TTL serveur (generating_started_at + cron 5 min).
+            const deadline = Date.now() + 5 * 60_000
+            while (Date.now() < deadline) {
+              await new Promise((r) => setTimeout(r, 2500))
+              const { data: rows } = await supabase
+                .from('smart_reminders')
+                .select('id, status')
+                .eq('project_id', projectId)
+                .in('status', ['draft', 'generating', 'stale'])
+                .order('created_at', { ascending: false })
+                .limit(5)
+              const draft = (rows ?? []).find((row) => row.status === 'draft')
+              const stillGenerating = (rows ?? []).some(
+                (row) =>
+                  row.status === 'generating' &&
+                  (!reminderId || row.id === reminderId),
+              )
+              const markedStale =
+                Boolean(reminderId) &&
+                (rows ?? []).some(
+                  (row) => row.id === reminderId && row.status === 'stale',
+                )
+              if (draft) {
+                setFeedback('Correction demandée — brouillon de relance IA prêt à valider.')
+                setDraftPreparing(false)
+                void onReviewed()
+                return
+              }
+              if (markedStale || !stillGenerating) break
+            }
+            setDraftPreparing(false)
+            setFeedback(
+              'Correction demandée. Brouillon IA non disponible — générez-le depuis Relances intelligentes.',
+            )
+            void onReviewed()
+          })
+          .catch(() => {
+            setFeedback(
+              'Correction demandée. Brouillon IA non lancé — générez-le depuis Relances intelligentes.',
+            )
+            setDraftPreparing(false)
+          })
+      } else {
+        void sendProjectReminderEmail({ projectId })
+          .then(() => {
+            setFeedback('Correction demandée — le client a été prévenu par email.')
+          })
+          .catch(() => {
+            setFeedback('Correction demandée. Email non envoyé — relancez le client manuellement.')
+          })
       }
-      await onReviewed()
     } catch (reason) {
       setErrorMsg(reason instanceof Error ? reason.message : 'Demande de correction impossible.')
-    } finally {
-      setBusy(false)
+      setBusyReject(false)
     }
   }
 
@@ -507,15 +570,20 @@ function ReviewRow({
                 disabled={busy || !note.trim()}
                 className="rounded-[var(--radius-xs)] border border-[#EF4444] px-3 py-1.5 text-xs font-body font-medium text-[#EF4444] transition hover:bg-[#FEF2F2] disabled:opacity-50"
               >
-                {busy ? 'Envoi…' : 'Confirmer la correction'}
+                {busyReject ? 'Envoi…' : 'Confirmer la correction'}
               </button>
+              {aiRemindersEnabled ? (
+                <span className="self-center text-[10px] font-body text-[var(--ink-muted)]">
+                  1 crédit IA si brouillon généré
+                </span>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
                   setShowRejectForm(false)
                   setNote('')
                 }}
-                disabled={busy}
+                disabled={busyReject}
                 className="rounded-[var(--radius-xs)] border border-[var(--border)] px-3 py-1.5 text-xs font-body text-[var(--ink-muted)] transition hover:border-[var(--accent)] disabled:opacity-50"
               >
                 Annuler
@@ -530,7 +598,7 @@ function ReviewRow({
               disabled={busy}
               className="rounded-[var(--radius-xs)] bg-[var(--mint)] px-3 py-1.5 text-xs font-body font-medium text-white transition hover:brightness-95 disabled:opacity-50"
             >
-              {busy ? 'Validation…' : '✓ Valider'}
+              {busyApprove ? 'Validation…' : '✓ Valider'}
             </button>
             <button
               type="button"
@@ -550,6 +618,11 @@ function ReviewRow({
         </p>
       ) : null}
 
+      {draftPreparing ? (
+        <p className="mt-2 text-xs font-body text-[var(--ink-muted)]" role="status">
+          Brouillon de relance en préparation…
+        </p>
+      ) : null}
       {feedback ? (
         <p className="mt-2 text-xs font-body text-[var(--mint)]">{feedback}</p>
       ) : null}

@@ -120,6 +120,7 @@ export function Clients() {
   const [now] = useState(() => Date.now())
   const [toast, setToast] = useState<string | null>(null)
   const requestIdRef = useRef(0)
+  const hasLoadedOnceRef = useRef(false)
   const listRef = useRef<HTMLDivElement>(null)
 
   const pageCount = Math.max(1, Math.ceil(totalCount / CLIENT_LIST_PAGE_SIZE))
@@ -133,7 +134,8 @@ export function Clients() {
     }
 
     const requestId = ++requestIdRef.current
-    setLoading(true)
+    // Squelette uniquement au premier chargement (pas de remplacement à chaque search).
+    if (!hasLoadedOnceRef.current) setLoading(true)
     setError(null)
 
     try {
@@ -150,11 +152,14 @@ export function Clients() {
       if (requestId !== requestIdRef.current) return
       setRows(result.rows)
       setTotalCount(result.totalCount)
+      hasLoadedOnceRef.current = true
     } catch (err) {
       if (requestId !== requestIdRef.current) return
       setError(err instanceof Error ? err.message : 'Chargement impossible')
-      setRows([])
-      setTotalCount(0)
+      if (!hasLoadedOnceRef.current) {
+        setRows([])
+        setTotalCount(0)
+      }
     } finally {
       if (requestId === requestIdRef.current) setLoading(false)
     }
@@ -292,8 +297,11 @@ export function Clients() {
 
   const agencyMissing = !sessionLoading && !agency?.id
 
+  const searchPending = params.q !== debouncedQ
+
   const emptyKind = useMemo(() => {
-    if (loading || error) return null
+    // Pas d'empty pendant load, refetch, ou fenêtre debounce (évite flash « Aucun résultat »).
+    if (loading || searchPending || error) return null
     if (agencyMissing) return 'agency'
     if (agencyClientTotal === 0 && !debouncedQ && params.status === 'all' && totalCount === 0) {
       return 'first'
@@ -307,6 +315,7 @@ export function Clients() {
     error,
     loading,
     params.status,
+    searchPending,
     totalCount,
   ])
 
@@ -319,11 +328,21 @@ export function Clients() {
               Clients
             </h1>
             <p className="mt-0.5 text-sm font-body text-[var(--ink-muted)]" aria-live="polite">
-              {loading
-                ? 'Annuaire'
-                : `${totalCount} client${totalCount !== 1 ? 's' : ''}${
-                    debouncedQ || params.status !== 'all' ? ' (filtrés)' : ''
-                  }`}
+              Annuaire
+              <span className="mx-1.5 text-[var(--border)]" aria-hidden>
+                ·
+              </span>
+              {loading ? (
+                <span
+                  className="inline-block h-3.5 w-24 animate-pulse rounded bg-[var(--surface-warm)] align-middle"
+                  aria-hidden
+                />
+              ) : (
+                <span className="tabular-nums">
+                  {totalCount} client{totalCount !== 1 ? 's' : ''}
+                  {debouncedQ || params.status !== 'all' ? ' (filtrés)' : ''}
+                </span>
+              )}
             </p>
           </div>
           {!agencyMissing ? (
@@ -359,7 +378,7 @@ export function Clients() {
               onSearchChange={(q) => void setParams({ q, page: 1 })}
               status={params.status}
               onStatusChange={(status) => void setParams({ status, page: 1 })}
-              resultCount={totalCount}
+              resultCount={loading || searchPending ? null : totalCount}
               density={density}
               onDensityChange={setDensity}
               columnVisibility={columnVisibility}

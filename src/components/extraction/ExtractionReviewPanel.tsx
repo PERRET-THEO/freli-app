@@ -2,16 +2,27 @@ import { useEffect, useState } from 'react'
 import { Button, Card } from '../ui'
 import { formatRelative } from '../../lib/formatRelative'
 import {
+  isRateLimitAiMessage,
+  sanitizeAiErrorMessage,
+} from '../../lib/aiUserFacingError'
+import {
   DOCUMENT_TYPE_LABELS,
   EXTRACTION_FIELD_LABELS,
+  EXTRACTION_FILE_MISSING_MESSAGE,
   fetchProjectExtractions,
+  isExtractionFileMissingMessage,
+  isExtractionRetryable,
+  normalizeExtractionRows,
   rejectExtraction,
+  retryDocumentExtraction,
   validateExtraction,
   type ExtractionRecord,
 } from '../../lib/documentExtraction'
 
 type ExtractionReviewPanelProps = {
   projectId: string
+  /** Données préchargées par la fiche projet (évite une 2e vague). */
+  initialExtractions?: ExtractionRecord[]
 }
 
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
@@ -22,10 +33,27 @@ const STATUS_BADGES: Record<string, { label: string; className: string }> = {
   failed: { label: 'Échec', className: 'bg-[#FEF2F2] text-[#EF4444]' },
 }
 
+function failedCardTitle(_extraction: ExtractionRecord, failedMessage: string | null): string {
+  if (failedMessage && isExtractionFileMissingMessage(failedMessage)) {
+    return 'Fichier indisponible'
+  }
+  // Type non reconnu uniquement via le message — pas document_type seul (défaut unknown).
+  if (failedMessage && /non reconnu/i.test(failedMessage)) {
+    return 'Document non reconnu'
+  }
+  // Saturé / timeout / erreur inconnue
+  if (failedMessage && isRateLimitAiMessage(failedMessage)) {
+    return 'Extraction impossible'
+  }
+  return 'Extraction impossible'
+}
+
 function ExtractionCard({
+  projectId,
   extraction,
   onProcessed,
 }: {
+  projectId: string
   extraction: ExtractionRecord
   onProcessed: () => void
 }) {
@@ -38,6 +66,9 @@ function ExtractionCard({
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const failedMessage = extraction.error_message
+    ? sanitizeAiErrorMessage(extraction.error_message)
+    : null
 
   const badge = STATUS_BADGES[extraction.status] ?? STATUS_BADGES.failed
   const isPending = extraction.status === 'pending_review'
@@ -81,12 +112,44 @@ function ExtractionCard({
     }
   }
 
+  const handleRetry = async () => {
+    if (!extraction.checklist_item_id) {
+      setErrorMsg('Impossible de relancer : étape checklist introuvable.')
+      return
+    }
+    setBusy(true)
+    setErrorMsg(null)
+    setFeedback(null)
+    try {
+      await retryDocumentExtraction({
+        projectId,
+        checklistItemId: extraction.checklist_item_id,
+        extractionId: extraction.id,
+      })
+      setFeedback('Nouvelle analyse lancée…')
+      onProcessed()
+    } catch (reason) {
+      const msg = sanitizeAiErrorMessage(
+        reason instanceof Error ? reason.message : 'Relance impossible.',
+      )
+      setErrorMsg(msg)
+      onProcessed()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const canRetry = isExtractionRetryable(extraction)
+
+  const title =
+    extraction.status === 'failed'
+      ? failedCardTitle(extraction, failedMessage)
+      : DOCUMENT_TYPE_LABELS[extraction.document_type]
+
   return (
     <div className="rounded-[var(--radius-sm)] border border-[var(--border)] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-body font-medium text-[var(--ink)]">
-          {DOCUMENT_TYPE_LABELS[extraction.document_type]}
-        </p>
+        <p className="text-sm font-body font-medium text-[var(--ink)]">{title}</p>
         <span className={`rounded-full px-2 py-0.5 text-xs font-body ${badge.className}`}>
           {badge.label}
         </span>
@@ -95,8 +158,25 @@ function ExtractionCard({
         {extraction.storage_path.split('/').pop()} · {formatRelative(extraction.created_at)}
       </p>
 
-      {extraction.status === 'failed' && extraction.error_message ? (
-        <p className="mt-2 text-xs font-body text-[#EF4444]">{extraction.error_message}</p>
+      {extraction.status === 'failed' && failedMessage ? (
+        <div className="mt-2 space-y-2">
+          <p className="text-xs font-body text-[#EF4444]">
+            {isExtractionFileMissingMessage(failedMessage)
+              ? EXTRACTION_FILE_MISSING_MESSAGE
+              : failedMessage}
+          </p>
+          {canRetry ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void handleRetry()}
+              title="Relance l’analyse IA — consomme 1 crédit IA si l’extraction aboutit"
+              className="rounded-[var(--radius-xs)] border border-[var(--border)] px-3 py-1.5 text-xs font-body font-medium text-[var(--ink-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50"
+            >
+              {busy ? 'Relance…' : 'Réessayer (1 crédit IA)'}
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {isPending ? (
@@ -152,21 +232,17 @@ function ExtractionCard({
   )
 }
 
-export function ExtractionReviewPanel({ projectId }: ExtractionReviewPanelProps) {
-  const [extractions, setExtractions] = useState<ExtractionRecord[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [failedNotice, setFailedNotice] = useState<string | null>(null)
+export function ExtractionReviewPanel({
+  projectId,
+  initialExtractions,
+}: ExtractionReviewPanelProps) {
+  const [extractions, setExtractions] = useState<ExtractionRecord[]>(initialExtractions ?? [])
+  const [loaded, setLoaded] = useState(Boolean(initialExtractions))
 
   const load = async () => {
     try {
       const rows = await fetchProjectExtractions(projectId)
       setExtractions(rows)
-      const failed = rows.find((row) => row.status === 'failed')
-      if (failed?.error_message) {
-        setFailedNotice(`Extraction échouée : ${failed.error_message}`)
-      } else {
-        setFailedNotice(null)
-      }
     } catch {
       // table absente ou erreur réseau : la section reste simplement vide
     } finally {
@@ -175,9 +251,14 @@ export function ExtractionReviewPanel({ projectId }: ExtractionReviewPanelProps)
   }
 
   useEffect(() => {
+    if (initialExtractions) {
+      setExtractions(normalizeExtractionRows(initialExtractions))
+      setLoaded(true)
+      return
+    }
     void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId])
+  }, [projectId, initialExtractions])
 
   useEffect(() => {
     const hasProcessing = extractions.some((row) => row.status === 'processing')
@@ -187,7 +268,7 @@ export function ExtractionReviewPanel({ projectId }: ExtractionReviewPanelProps)
     }, 4000)
     return () => window.clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, extractions])
+  }, [projectId, extractions.some((row) => row.status === 'processing')])
 
   if (!loaded || extractions.length === 0) return null
 
@@ -208,14 +289,14 @@ export function ExtractionReviewPanel({ projectId }: ExtractionReviewPanelProps)
         validation : rien n&apos;est écrit dans la fiche client sans votre accord. Le pourcentage
         indique la confiance estimée par champ.
       </p>
-      {failedNotice ? (
-        <p className="mt-2 rounded-[var(--radius-sm)] border border-[#EF4444]/30 bg-[#FEF2F2] px-3 py-2 text-xs font-body text-[#EF4444]">
-          {failedNotice}
-        </p>
-      ) : null}
       <div className="mt-4 space-y-3">
         {extractions.map((extraction) => (
-          <ExtractionCard key={extraction.id} extraction={extraction} onProcessed={load} />
+          <ExtractionCard
+            key={extraction.id}
+            projectId={projectId}
+            extraction={extraction}
+            onProcessed={load}
+          />
         ))}
       </div>
     </Card>

@@ -60,7 +60,7 @@ export function ChecklistStep({
 
   return (
     <div className="mt-6 min-w-0">
-      <p className="text-sm font-body text-[var(--ink-muted)]">Configure la checklist de démarrage.</p>
+      <p className="text-sm font-body text-[var(--ink-muted)]">Configurez la checklist de démarrage.</p>
       {createdProjectId && needsContractStep ? (
         <p className="mt-2 text-xs font-body text-[var(--ink-muted)]">
           Tant que l&apos;invitation n&apos;est pas envoyée, vous pouvez modifier la checklist
@@ -126,7 +126,7 @@ export function ChecklistStep({
 
       {emptyChecklist ? (
         <p className="mt-3 text-sm font-body text-[var(--amber)]">
-          Ajoute au moins une étape avant de créer le projet.
+          Ajoutez au moins une étape avant de créer le projet.
         </p>
       ) : null}
       {error ? <p className="mt-3 text-sm font-body text-[var(--amber)]">{error}</p> : null}

@@ -118,7 +118,7 @@ export async function approveChecklistItem(itemId: string): Promise<void> {
  */
 export async function rejectChecklistItem(itemId: string, note: string): Promise<void> {
   const trimmed = note.trim()
-  if (!trimmed) throw new Error('Indique ce qui doit être corrigé.')
+  if (!trimmed) throw new Error('Indiquez ce qui doit être corrigé.')
 
   const { error } = await supabase
     .from('checklist_items')

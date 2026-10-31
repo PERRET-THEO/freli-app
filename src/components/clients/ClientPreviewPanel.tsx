@@ -1,12 +1,18 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { formatPersonName } from '../../lib/formatPersonName'
 import { formatRelative } from '../../lib/formatRelative'
+import { formatPhoneDisplay, telHref } from '../../lib/contactLinks'
 import {
   ATTENTION_STATUS_LABELS,
   attentionBadgeVariant,
   type ClientListRow,
 } from '../../lib/clientListQuery'
+import {
+  fetchClientPreviewExtras,
+  type ClientPreviewExtras,
+} from '../../lib/clientPreviewExtras'
 import { Badge, Button, PersonAvatar } from '../ui'
 
 type ClientPreviewPanelProps = {
@@ -22,9 +28,37 @@ export function ClientPreviewPanel({
   onClose,
   onCopyPortal,
 }: ClientPreviewPanelProps) {
+  const [extras, setExtras] = useState<ClientPreviewExtras | null>(null)
+  const [extrasLoading, setExtrasLoading] = useState(false)
+
+  useEffect(() => {
+    if (!client) {
+      setExtras(null)
+      return
+    }
+    let cancelled = false
+    setExtrasLoading(true)
+    setExtras(null)
+    void fetchClientPreviewExtras(client.id)
+      .then((result) => {
+        if (!cancelled) setExtras(result)
+      })
+      .finally(() => {
+        if (!cancelled) setExtrasLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [client?.id])
+
   if (!client) return null
 
   const displayName = formatPersonName(client.first_name, client.last_name)
+  const phoneDisplay = formatPhoneDisplay(client.phone)
+  const nextAction =
+    extras?.nextActionLabel ||
+    ATTENTION_STATUS_LABELS[client.attention_status] ||
+    null
 
   return (
     <aside
@@ -41,10 +75,12 @@ export function ClientPreviewPanel({
             size="md"
           />
           <div className="min-w-0">
-            <h2 className="truncate font-display text-lg font-semibold text-[var(--ink)]">
+            <h2 className="truncate font-display text-lg font-semibold text-[var(--ink)]" title={displayName}>
               {displayName}
             </h2>
-            <p className="truncate text-sm text-[var(--ink-muted)]">{client.email}</p>
+            <p className="truncate text-sm text-[var(--ink-muted)]" title={client.email}>
+              {client.email}
+            </p>
           </div>
         </div>
         <button
@@ -63,9 +99,25 @@ export function ClientPreviewPanel({
             <p className="text-xs font-display font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
               Entreprise
             </p>
-            <p className="mt-1 text-sm text-[var(--ink)]">{client.company_name}</p>
+            <p className="mt-1 break-words text-sm text-[var(--ink)]">{client.company_name}</p>
           </div>
         ) : null}
+
+        <div>
+          <p className="text-xs font-display font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
+            Téléphone
+          </p>
+          {phoneDisplay ? (
+            <a
+              href={telHref(client.phone ?? phoneDisplay)}
+              className="mt-1 inline-block text-sm text-[var(--accent)] underline-offset-2 hover:underline"
+            >
+              {phoneDisplay}
+            </a>
+          ) : (
+            <p className="mt-1 text-sm text-[var(--ink-muted)]">—</p>
+          )}
+        </div>
 
         <div>
           <p className="text-xs font-display font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
@@ -77,6 +129,30 @@ export function ClientPreviewPanel({
               {client.project_count > 1 ? ` · ${client.project_count} projets` : ''}
             </Badge>
           </div>
+        </div>
+
+        <div>
+          <p className="text-xs font-display font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
+            Montant projet en cours
+          </p>
+          {extrasLoading ? (
+            <div className="mt-1.5 h-4 w-20 animate-pulse rounded bg-[var(--surface-warm)]" />
+          ) : (
+            <p className="mt-1 text-sm tabular-nums text-[var(--ink)]">
+              {extras?.priceLabel ?? '—'}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <p className="text-xs font-display font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
+            Prochaine action
+          </p>
+          {extrasLoading ? (
+            <div className="mt-1.5 h-4 w-40 animate-pulse rounded bg-[var(--surface-warm)]" />
+          ) : (
+            <p className="mt-1 text-sm text-[var(--ink)]">{nextAction ?? '—'}</p>
+          )}
         </div>
 
         <div>
@@ -96,7 +172,8 @@ export function ClientPreviewPanel({
         </div>
       </div>
 
-      <div className="space-y-2 border-t border-[var(--border)] px-4 py-3">
+      {/* pb pour laisser la bulle Crisp au-dessus du footer sans la manipuler */}
+      <div className="space-y-2 border-t border-[var(--border)] px-4 py-3 pb-[calc(5.5rem+var(--safe-bottom))]">
         <Link to={`/dashboard/client/${client.id}`} className="block">
           <Button type="button" className="w-full">
             Ouvrir la fiche

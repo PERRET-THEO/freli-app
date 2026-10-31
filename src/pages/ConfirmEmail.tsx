@@ -42,7 +42,7 @@ export function ConfirmEmail() {
             Lien invalide ou expiré
           </h1>
           <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
-            Le lien de confirmation n&apos;est plus valide. Connecte-toi ou demande un
+            Le lien de confirmation n&apos;est plus valide. Connectez-vous ou demandez un
             nouveau lien.
           </p>
           <Link to="/signin">
@@ -65,7 +65,7 @@ export function ConfirmEmail() {
           Adresse email confirmée
         </h1>
         <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
-          Ton compte est activé. Tu peux maintenant accéder à ton espace.
+          Votre compte est activé. Vous pouvez maintenant accéder à votre espace.
         </p>
         <Button className="mt-6 w-full" onClick={() => navigate('/dashboard', { replace: true })}>
           Accéder au dashboard

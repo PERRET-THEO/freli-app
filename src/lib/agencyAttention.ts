@@ -36,7 +36,30 @@ type SeedEntry = {
 const SEED_TTL_MS = 20_000
 let seed: SeedEntry | null = null
 let inflight: { agencyId: string; promise: Promise<NavAttentionCounts> } | null = null
+/** Promise dashboard en cours — évite un 2e appel projects + project_derived_statuses. */
+let dashboardAttentionInflight: {
+  agencyId: string
+  promise: Promise<NavAttentionCounts>
+} | null = null
 const seedListeners = new Set<(agencyId: string, counts: NavAttentionCounts) => void>()
+
+/** Enregistre le calcul d'attention du dashboard pour que la nav le réutilise. */
+export function registerDashboardAttentionPromise(
+  agencyId: string,
+  promise: Promise<NavAttentionCounts>,
+): Promise<NavAttentionCounts> {
+  const wrapped = promise.then((counts) => {
+    seedNavAttentionCounts(agencyId, counts)
+    return counts
+  })
+  dashboardAttentionInflight = { agencyId, promise: wrapped }
+  void wrapped.finally(() => {
+    if (dashboardAttentionInflight?.promise === wrapped) {
+      dashboardAttentionInflight = null
+    }
+  })
+  return wrapped
+}
 
 export function subscribeNavAttentionSeed(
   listener: (agencyId: string, counts: NavAttentionCounts) => void,
@@ -104,6 +127,21 @@ export function countActionProjectsFromCards(projects: ProjectCardData[]): numbe
 
 async function fetchNavAttentionCounts(agencyId: string): Promise<NavAttentionCounts> {
   const startedAt = Date.now()
+
+  if (dashboardAttentionInflight?.agencyId === agencyId) {
+    return dashboardAttentionInflight.promise
+  }
+
+  // Laisse le dashboard enregistrer son inflight (effet enfant / même tick).
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 0)
+  })
+  if (dashboardAttentionInflight?.agencyId === agencyId) {
+    return dashboardAttentionInflight.promise
+  }
+  const seededEarly = peekNavAttentionSeed(agencyId)
+  if (seededEarly) return seededEarly
+
   const projectsRes = await supabase
     .from('projects')
     .select('id')
@@ -113,6 +151,10 @@ async function fetchNavAttentionCounts(agencyId: string): Promise<NavAttentionCo
   const seededDuringFetch =
     seed?.agencyId === agencyId && seed.at >= startedAt ? seed.counts : null
   if (seededDuringFetch) return seededDuringFetch
+
+  if (dashboardAttentionInflight?.agencyId === agencyId) {
+    return dashboardAttentionInflight.promise
+  }
 
   const projectRows = (projectsRes.data ?? []) as { id: string }[]
   let actionCount = 0

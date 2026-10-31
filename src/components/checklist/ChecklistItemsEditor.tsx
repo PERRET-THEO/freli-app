@@ -50,7 +50,7 @@ export function ChecklistItemsEditor({
   aiContractsEnabled = false,
   hasDefaultContract = false,
   defaultContractBrief = '',
-  emptyMessage = 'Checklist vide. Choisis un modèle ou ajoute des items ci-dessous.',
+  emptyMessage = 'Checklist vide. Choisissez un modèle ou ajoutez des items ci-dessous.',
   priceEur = null,
 }: ChecklistItemsEditorProps) {
   const [newItemLabel, setNewItemLabel] = useState('')

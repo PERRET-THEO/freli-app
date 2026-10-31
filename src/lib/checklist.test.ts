@@ -23,7 +23,7 @@ describe('validateChecklist — étapes de paiement', () => {
   it('exige un prix sur un projet', () => {
     const items = [createDraftItem('Acompte', 'payment')]
     expect(validateChecklist(items, { priceEur: null })).toBe(
-      'Renseigne un prix pour utiliser une étape de paiement.',
+      'Renseignez un prix pour utiliser une étape de paiement.',
     )
   })
 
@@ -88,7 +88,7 @@ describe('validateChecklist — étapes de rendez-vous', () => {
 
 describe('validateChecklist — règles existantes préservées', () => {
   it('refuse une checklist vide', () => {
-    expect(validateChecklist([])).toBe('Ajoute au moins un item de checklist.')
+    expect(validateChecklist([])).toBe('Ajoutez au moins un item de checklist.')
   })
 
   it('exige un libellé sur chaque item', () => {

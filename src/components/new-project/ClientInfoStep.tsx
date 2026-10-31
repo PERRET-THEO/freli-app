@@ -738,7 +738,7 @@ export function ClientInfoStep({
           <div className="min-w-0 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-4 sm:p-5">
             <h3 className="font-display text-base font-semibold text-[var(--ink)]">Nom du projet *</h3>
             <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
-              Prérempli automatiquement ; tu peux le modifier.
+              Prérempli automatiquement ; vous pouvez le modifier.
             </p>
             <div className="mt-3">
               <Input

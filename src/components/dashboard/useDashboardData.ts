@@ -4,6 +4,7 @@ import {
   buildNavAttentionFromDashboard,
   fetchChecklistAttentionRows,
   groupChecklistByProject,
+  registerDashboardAttentionPromise,
   type ChecklistAttentionRow,
 } from '../../lib/agencyAttention'
 import { findProjectBottleneck } from '../../lib/projectBottleneck'
@@ -50,6 +51,13 @@ export function useDashboardData() {
   const [draftReminderCount, setDraftReminderCount] = useState(0)
 
   const loadProjects = useCallback(async (agencyId: string) => {
+    // Enregistre immédiatement pour que la nav attende ce flux (pas de 2e RPC).
+    let resolveAttention!: (counts: { actionProjects: number }) => void
+    const attentionPromise = new Promise<{ actionProjects: number }>((resolve) => {
+      resolveAttention = resolve
+    })
+    registerDashboardAttentionPromise(agencyId, attentionPromise)
+
     const { data: projectRows, error: projectsError } = await supabase
       .from('projects')
       .select(
@@ -59,6 +67,7 @@ export function useDashboardData() {
       .order('created_at', { ascending: false })
 
     if (projectsError) {
+      resolveAttention({ actionProjects: 0 })
       setProjects([])
       setLoading(false)
       return
@@ -76,20 +85,46 @@ export function useDashboardData() {
         checklistRows: [],
         draftReminderCount: 0,
       })
+      resolveAttention({ actionProjects: 0 })
       setLoading(false)
       return
     }
 
     const projectIds = rawProjects.map((project) => project.id)
-    const [checklistRows, derivedRes, reminderRowsRes] = await Promise.all([
-      fetchChecklistAttentionRows(projectIds),
-      supabase.rpc('project_derived_statuses', { p_project_ids: projectIds }),
-      supabase
-        .from('project_reminder_logs')
-        .select('project_id, source, sent_at, status')
-        .in('project_id', projectIds)
-        .order('sent_at', { ascending: false }),
-    ])
+
+    const derivedPromise = supabase.rpc('project_derived_statuses', {
+      p_project_ids: projectIds,
+    })
+    void derivedPromise.then((derivedRes) => {
+      let actionProjects = 0
+      for (const row of (derivedRes.data ?? []) as { derived_status: string }[]) {
+        if (normalizeAgencyProjectStatus(row.derived_status) === 'action_required') {
+          actionProjects += 1
+        }
+      }
+      resolveAttention({ actionProjects })
+    })
+
+    const [checklistRows, derivedRes, reminderRowsRes, extractionRowsRes, draftCountRes] =
+      await Promise.all([
+        fetchChecklistAttentionRows(projectIds),
+        derivedPromise,
+        supabase
+          .from('project_reminder_logs')
+          .select('project_id, source, sent_at, status')
+          .in('project_id', projectIds)
+          .order('sent_at', { ascending: false }),
+        supabase
+          .from('extracted_document_data')
+          .select('project_id')
+          .in('project_id', projectIds)
+          .eq('status', 'pending_review'),
+        supabase
+          .from('smart_reminders')
+          .select('id', { count: 'exact', head: true })
+          .eq('agency_id', agencyId)
+          .eq('status', 'draft'),
+      ])
     const itemsByProject = groupChecklistByProject(checklistRows)
 
     const derivedByProject = new Map<string, AgencyProjectStatus>()
@@ -171,22 +206,13 @@ export function useDashboardData() {
       }
     })
 
-    const { data: extractionRows } = await supabase
-      .from('extracted_document_data')
-      .select('project_id')
-      .in('project_id', projectIds)
-      .eq('status', 'pending_review')
     setPendingExtractionProjects(
-      new Set(((extractionRows ?? []) as { project_id: string }[]).map((r) => r.project_id)),
+      new Set(
+        ((extractionRowsRes.data ?? []) as { project_id: string }[]).map((r) => r.project_id),
+      ),
     )
 
-    const { count: draftCount } = await supabase
-      .from('smart_reminders')
-      .select('id', { count: 'exact', head: true })
-      .eq('agency_id', agencyId)
-      .eq('status', 'draft')
-
-    const draftReminderCount = draftCount ?? 0
+    const draftReminderCount = draftCountRes.count ?? 0
     buildNavAttentionFromDashboard({
       agencyId,
       projects: mapped,

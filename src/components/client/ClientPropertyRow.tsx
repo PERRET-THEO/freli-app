@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Pencil } from 'lucide-react'
 import type { FieldSaveStatus } from '../../hooks/useClientFieldSave'
 
 type ClientPropertyRowProps = {
@@ -55,6 +56,9 @@ export function ClientPropertyRow({
           ? error ?? 'Échec'
           : ''
 
+  const plainValue = value?.trim() ? value : ''
+  const shownText = plainValue || emptyLabel
+
   const startEdit = () => {
     if (readOnly) return
     setDraft(value ?? '')
@@ -71,6 +75,14 @@ export function ClientPropertyRow({
     setDraft(value ?? '')
     setEditing(false)
     onCancelEdit?.()
+  }
+
+  const onValueKeyDown = (event: KeyboardEvent) => {
+    if (readOnly) return
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      startEdit()
+    }
   }
 
   return (
@@ -146,21 +158,38 @@ export function ClientPropertyRow({
               />
             )
           ) : (
-            <div className="flex min-h-9 items-center gap-2">
-              <div
-                className={`min-w-0 flex-1 truncate text-sm font-body ${value?.trim() ? 'text-[var(--ink)]' : 'text-[var(--ink-muted)]'}`}
-              >
-                {displayValue ?? (value?.trim() ? value : emptyLabel)}
-              </div>
-              {!readOnly ? (
-                <button
-                  type="button"
-                  onClick={startEdit}
-                  className="shrink-0 rounded-[var(--radius-sm)] px-2 py-1.5 text-xs font-body font-semibold text-[var(--accent)] hover:bg-[var(--accent-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            <div className="flex min-h-9 items-start gap-1">
+              {readOnly ? (
+                <div
+                  className={`min-w-0 flex-1 break-words pt-1.5 text-sm font-body ${plainValue ? 'text-[var(--ink)]' : 'text-[var(--ink-muted)]'}`}
+                  title={plainValue || undefined}
                 >
-                  Modifier
-                </button>
-              ) : null}
+                  {displayValue ?? shownText}
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={startEdit}
+                    onKeyDown={onValueKeyDown}
+                    className={`min-w-0 flex-1 rounded-[var(--radius-sm)] break-words px-1 py-1.5 text-left text-sm font-body hover:bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                      plainValue ? 'text-[var(--ink)]' : 'text-[var(--ink-muted)]'
+                    }`}
+                    title={plainValue || undefined}
+                    aria-label={`Modifier ${label}`}
+                  >
+                    {displayValue ?? shownText}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startEdit}
+                    className="mt-1 shrink-0 rounded-[var(--radius-sm)] p-1.5 text-[var(--accent)] opacity-0 transition hover:bg-[var(--accent-soft)] group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                    aria-label={`Modifier ${label}`}
+                  >
+                    <Pencil className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </>
+              )}
             </div>
           )}
           <p className="sr-only" aria-live="polite">

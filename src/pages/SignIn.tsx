@@ -13,7 +13,7 @@ function getErrorMessage(message: string) {
     return 'Email ou mot de passe incorrect.'
   }
   if (normalized.includes('email not confirmed')) {
-    return 'Adresse email non confirmée. Vérifie ta boîte mail.'
+    return 'Adresse email non confirmée. Vérifiez votre boîte mail.'
   }
   return 'Une erreur est survenue. Merci de réessayer.'
 }
@@ -75,7 +75,7 @@ export function SignIn() {
   return (
     <AuthShell
       title="Connexion"
-      subtitle="Connecte-toi pour gérer tes onboardings Freli."
+      subtitle="Connectez-vous pour gérer vos onboardings Freli."
       footer={
         <p className="text-center text-sm font-body text-[var(--ink-muted)]">
           Pas encore de compte ?{' '}

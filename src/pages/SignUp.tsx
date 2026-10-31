@@ -354,7 +354,7 @@ export function SignUp() {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <p className="text-sm font-body text-[var(--ink-muted)]">
-          {saasSessionId ? 'Vérification du paiement…' : 'Validation de ton invitation…'}
+          {saasSessionId ? 'Vérification du paiement…' : 'Validation de votre invitation…'}
         </p>
       </div>
     )
@@ -368,7 +368,7 @@ export function SignUp() {
             Paiement en cours
           </h1>
           <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
-            Le paiement n&apos;est pas encore confirmé. Réessaie dans un instant ou reviens depuis
+            Le paiement n&apos;est pas encore confirmé. Réessayez dans un instant ou revenez depuis
             l&apos;email de confirmation.
           </p>
           <Link to="/tarifs">
@@ -406,8 +406,8 @@ export function SignUp() {
           </h1>
           <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
             {emailLocked
-              ? `Connecte-toi avec ${emailLocked} pour accéder à Freli.`
-              : 'Tu peux te connecter avec ton email et ton mot de passe.'}
+              ? `Connectez-vous avec ${emailLocked} pour accéder à Freli.`
+              : 'Vous pouvez vous connecter avec votre email et votre mot de passe.'}
           </p>
           <Link to="/signin">
             <Button className="mt-6 w-full">Se connecter</Button>
@@ -426,7 +426,7 @@ export function SignUp() {
           </h1>
           <p className="mt-3 text-sm font-body text-[var(--ink-muted)]">
             {error ??
-              'Ce lien n’est pas valide. Ouvre le lien depuis ton email d’invitation ou finalise le paiement depuis la page tarifs.'}
+              'Ce lien n’est pas valide. Ouvrez le lien depuis votre email d’invitation ou finalisez le paiement depuis la page tarifs.'}
           </p>
           <Link to="/signin">
             <Button className="mt-6 w-full">Aller à la connexion</Button>
@@ -441,10 +441,10 @@ export function SignUp() {
       <div className="flex min-h-dvh items-center justify-center bg-[var(--surface)] px-4">
         <Card className="w-full max-w-md">
           <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
-            Crée ton compte Freli
+            Créez votre compte Freli
           </h1>
           <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-            Paiement confirmé. Choisis ton mot de passe pour accéder à Freli.
+            Paiement confirmé. Choisissez votre mot de passe pour accéder à Freli.
           </p>
 
           <form className="mt-6 space-y-3" onSubmit={handleSaasSubmit}>
@@ -502,7 +502,7 @@ export function SignUp() {
           Bienvenue sur Freli
         </h1>
         <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-          Choisis ton mot de passe pour activer ton compte.
+          Choisissez votre mot de passe pour activer votre compte.
         </p>
 
         <form className="mt-6 space-y-3" onSubmit={handleInviteSubmit}>

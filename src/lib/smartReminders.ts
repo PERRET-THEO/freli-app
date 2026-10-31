@@ -1,7 +1,8 @@
+import { sanitizeAiErrorMessage } from './aiUserFacingError'
 import { supabase } from './supabase'
 
 export type SmartReminderBehavior = 'not_opened' | 'opened_not_clicked' | 'stuck_on_step'
-export type SmartReminderStatus = 'draft' | 'sent' | 'dismissed' | 'stale'
+export type SmartReminderStatus = 'draft' | 'sent' | 'dismissed' | 'stale' | 'generating'
 export type SmartReminderTone = 'professional' | 'warm' | 'direct'
 
 export type SmartReminderRecord = {
@@ -58,22 +59,9 @@ export async function fetchProjectSmartReminders(
   return (data ?? []) as SmartReminderRecord[]
 }
 
-const AI_RATE_LIMIT_MESSAGE =
-  'Limite de requêtes IA atteinte. Réessayez dans quelques minutes.'
-
-/** Filet UI : humanise les erreurs rate-limit provider (Gemini / legacy). */
+/** Filet UI : humanise les erreurs rate-limit / saturation provider. */
 function humanizeInvokeError(message: string): string {
-  const lower = message.toLowerCase()
-  if (
-    lower.includes('429') ||
-    lower.includes('rate_limit') ||
-    lower.includes('rate limit exceeded') ||
-    lower.includes('resource_exhausted') ||
-    lower.includes('quota')
-  ) {
-    return AI_RATE_LIMIT_MESSAGE
-  }
-  return message
+  return sanitizeAiErrorMessage(message)
 }
 
 /** Extrait le détail métier d'un FunctionsHttpError (body JSON dans error.context). */
@@ -131,16 +119,6 @@ export async function dismissSmartReminder(reminderId: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
-export type RequestSmartReminderResult = {
-  reminderId?: string
-  status: 'draft' | 'sent'
-  existing?: boolean
-  previewRequired?: boolean
-  behaviorCategory?: SmartReminderBehavior
-  message?: string
-  code?: string
-}
-
 function humanizeSkippedReason(reason: string, code?: string): string {
   if (code === 'insufficient_credits' || /crédit/i.test(reason)) {
     return 'Crédits IA épuisés — rechargez ou réessayez plus tard.'
@@ -154,13 +132,28 @@ function humanizeSkippedReason(reason: string, code?: string): string {
   return reason || "Le brouillon n'a pas pu être généré — réessayez."
 }
 
+export type RequestSmartReminderResult = {
+  reminderId?: string
+  status: 'sent' | 'draft' | 'generating'
+  existing?: boolean
+  previewRequired?: boolean
+  behaviorCategory?: SmartReminderBehavior
+  message?: string
+  code?: string
+  accepted?: boolean
+}
+
 /** Génère (ou récupère) une relance IA pour un projet — bouton Relancer / CTA panel. */
 export async function requestSmartReminder(
   projectId: string,
-  options?: { forceRefresh?: boolean },
+  options?: { forceRefresh?: boolean; async?: boolean },
 ): Promise<RequestSmartReminderResult> {
   const { data, error } = await supabase.functions.invoke('request-smart-reminder', {
-    body: { projectId, forceRefresh: options?.forceRefresh === true },
+    body: {
+      projectId,
+      forceRefresh: options?.forceRefresh === true,
+      async: options?.async === true,
+    },
   })
   if (error) throw new Error(await invokeErrorMessage(error, data))
   if (data?.error) {
@@ -176,13 +169,20 @@ export async function requestSmartReminder(
       ),
     )
   }
+  const status =
+    data?.status === 'sent'
+      ? 'sent'
+      : data?.status === 'generating'
+        ? 'generating'
+        : 'draft'
   return {
     reminderId: typeof data?.reminderId === 'string' ? data.reminderId : undefined,
-    status: data?.status === 'sent' ? 'sent' : 'draft',
+    status,
     existing: data?.existing === true,
     previewRequired: data?.previewRequired === true,
     behaviorCategory: data?.behaviorCategory as SmartReminderBehavior | undefined,
     message: typeof data?.message === 'string' ? data.message : undefined,
     code: typeof data?.code === 'string' ? data.code : undefined,
+    accepted: data?.accepted === true,
   }
 }

@@ -25,6 +25,8 @@ const DEFAULT_API_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192
 const DEFAULT_TIMEOUT_MS = 90_000
 const OCR_TIMEOUT_MS = 120_000
+/** Budget total retries (429 / 5xx) pour une extraction — évite les workers zombies. */
+export const EXTRACTION_RETRY_BUDGET_MS = 25_000
 
 // ---------------------------------------------------------------------------
 // Types publics
@@ -129,37 +131,120 @@ export function normalizeSchemaForGemini(schema: Record<string, unknown>): Recor
 // HTTP
 // ---------------------------------------------------------------------------
 
+/** Identifiant court pour corréler UI ↔ logs serveur (jamais de JSON API côté client). */
+export function newAiErrorId(): string {
+  return `ai_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`
+}
+
+export type AiErrorKind = 'rate_limit' | 'auth' | 'unknown_document' | 'unknown'
+
+export const RATE_LIMIT_USER_MESSAGE =
+  'Service IA momentanément saturé. Réessayez dans quelques minutes.'
+
+function unknownDocumentAnalysisMessage(errorId: string): string {
+  return `Une erreur est survenue lors de l'analyse du document. Réessayez ou contactez le support (réf. ${errorId}).`
+}
+
+/** Strict : uniquement 429 / 503 / overloaded / high demand (pas timeout, pas quota générique). */
+export function isProviderSaturationSignal(raw: string): boolean {
+  const lower = raw.toLowerCase()
+  return (
+    /\b429\b/.test(raw) ||
+    /\b503\b/.test(raw) ||
+    lower.includes('overloaded') ||
+    lower.includes('high demand') ||
+    lower.includes('rate limit')
+  )
+}
+
+/**
+ * Traduit une erreur fournisseur en message FR sans JSON.
+ * Le détail technique reste dans les logs (`errorId`).
+ */
+export function toUserFacingAiError(
+  error: unknown,
+  options?: {
+    errorId?: string
+    kind?: AiErrorKind
+    /** Contexte logs (provider, model, HTTP, fichier…). */
+    logContext?: Record<string, unknown>
+  },
+): { message: string; kind: AiErrorKind; errorId: string } {
+  const errorId = options?.errorId ?? newAiErrorId()
+  const raw = error instanceof Error ? error.message : String(error ?? '')
+  const lower = raw.toLowerCase()
+
+  // Message déjà FR saturé (ex. formatGeminiHttpError 429/503) OU signaux provider bruts.
+  if (
+    options?.kind === 'rate_limit' ||
+    raw === RATE_LIMIT_USER_MESSAGE ||
+    isProviderSaturationSignal(raw)
+  ) {
+    return { message: RATE_LIMIT_USER_MESSAGE, kind: 'rate_limit', errorId }
+  }
+
+  if (
+    options?.kind === 'unknown_document' ||
+    lower.includes('type de document non reconnu')
+  ) {
+    return {
+      message: "Type de document non reconnu (attendu : pièce d'identité, Kbis ou RIB).",
+      kind: 'unknown_document',
+      errorId,
+    }
+  }
+
+  if (options?.kind === 'auth' || /\b401\b/.test(raw) || /\b403\b/.test(raw)) {
+    return {
+      message: 'Service IA indisponible. Réessayez plus tard.',
+      kind: 'auth',
+      errorId,
+    }
+  }
+
+  // Ne jamais renvoyer tel quel un message déjà FR « saturé » si le kind n'est pas rate_limit
+  // (ex. timeout mappé par erreur) — ni exposer JSON / payloads API.
+  console.error('[ai-provider] toUserFacingAiError unknown', {
+    errorId,
+    raw: raw.slice(0, 500),
+    ...options?.logContext,
+  })
+
+  return {
+    message: unknownDocumentAnalysisMessage(errorId),
+    kind: 'unknown',
+    errorId,
+  }
+}
+
 function formatGeminiHttpError(status: number, bodyText: string): string {
-  if (status === 429) {
-    return 'Limite de requêtes Gemini atteinte. Réessayez dans quelques minutes.'
+  const bodyLower = bodyText.toLowerCase()
+  if (
+    status === 429 ||
+    status === 503 ||
+    bodyLower.includes('overloaded') ||
+    bodyLower.includes('high demand')
+  ) {
+    return RATE_LIMIT_USER_MESSAGE
   }
   if (status === 401 || status === 403) {
-    try {
-      const parsed = JSON.parse(bodyText) as { error?: { message?: unknown }; message?: unknown }
-      const message =
-        (typeof parsed.error?.message === 'string' && parsed.error.message.trim()) ||
-        (typeof parsed.message === 'string' && parsed.message.trim()) ||
-        ''
-      if (message.toLowerCase().includes('quota') || message.toLowerCase().includes('rate')) {
-        return `Erreur Gemini (${status}): ${message}`
-      }
-    } catch {
-      // ignore
-    }
-    return 'Clé API Gemini invalide ou non configurée.'
+    return 'Service IA indisponible. Réessayez plus tard.'
   }
-  try {
-    const parsed = JSON.parse(bodyText) as { error?: { message?: unknown }; message?: unknown }
-    const message =
-      (typeof parsed.error?.message === 'string' && parsed.error.message.trim()) ||
-      (typeof parsed.message === 'string' && parsed.message.trim()) ||
-      ''
-    if (message) return `Erreur Gemini (${status}): ${message}`
-  } catch {
-    // ignore
+  const errorId = newAiErrorId()
+  console.error(`[ai-provider] http_${status} errorId=${errorId} provider=gemini body=`, bodyText.slice(0, 500))
+  return `gemini_http_${status}:${errorId}`
+}
+
+function parseRetryAfterMs(response: Response): number | null {
+  const header = response.headers.get('retry-after')
+  if (!header) return null
+  const asInt = Number(header)
+  if (Number.isFinite(asInt) && asInt >= 0) return Math.min(asInt * 1000, 60_000)
+  const asDate = Date.parse(header)
+  if (!Number.isNaN(asDate)) {
+    return Math.min(Math.max(asDate - Date.now(), 0), 60_000)
   }
-  const excerpt = bodyText.trim().slice(0, 200)
-  return excerpt ? `Erreur Gemini (${status}): ${excerpt}` : `Erreur Gemini (${status})`
+  return null
 }
 
 async function fetchWithRetry(
@@ -167,18 +252,52 @@ async function fetchWithRetry(
   init: RequestInit,
   maxRetries = 2,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  deadlineAt?: number,
 ): Promise<Response> {
   let lastError: Error | null = null
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (attempt > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt))
+    const remaining =
+      typeof deadlineAt === 'number' ? deadlineAt - Date.now() : Number.POSITIVE_INFINITY
+    if (remaining <= 0) {
+      throw lastError ?? new Error('Gemini API: budget retries dépassé')
     }
+    if (attempt > 0) {
+      const backoff = Math.min(1000 * 2 ** attempt, remaining)
+      await new Promise((resolve) => setTimeout(resolve, backoff))
+      if (typeof deadlineAt === 'number' && Date.now() >= deadlineAt) {
+        throw lastError ?? new Error('Gemini API: budget retries dépassé')
+      }
+    }
+    const attemptTimeout = Math.min(
+      timeoutMs,
+      Number.isFinite(remaining) ? Math.max(1_000, remaining) : timeoutMs,
+    )
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const timer = setTimeout(() => controller.abort(), attemptTimeout)
     try {
       const response = await fetch(url, { ...init, signal: controller.signal })
-      if (response.status === 429 || response.status === 401 || response.status === 403) {
+      if (response.status === 401 || response.status === 403) {
         throw new Error(formatGeminiHttpError(response.status, await response.text()))
+      }
+      if (response.status === 429) {
+        const bodyText = await response.text()
+        const errorId = newAiErrorId()
+        console.error(
+          `[ai-provider] 429 errorId=${errorId} attempt=${attempt} retry-after=${response.headers.get('retry-after')} body=`,
+          bodyText.slice(0, 500),
+        )
+        lastError = new Error(RATE_LIMIT_USER_MESSAGE)
+        if (attempt < maxRetries) {
+          const retryAfter = parseRetryAfterMs(response)
+          const delay = retryAfter ?? 1000 * 2 ** (attempt + 1)
+          const wait = typeof deadlineAt === 'number'
+            ? Math.min(delay, Math.max(0, deadlineAt - Date.now()))
+            : delay
+          if (wait <= 0) throw lastError
+          await new Promise((resolve) => setTimeout(resolve, wait))
+          continue
+        }
+        throw lastError
       }
       if (response.status >= 500) {
         lastError = new Error(formatGeminiHttpError(response.status, await response.text()))
@@ -187,7 +306,7 @@ async function fetchWithRetry(
       return response
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
-        lastError = new Error(`Gemini API timeout après ${timeoutMs}ms`)
+        lastError = new Error(`Gemini API timeout après ${attemptTimeout}ms`)
         continue
       }
       throw error
@@ -246,6 +365,8 @@ async function generateContent(options: {
   temperature?: number
   responseSchema?: Record<string, unknown>
   timeoutMs?: number
+  /** Horodatage absolu (Date.now()) au-delà duquel les retries s'arrêtent. */
+  deadlineAt?: number
 }): Promise<{ text: string; model: string; inputTokens: number; outputTokens: number }> {
   const apiKey = getApiKey()
   const model = resolveModel(options.model)
@@ -285,6 +406,7 @@ async function generateContent(options: {
     },
     2,
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    options.deadlineAt,
   )
 
   if (!response.ok) {
@@ -412,6 +534,7 @@ export async function runOcr(options: {
   tableFormat?: 'html' | 'markdown' | null
   extractHeader?: boolean
   extractFooter?: boolean
+  deadlineAt?: number
 }): Promise<OcrResult> {
   const start = Date.now()
   const responseSchema = buildOcrResponseSchema(options.annotationSchema)
@@ -429,6 +552,11 @@ export async function runOcr(options: {
     .filter(Boolean)
     .join('\n')
 
+  const timeoutMs =
+    typeof options.deadlineAt === 'number'
+      ? Math.min(OCR_TIMEOUT_MS, Math.max(1_000, options.deadlineAt - Date.now()))
+      : OCR_TIMEOUT_MS
+
   const result = await generateContent({
     model: MODEL_OCR,
     system: 'Tu es un moteur OCR précis pour documents français (identité, Kbis, RIB, contrats).',
@@ -439,7 +567,8 @@ export async function runOcr(options: {
     maxTokens: DEFAULT_MAX_OUTPUT_TOKENS,
     temperature: 0,
     responseSchema,
-    timeoutMs: OCR_TIMEOUT_MS,
+    timeoutMs,
+    deadlineAt: options.deadlineAt,
   })
 
   const parsed = parseJsonResponse<{
@@ -497,6 +626,7 @@ export async function chatJsonSchema<T = Record<string, unknown>>(options: {
   temperature?: number
   imageMediaType?: string
   imageBase64?: string
+  deadlineAt?: number
 }): Promise<AiCallResult & { parsed: T }> {
   const start = Date.now()
 
@@ -514,6 +644,7 @@ export async function chatJsonSchema<T = Record<string, unknown>>(options: {
     maxTokens: options.maxTokens ?? 4096,
     temperature: options.temperature ?? 0,
     responseSchema: options.schema,
+    deadlineAt: options.deadlineAt,
   })
 
   const parsed = parseJsonResponse<T>(result.text, options.schemaName)

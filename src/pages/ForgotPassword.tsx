@@ -39,8 +39,8 @@ export function ForgotPassword() {
         title="Email envoyé"
         subtitle={
           <>
-            Si un compte existe pour <strong>{email}</strong>, tu recevras un lien pour
-            réinitialiser ton mot de passe.
+            Si un compte existe pour <strong>{email}</strong>, vous recevrez un lien pour
+            réinitialiser votre mot de passe.
           </>
         }
       >
@@ -54,7 +54,7 @@ export function ForgotPassword() {
   return (
     <AuthShell
       title="Mot de passe oublié"
-      subtitle="Entre ton adresse email pour recevoir un lien de réinitialisation."
+      subtitle="Entrez votre adresse email pour recevoir un lien de réinitialisation."
       footer={
         <Link
           to="/signin"

@@ -117,7 +117,7 @@ export function ChecklistBuilder({
       return
     }
     if (!saveName.trim()) {
-      setSaveError('Donne un nom à ton modèle.')
+      setSaveError('Donnez un nom à votre modèle.')
       return
     }
     if (!items.length) {
@@ -187,7 +187,7 @@ export function ChecklistBuilder({
 
       {items.some((item) => item.type === 'signature' && !item.contractSource) ? (
         <p className="mt-2 rounded-[var(--radius-sm)] border border-[var(--amber)]/40 bg-[var(--amber-soft)] px-3 py-2 text-xs font-body text-[var(--amber)]">
-          Configure le contrat pour chaque étape « Contrat à signer » ci-dessous.
+          Configurez le contrat pour chaque étape « Contrat à signer » ci-dessous.
         </p>
       ) : null}
 
@@ -215,7 +215,7 @@ export function ChecklistBuilder({
           <div className="w-full max-w-md rounded-[var(--radius-lg)] bg-[var(--white)] p-4 shadow-[0_2px_16px_rgba(13,15,20,0.12)] sm:p-7">
             <h2 className="font-display text-2xl font-bold text-[var(--ink)]">Enregistrer le modèle</h2>
             <p className="mt-2 text-sm font-body text-[var(--ink-muted)]">
-              Réutilise cette checklist ({items.length} item{items.length > 1 ? 's' : ''}) pour tes prochains projets.
+              Réutilisez cette checklist ({items.length} item{items.length > 1 ? 's' : ''}) pour vos prochains projets.
             </p>
             <div className="mt-4 space-y-3">
               <Input

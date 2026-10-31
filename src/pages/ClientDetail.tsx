@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, startTransition } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
+import { ClientDetailSkeleton } from '../components/dashboard/ClientDetailSkeleton'
 import { ClientActivityTimeline } from '../components/client/ClientActivityTimeline'
 import { ClientDocumentsPanel } from '../components/client/ClientDocumentsPanel'
 import { ClientPropertyPanel } from '../components/client/ClientPropertyPanel'
@@ -345,8 +346,8 @@ export function ClientDetail() {
 
   if (loading) {
     return (
-      <DashboardLayout title="Client" subtitle="Chargement…" maxWidth="5xl">
-        <p className="text-sm font-body text-[var(--ink-muted)]">Chargement...</p>
+      <DashboardLayout maxWidth="5xl" loading skeleton={<ClientDetailSkeleton />}>
+        {null}
       </DashboardLayout>
     )
   }
@@ -382,7 +383,8 @@ export function ClientDetail() {
       />
 
       <div className="mt-6 flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)] lg:items-start lg:gap-6">
-        <div className="order-3 space-y-4 lg:order-1 lg:row-span-3">
+        {/* Colonne gauche seule : propriétés sticky — ne pas y empiler Documents (grid auto-flow). */}
+        <div className="order-3 lg:order-1 lg:sticky lg:top-6 lg:self-start">
           <ClientPropertyPanel
             client={client}
             statuses={fieldSave.statuses}
@@ -402,41 +404,39 @@ export function ClientDetail() {
           />
         </div>
 
-        <section className="order-1 min-w-0 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-4 sm:p-5 lg:order-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-display text-base font-semibold text-[var(--ink)]">
-              Projets ({projects.length})
-            </h2>
-            <Link to={`/dashboard/new?clientId=${client.id}`}>
-              <Button variant="secondary">Nouveau projet</Button>
-            </Link>
-          </div>
-          {projects.length === 0 ? (
-            <div className="mt-4 rounded-[var(--radius-sm)] bg-[var(--surface)] px-4 py-8 text-center">
-              <p className="text-sm font-body font-medium text-[var(--ink)]">
-                Aucun projet pour ce client
-              </p>
-              <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
-                Créez un onboarding pour démarrer la relation.
-              </p>
-              <Link to={`/dashboard/new?clientId=${client.id}`} className="mt-4 inline-block">
-                <Button>+ Créer un projet</Button>
+        <div className="order-1 space-y-4 lg:order-2">
+          <section className="min-w-0 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--white)] p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-display text-base font-semibold text-[var(--ink)]">
+                Projets ({projects.length})
+              </h2>
+              <Link to={`/dashboard/new?clientId=${client.id}`}>
+                <Button variant="secondary">Nouveau projet</Button>
               </Link>
             </div>
-          ) : (
-            <ul className="mt-4 space-y-3">
-              {projects.map((project) => (
-                <ClientProjectRow key={project.id} project={project} />
-              ))}
-            </ul>
-          )}
-        </section>
+            {projects.length === 0 ? (
+              <div className="mt-4 rounded-[var(--radius-sm)] bg-[var(--surface)] px-4 py-8 text-center">
+                <p className="text-sm font-body font-medium text-[var(--ink)]">
+                  Aucun projet pour ce client
+                </p>
+                <p className="mt-1 text-xs font-body text-[var(--ink-muted)]">
+                  Créez un onboarding pour démarrer la relation.
+                </p>
+                <Link to={`/dashboard/new?clientId=${client.id}`} className="mt-4 inline-block">
+                  <Button>+ Créer un projet</Button>
+                </Link>
+              </div>
+            ) : (
+              <ul className="mt-4 space-y-3">
+                {projects.map((project) => (
+                  <ClientProjectRow key={project.id} project={project} />
+                ))}
+              </ul>
+            )}
+          </section>
 
-        <div className="order-2 lg:order-2">
           <ClientDocumentsPanel items={documents} loading={docsLoading} />
-        </div>
 
-        <div className="order-4 lg:order-2">
           <ClientActivityTimeline
             key={id}
             events={activityAll}

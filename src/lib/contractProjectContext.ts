@@ -70,6 +70,34 @@ function clientLinesFrom(
   return lines
 }
 
+/** Construit le contexte contrat depuis une ligne projet déjà chargée (évite un 2e SELECT). */
+export function buildContractProjectContext(args: {
+  projectId: string
+  clientName: string
+  clientEmail: string | null
+  price: number | null
+  agencies: AgencyRow | AgencyRow[] | null | undefined
+  clients: ClientRow | ClientRow[] | null | undefined
+}): ContractProjectContext {
+  const agency = Array.isArray(args.agencies) ? args.agencies[0] : args.agencies
+  const client = Array.isArray(args.clients) ? args.clients[0] : args.clients
+  const dateLabel = new Date().toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+  return {
+    clientName: args.clientName?.trim() || 'Client',
+    clientEmail: args.clientEmail?.trim() || null,
+    priceLabel: args.price != null ? formatEuro(args.price) : null,
+    agencyName: agency?.name?.trim() || null,
+    agencyLines: agencyLinesFrom(agency),
+    clientLines: clientLinesFrom(args.clientName ?? 'Client', args.clientEmail, client),
+    dateLabel,
+    projectEditPath: `/projects/${args.projectId}`,
+  }
+}
+
 export async function fetchContractProjectContext(
   projectId: string,
 ): Promise<ContractProjectContext | null> {
@@ -83,25 +111,12 @@ export async function fetchContractProjectContext(
 
   if (error || !data) return null
 
-  const agencyRel = data.agencies as AgencyRow | AgencyRow[] | null
-  const agency = Array.isArray(agencyRel) ? agencyRel[0] : agencyRel
-  const clientRel = data.clients as ClientRow | ClientRow[] | null
-  const client = Array.isArray(clientRel) ? clientRel[0] : clientRel
-
-  const dateLabel = new Date().toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
+  return buildContractProjectContext({
+    projectId,
+    clientName: data.client_name ?? 'Client',
+    clientEmail: data.client_email,
+    price: data.price,
+    agencies: data.agencies as AgencyRow | AgencyRow[] | null,
+    clients: data.clients as ClientRow | ClientRow[] | null,
   })
-
-  return {
-    clientName: data.client_name?.trim() || 'Client',
-    clientEmail: data.client_email?.trim() || null,
-    priceLabel: data.price != null ? formatEuro(data.price) : null,
-    agencyName: agency?.name?.trim() || null,
-    agencyLines: agencyLinesFrom(agency),
-    clientLines: clientLinesFrom(data.client_name ?? 'Client', data.client_email, client),
-    dateLabel,
-    projectEditPath: `/projects/${projectId}`,
-  }
 }

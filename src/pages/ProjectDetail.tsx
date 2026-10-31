@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { DashboardLayout } from '../components/DashboardLayout'
+import { ProjectDetailSkeleton } from '../components/dashboard/ProjectDetailSkeleton'
 import { ExtractionReviewPanel } from '../components/extraction/ExtractionReviewPanel'
 import { ChecklistReviewPanel } from '../components/review/ChecklistReviewPanel'
 import { SmartRemindersPanel } from '../components/reminders/SmartRemindersPanel'
@@ -63,6 +64,17 @@ import {
 } from '../lib/reminderCap'
 import { pushRecentProject } from '../lib/recentProjects'
 import { fetchProjectSignatureProofs, type SignatureProof } from '../lib/signatureProof'
+import { fetchProjectSmartReminders, type SmartReminderRecord } from '../lib/smartReminders'
+import { fetchProjectExtractions, type ExtractionRecord } from '../lib/documentExtraction'
+import {
+  fetchProjectGeneratedDocuments,
+  type GeneratedDocumentRecord,
+} from '../lib/generatedDocuments'
+import {
+  buildContractProjectContext,
+  type ContractProjectContext,
+} from '../lib/contractProjectContext'
+import { useAgencySession } from '../contexts/AgencyContext'
 import { supabase } from '../lib/supabase'
 
 type ClientJoin = {
@@ -72,6 +84,9 @@ type ClientJoin = {
   address_city: string | null
   address_country: string | null
   company_name: string | null
+  first_name?: string | null
+  last_name?: string | null
+  siret?: string | null
 }
 
 type ProjectRecord = {
@@ -107,8 +122,28 @@ type ProjectRecord = {
     | 'draft'
   agency_id: string
   agencies?:
-    | { name: string | null; ai_reminder_max_per_project?: number | null }
-    | { name: string | null; ai_reminder_max_per_project?: number | null }[]
+    | {
+        name: string | null
+        ai_reminder_max_per_project?: number | null
+        legal_form?: string | null
+        address_street?: string | null
+        address_postal_code?: string | null
+        address_city?: string | null
+        siret?: string | null
+        contact_email?: string | null
+        contact_phone?: string | null
+      }
+    | {
+        name: string | null
+        ai_reminder_max_per_project?: number | null
+        legal_form?: string | null
+        address_street?: string | null
+        address_postal_code?: string | null
+        address_city?: string | null
+        siret?: string | null
+        contact_email?: string | null
+        contact_phone?: string | null
+      }[]
     | null
   clients?: ClientJoin | ClientJoin[] | null
 }
@@ -138,6 +173,7 @@ type ReminderLog = {
 export function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { email: sessionEmail, agency: sessionAgency } = useAgencySession()
   const priceInputRef = useRef<HTMLInputElement>(null)
   const paymentFeedbackTimer = useRef<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -147,6 +183,10 @@ export function ProjectDetail() {
   const [reminderLogs, setReminderLogs] = useState<ReminderLog[]>([])
   const [projectActivity, setProjectActivity] = useState<ClientActivityEvent[]>([])
   const [signatureProofs, setSignatureProofs] = useState<Record<string, SignatureProof>>({})
+  const [panelReminders, setPanelReminders] = useState<SmartReminderRecord[] | undefined>()
+  const [panelExtractions, setPanelExtractions] = useState<ExtractionRecord[] | undefined>()
+  const [panelDocuments, setPanelDocuments] = useState<GeneratedDocumentRecord[] | undefined>()
+  const [panelContractCtx, setPanelContractCtx] = useState<ContractProjectContext | null>(null)
   const [sendingReminder, setSendingReminder] = useState(false)
   const [reminderFeedback, setReminderFeedback] = useState<string | null>(null)
   const [sendingPayment, setSendingPayment] = useState(false)
@@ -195,60 +235,43 @@ export function ProjectDetail() {
       return
     }
 
-    const { data: projectData, error: projectError } = await supabase
-      .from('projects')
-      .select('id, agency_id, client_id, name, client_name, client_email, status, token, created_at, last_reminder_sent_at, last_portal_visit_at, reminder_cap_reset_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, payment_unlock_mode, payment_unlocked_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, invite_status, invite_sent_at, invite_error, invite_last_attempt_at, agencies(name, ai_reminder_max_per_project), clients(phone, address_street, address_postal_code, address_city, address_country, company_name)')
-      .eq('id', id)
-      .maybeSingle()
-
-    if (projectError || !projectData) {
-      setError('Projet introuvable.')
-      setLoading(false)
-      return
-    }
-
-    const aiFlags = await fetchAgencyAiFlags(projectData.agency_id)
-    setAiContractsEnabled(aiFlags.ai_contracts_enabled === true)
-    setAiRemindersEnabled(aiFlags.ai_reminders_enabled === true)
-    const agencySettingsRel = projectData.agencies as
-      | { ai_reminder_max_per_project?: number | null }
-      | { ai_reminder_max_per_project?: number | null }[]
-      | null
-    const agencySettings = Array.isArray(agencySettingsRel)
-      ? agencySettingsRel[0]
-      : agencySettingsRel
-    setReminderMaxPerProject(
-      typeof agencySettings?.ai_reminder_max_per_project === 'number'
-        ? agencySettings.ai_reminder_max_per_project
-        : 3,
-    )
-
-    const { data: checklistData, error: checklistError } = await supabase
-      .from('checklist_items')
-      .select(
-        'id, label, type, completed, required, value, order_index, review_status, review_note, reviewed_at, submitted_at, config',
-      )
-      .eq('project_id', projectData.id)
-      .order('order_index', { ascending: true })
-
-    if (checklistError) {
-      setError('Impossible de charger la checklist.')
-      setLoading(false)
-      return
-    }
-
-    const [{ data: logsData }, { data: activityRows }, authResult, { data: derivedRows }] =
-      await Promise.all([
+    // Une seule vague parallèle : l'id est dans l'URL (pas besoin d'attendre le SELECT projet).
+    // Acteur timeline = email session (pas getUser() réseau).
+    const [
+      { data: projectData, error: projectError },
+      { data: checklistData, error: checklistError },
+      { data: logsData },
+      { data: activityRows },
+      { data: derivedRows },
+      signatureProofsResult,
+      remindersResult,
+      extractionsResult,
+      documentsResult,
+    ] = await Promise.all([
+      supabase
+        .from('projects')
+        .select(
+          'id, agency_id, client_id, name, client_name, client_email, status, token, created_at, last_reminder_sent_at, last_portal_visit_at, reminder_cap_reset_at, price, payment_status, stripe_checkout_url, last_payment_email_sent_at, payment_unlock_mode, payment_unlocked_at, google_drive_folder_url, google_drive_files_synced_at, google_drive_sync_status, invite_status, invite_sent_at, invite_error, invite_last_attempt_at, agencies(name, ai_reminder_max_per_project, ai_contracts_enabled, ai_reminders_enabled, legal_form, address_street, address_postal_code, address_city, siret, contact_email, contact_phone), clients(phone, address_street, address_postal_code, address_city, address_country, company_name, first_name, last_name, siret)',
+        )
+        .eq('id', id)
+        .maybeSingle(),
+      supabase
+        .from('checklist_items')
+        .select(
+          'id, label, type, completed, required, value, order_index, review_status, review_note, reviewed_at, submitted_at, config',
+        )
+        .eq('project_id', id)
+        .order('order_index', { ascending: true }),
       supabase
         .from('project_reminder_logs')
         .select('id, source, sent_at, status')
-        .eq('project_id', projectData.id)
+        .eq('project_id', id)
         .order('sent_at', { ascending: false })
         .limit(20),
       supabase
         .from('client_activity_events')
         .select('id, event_type, title, occurred_at, project_id, metadata')
-        .eq('project_id', projectData.id)
+        .eq('project_id', id)
         .in('event_type', [
           'secret.reveal',
           'secret.copy',
@@ -259,9 +282,60 @@ export function ProjectDetail() {
         ])
         .order('occurred_at', { ascending: false })
         .limit(50),
-      supabase.auth.getUser(),
-      supabase.rpc('project_derived_statuses', { p_project_ids: [projectData.id] }),
+      supabase.rpc('project_derived_statuses', { p_project_ids: [id] }),
+      fetchProjectSignatureProofs(id),
+      fetchProjectSmartReminders(id).catch(() => [] as SmartReminderRecord[]),
+      fetchProjectExtractions(id, sessionAgency?.id).catch(() => [] as ExtractionRecord[]),
+      fetchProjectGeneratedDocuments(id).catch(() => [] as GeneratedDocumentRecord[]),
     ])
+
+    if (projectError || !projectData) {
+      setError('Projet introuvable.')
+      setLoading(false)
+      return
+    }
+
+    if (checklistError) {
+      setError('Impossible de charger la checklist.')
+      setLoading(false)
+      return
+    }
+
+    const agencySettingsRel = projectData.agencies as
+      | {
+          ai_reminder_max_per_project?: number | null
+          ai_contracts_enabled?: boolean | null
+          ai_reminders_enabled?: boolean | null
+          name?: string | null
+        }
+      | {
+          ai_reminder_max_per_project?: number | null
+          ai_contracts_enabled?: boolean | null
+          ai_reminders_enabled?: boolean | null
+          name?: string | null
+        }[]
+      | null
+    const agencySettings = Array.isArray(agencySettingsRel)
+      ? agencySettingsRel[0]
+      : agencySettingsRel
+
+    // Flags IA depuis le join (évite fetchAgencyAiFlags séparé) ; fallback si colonnes absentes.
+    if (
+      typeof agencySettings?.ai_contracts_enabled === 'boolean' ||
+      typeof agencySettings?.ai_reminders_enabled === 'boolean'
+    ) {
+      setAiContractsEnabled(agencySettings?.ai_contracts_enabled === true)
+      setAiRemindersEnabled(agencySettings?.ai_reminders_enabled === true)
+    } else {
+      const aiFlags = await fetchAgencyAiFlags(projectData.agency_id)
+      setAiContractsEnabled(aiFlags.ai_contracts_enabled === true)
+      setAiRemindersEnabled(aiFlags.ai_reminders_enabled === true)
+    }
+    setReminderMaxPerProject(
+      typeof agencySettings?.ai_reminder_max_per_project === 'number'
+        ? agencySettings.ai_reminder_max_per_project
+        : 3,
+    )
 
     const derivedStatus = (
       (derivedRows as { derived_status?: string }[] | null)?.[0]?.derived_status ??
@@ -271,12 +345,21 @@ export function ProjectDetail() {
     const record = { ...(projectData as ProjectRecord), derivedStatus }
     const agenciesRel = record.agencies
     const agencyRow = Array.isArray(agenciesRel) ? agenciesRel[0] : agenciesRel
-    // Prefer the signed-in user for amount edits; fall back to agency name.
-    const actorLabel =
-      authResult.data.user?.email?.trim() ||
-      agencyRow?.name?.trim() ||
-      null
+    const actorLabel = sessionEmail?.trim() || agencyRow?.name?.trim() || null
 
+    setPanelReminders(remindersResult)
+    setPanelExtractions(extractionsResult)
+    setPanelDocuments(documentsResult)
+    setPanelContractCtx(
+      buildContractProjectContext({
+        projectId: record.id,
+        clientName: record.client_name,
+        clientEmail: record.client_email,
+        price: record.price,
+        agencies: record.agencies,
+        clients: record.clients,
+      }),
+    )
     setProject(record)
     pushRecentProject(record.id, record.name?.trim() || record.client_name)
     setItems((checklistData ?? []) as ChecklistItemRecord[])
@@ -313,9 +396,9 @@ export function ProjectDetail() {
         defaultActorLabel: actorLabel,
       }).map((event) => ({ ...event, projectName: null })),
     )
-    setSignatureProofs(await fetchProjectSignatureProofs(projectData.id))
+    setSignatureProofs(signatureProofsResult)
     setLoading(false)
-  }, [id])
+  }, [id, sessionEmail, sessionAgency?.id])
 
   useEffect(() => {
     loadProject()
@@ -691,11 +774,25 @@ export function ProjectDetail() {
     if (!project?.clients) return null
     return Array.isArray(project.clients) ? project.clients[0] ?? null : project.clients
   }, [project?.clients])
+  const clientDisplayName = clientJoin
+    ? [clientJoin.first_name, clientJoin.last_name].filter(Boolean).join(' ').trim() ||
+      clientJoin.company_name ||
+      project?.client_name ||
+      'Client'
+    : project?.client_name || 'Client'
+  const signedChecklistPath =
+    items.find(
+      (item) =>
+        item.type === 'signature' &&
+        item.completed &&
+        typeof item.value === 'string' &&
+        item.value.trim().length > 0,
+    )?.value ?? null
 
   if (loading) {
     return (
-      <DashboardLayout title="Projet" subtitle="Chargement…" maxWidth="7xl">
-        <p className="text-sm font-body text-[var(--ink-muted)]">Chargement du projet...</p>
+      <DashboardLayout maxWidth="7xl" loading skeleton={<ProjectDetailSkeleton />}>
+        {null}
       </DashboardLayout>
     )
   }
@@ -709,7 +806,33 @@ export function ProjectDetail() {
   }
 
   return (
-    <DashboardLayout title={layoutTitle} maxWidth="7xl">
+    <DashboardLayout maxWidth="7xl">
+      <nav className="mb-3 text-sm font-body text-[var(--ink-muted)]" aria-label="Fil d'Ariane">
+        <Link to="/dashboard" className="text-[var(--accent)] underline-offset-2 hover:underline">
+          Vue d&apos;ensemble
+        </Link>
+        <span className="mx-1.5" aria-hidden>
+          /
+        </span>
+        {project?.client_id ? (
+          <Link
+            to={`/dashboard/client/${project.client_id}`}
+            className="text-[var(--accent)] underline-offset-2 hover:underline"
+          >
+            {clientDisplayName}
+          </Link>
+        ) : (
+          <span>{clientDisplayName}</span>
+        )}
+        <span className="mx-1.5" aria-hidden>
+          /
+        </span>
+        <span className="text-[var(--ink)]">{layoutTitle}</span>
+      </nav>
+      <h1 className="mb-6 font-display text-3xl font-bold tracking-tight text-[var(--ink)]">
+        {layoutTitle}
+      </h1>
+
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           {project ? (
@@ -1183,7 +1306,10 @@ export function ProjectDetail() {
             projectId={project.id}
             items={items}
             signatureProofs={signatureProofs}
-            onReviewed={loadProject}
+            onReviewed={async () => {
+              await loadProject()
+              setSmartRemindersKey((key) => key + 1)
+            }}
             aiRemindersEnabled={aiRemindersEnabled}
           />
         ) : null}
@@ -1196,12 +1322,16 @@ export function ProjectDetail() {
             projectId={project.id}
             aiEnabled={aiRemindersEnabled}
             clientActionLabels={clientActionLabels}
+            initialReminders={panelReminders}
             onSent={loadProject}
             onRequestGenerate={async () => {
               await handleSendReminder()
             }}
           />
-          <ExtractionReviewPanel projectId={project.id} />
+          <ExtractionReviewPanel
+            projectId={project.id}
+            initialExtractions={panelExtractions}
+          />
           <ClientActivityTimeline key={project.id} events={projectActivity} />
           <ContractGeneratorPanel
             projectId={project.id}
@@ -1209,6 +1339,9 @@ export function ProjectDetail() {
             checklistContext={items
               .map((item) => item.label?.trim())
               .filter((label): label is string => Boolean(label))}
+            initialDocuments={panelDocuments}
+            initialProjectContext={panelContractCtx}
+            signedChecklistPath={signedChecklistPath}
           />
         </div>
       ) : null}

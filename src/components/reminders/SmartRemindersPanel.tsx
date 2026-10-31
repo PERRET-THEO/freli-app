@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Card } from '../ui'
 import { formatRelative } from '../../lib/formatRelative'
 import {
@@ -10,13 +10,14 @@ import {
   type SmartReminderRecord,
 } from '../../lib/smartReminders'
 import { isDraftSendable } from '../../lib/smartReminderDraft'
-import { supabase } from '../../lib/supabase'
 
 type SmartRemindersPanelProps = {
   projectId: string
   aiEnabled?: boolean
   /** Libellés des actions encore attendues côté client (filtre brouillons stale). */
   clientActionLabels?: string[]
+  /** Préchargement fiche projet — paint immédiat, puis refetch serveur. */
+  initialReminders?: SmartReminderRecord[]
   onSent?: () => void
   onRequestGenerate?: () => void | Promise<void>
 }
@@ -101,32 +102,38 @@ function DraftCard({
   )
 }
 
+function isPlaceholderReminder(row: SmartReminderRecord): boolean {
+  return (
+    row.subject === 'Brouillon en préparation…' || row.body === 'Génération en cours.'
+  )
+}
+
+function reminderRecency(row: SmartReminderRecord): number {
+  return new Date(row.created_at).getTime()
+}
+
 export function SmartRemindersPanel({
   projectId,
   aiEnabled = true,
   clientActionLabels = [],
+  initialReminders,
   onSent,
   onRequestGenerate,
 }: SmartRemindersPanelProps) {
-  const [reminders, setReminders] = useState<SmartReminderRecord[]>([])
+  const [reminders, setReminders] = useState<SmartReminderRecord[]>(initialReminders ?? [])
   const [loaded, setLoaded] = useState(false)
+  const [serverSynced, setServerSynced] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
+  /** Poll stale-only un court moment après mount (course avec insert `generating`). */
+  const stalePollDeadlineRef = useRef(Date.now() + 90_000)
 
   const load = async () => {
     try {
       const rows = await fetchProjectSmartReminders(projectId)
-      const staleIds = rows
-        .filter((row) => row.status === 'draft' && !isDraftSendable(row, clientActionLabels))
-        .map((row) => row.id)
-      if (staleIds.length > 0) {
-        await supabase.from('smart_reminders').update({ status: 'stale' }).in('id', staleIds)
-      }
-      setReminders(
-        rows.map((row) =>
-          staleIds.includes(row.id) ? { ...row, status: 'stale' as const } : row,
-        ),
-      )
+      // Toujours la source serveur — ne pas se fier au snapshot parent.
+      setReminders(rows)
+      setServerSynced(true)
     } catch {
       // table absente ou erreur réseau : la section reste vide
     } finally {
@@ -135,9 +142,52 @@ export function SmartRemindersPanel({
   }
 
   useEffect(() => {
+    stalePollDeadlineRef.current = Date.now() + 90_000
+    setServerSynced(false)
+    setLoaded(false)
+    if (initialReminders?.length) {
+      setReminders(initialReminders)
+    }
     void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, clientActionLabels.join('|')])
+  }, [projectId])
+
+  const sortedByCreated = [...reminders].sort(
+    (a, b) => reminderRecency(b) - reminderRecency(a),
+  )
+  const hasGenerating = reminders.some((r) => r.status === 'generating')
+  const drafts = reminders.filter((r) => r.status === 'draft')
+  const sent = reminders.filter((r) => r.status === 'sent')
+
+  // Ligne la plus récente parmi draft | generating | stale-placeholder.
+  const latestRelevant = sortedByCreated.find(
+    (r) =>
+      r.status === 'draft' ||
+      r.status === 'generating' ||
+      (r.status === 'stale' && isPlaceholderReminder(r)),
+  )
+  const latestIsStalePlaceholder =
+    latestRelevant?.status === 'stale' && isPlaceholderReminder(latestRelevant)
+
+  const showStaleBanner =
+    serverSynced &&
+    latestIsStalePlaceholder &&
+    !hasGenerating &&
+    !generating &&
+    drafts.length === 0
+
+  const shouldPollStaleRace =
+    showStaleBanner && Date.now() < stalePollDeadlineRef.current
+
+  // Poll : génération en cours, ou course courte si on affiche encore une stale.
+  useEffect(() => {
+    if (!hasGenerating && !generating && !shouldPollStaleRace) return
+    const timer = window.setInterval(() => {
+      void load()
+    }, 2500)
+    return () => window.clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, hasGenerating, generating, shouldPollStaleRace])
 
   const handleProcessed = () => {
     void load()
@@ -180,10 +230,7 @@ export function SmartRemindersPanel({
   }
 
   if (!aiEnabled) return null
-  if (!loaded) return null
-
-  const drafts = reminders.filter((r) => r.status === 'draft')
-  const sent = reminders.filter((r) => r.status === 'sent')
+  if (!loaded && reminders.length === 0) return null
 
   return (
     <Card>
@@ -196,9 +243,14 @@ export function SmartRemindersPanel({
         contenu.
       </p>
 
-      {generating ? (
+      {generating || hasGenerating ? (
         <p className="mt-4 text-sm font-body text-[var(--ink-muted)]" role="status">
-          Génération du brouillon…
+          Brouillon de relance en préparation…
+        </p>
+      ) : null}
+      {showStaleBanner ? (
+        <p className="mt-4 text-sm font-body text-[var(--amber)]" role="status">
+          Brouillon indisponible — régénérer.
         </p>
       ) : null}
 
@@ -208,7 +260,7 @@ export function SmartRemindersPanel({
             <DraftCard key={reminder.id} reminder={reminder} onProcessed={handleProcessed} />
           ))}
         </div>
-      ) : (
+      ) : generating || hasGenerating ? null : (
         <div className="mt-4 rounded-[var(--radius-sm)] border border-dashed border-[var(--border)] bg-[var(--surface-warm)]/50 p-4">
           <p className="text-sm font-body text-[var(--ink-soft)]">
             Aucune relance IA en attente. La prochaine sera générée automatiquement après le délai
@@ -223,7 +275,7 @@ export function SmartRemindersPanel({
               onClick={handleGenerateNow}
               disabled={generating || noClientAction}
             >
-              {generating ? 'Génération du brouillon…' : 'Générer maintenant'}
+              Générer maintenant
             </Button>
           </span>
           {noClientAction ? (
