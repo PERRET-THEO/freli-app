@@ -25,12 +25,67 @@ const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 
+/**
+ * Budget temps : une Edge Function est coupée à ~150 s (réponse 503 → échec du
+ * workflow GitHub « Relances automatiques »). On arrête de lancer de nouvelles
+ * générations au-delà de BATCH_BUDGET_MS ; les projets restants sont traités
+ * au passage suivant du cron (3 passes / jour).
+ */
+const BATCH_BUDGET_MS = 85_000
+/** Plafond d'attente par appel (génération / envoi) quand l'IA est saturée. */
+const CALL_TIMEOUT_MS = 45_000
+
+type InvokeResult = { data: unknown; error: { message: string } | null; timedOut: boolean }
+
+async function invokeWithTimeout(
+  fn: string,
+  body: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<InvokeResult> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/${fn}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+        'Content-Type': 'application/json',
+        'x-cron-secret': cronSecret,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    const text = await res.text()
+    let data: unknown = null
+    try {
+      data = text ? JSON.parse(text) : null
+    } catch {
+      data = { error: text.slice(0, 200) }
+    }
+    if (!res.ok) {
+      const message =
+        (data as { error?: string } | null)?.error ?? `Edge Function returned HTTP ${res.status}`
+      return { data, error: { message }, timedOut: false }
+    }
+    return { data, error: null, timedOut: false }
+  } catch (error) {
+    if ((error as Error).name === 'AbortError') {
+      return { data: null, error: { message: `timeout après ${timeoutMs} ms` }, timedOut: true }
+    }
+    return { data: null, error: { message: (error as Error).message }, timedOut: false }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 type AgencySettings = {
   ai_reminders_enabled: boolean | null
   auto_reminders_enabled: boolean | null
   ai_reminder_auto_send: boolean | null
   ai_reminder_send_hour_start: number | null
   ai_reminder_send_hour_end: number | null
+  ai_reminder_max_per_project: number | null
 }
 
 type ProjectRow = {
@@ -71,7 +126,7 @@ serve(async (req) => {
     const { data: projects, error } = await supabase
       .from('projects')
       .select(
-        'id, created_at, status, last_reminder_sent_at, last_portal_visit_at, agency_id, agencies(ai_reminders_enabled, auto_reminders_enabled, ai_reminder_auto_send, ai_reminder_send_hour_start, ai_reminder_send_hour_end)',
+        'id, created_at, status, last_reminder_sent_at, last_portal_visit_at, agency_id, agencies(ai_reminders_enabled, auto_reminders_enabled, ai_reminder_auto_send, ai_reminder_send_hour_start, ai_reminder_send_hour_end, ai_reminder_max_per_project)',
       )
       .neq('status', 'completed')
     if (error) throw new Error(error.message)
@@ -80,6 +135,9 @@ serve(async (req) => {
     let sent = 0
     let skipped = 0
     let failed = 0
+    let deferred = 0
+    let timedOut = 0
+    let capReached = 0
 
     const agencyIds = [
       ...new Set(((projects ?? []) as ProjectRow[]).map((p) => p.agency_id).filter(Boolean)),
@@ -92,14 +150,40 @@ serve(async (req) => {
       (billingRows ?? []).map((row) => [row.agency_id as string, row.ai_addon_active === true]),
     )
 
-    const candidates = ((projects ?? []) as ProjectRow[]).filter((project) => {
+    const eligible = ((projects ?? []) as ProjectRow[]).filter((project) => {
       const settings = settingsFor(project)
       if (settings?.ai_reminders_enabled !== true) return false
       if (settings?.auto_reminders_enabled === false) return false
       return addonByAgency.get(project.agency_id) === true
     })
 
-    for (const project of candidates) {
+    // Ordre de passage : d'abord les projets qui ont déjà un brouillon (envoi
+    // sans appel IA), puis les autres dans un ordre aléatoire. Sans cela, deux
+    // projets lents en tête de liste épuisaient le budget à chaque passage et
+    // les suivants n'étaient jamais traités.
+    const eligibleIds = eligible.map((p) => p.id)
+    const { data: draftHolders } = await supabase
+      .from('smart_reminders')
+      .select('project_id')
+      .eq('status', 'draft')
+      .in('project_id', eligibleIds.length > 0 ? eligibleIds : ['00000000-0000-0000-0000-000000000000'])
+    const hasDraft = new Set((draftHolders ?? []).map((row) => row.project_id as string))
+    const shuffled = eligible
+      .map((project) => ({ project, key: Math.random() }))
+      .sort((a, b) => a.key - b.key)
+      .map((entry) => entry.project)
+    const candidates = [
+      ...shuffled.filter((p) => hasDraft.has(p.id)),
+      ...shuffled.filter((p) => !hasDraft.has(p.id)),
+    ]
+
+    for (let index = 0; index < candidates.length; index += 1) {
+      const project = candidates[index]
+      if (Date.now() - nowMs > BATCH_BUDGET_MS) {
+        deferred = candidates.length - index
+        console.log('Smart batch: budget temps atteint, reporté au prochain passage:', deferred)
+        break
+      }
       const { data: itemRows } = await supabase
         .from('checklist_items')
         .select(
@@ -110,6 +194,17 @@ serve(async (req) => {
 
       if (!hasClientPendingActions(itemRows ?? [])) {
         skipped += 1
+        continue
+      }
+
+      // Plafond de relances consécutives atteint (« client injoignable ») :
+      // inutile de solliciter l'IA, aucun envoi ne sera possible.
+      const maxPerProject = Math.max(1, settingsFor(project)?.ai_reminder_max_per_project ?? 3)
+      const { data: consecutive } = await supabase.rpc('project_consecutive_auto_reminders', {
+        p_project_id: project.id,
+      })
+      if (typeof consecutive === 'number' && consecutive >= maxPerProject) {
+        capReached += 1
         continue
       }
 
@@ -170,10 +265,11 @@ serve(async (req) => {
             continue
           }
           try {
-            const sendResult = await supabase.functions.invoke('send-smart-reminder', {
-              body: { reminderId: existingDraft.id, claimLogId: claim.logId },
-              headers: { 'x-cron-secret': cronSecret },
-            })
+            const sendResult = await invokeWithTimeout(
+              'send-smart-reminder',
+              { reminderId: existingDraft.id, claimLogId: claim.logId },
+              CALL_TIMEOUT_MS,
+            )
             const sendPayload = sendResult.data as { error?: string; success?: boolean } | null
             if (sendResult.error || sendPayload?.error || !sendPayload?.success) {
               console.error(
@@ -209,8 +305,9 @@ serve(async (req) => {
 
       // Génération de brouillon (claim uniquement si generate auto-envoie).
       try {
-        const invokeResult = await supabase.functions.invoke('generate-smart-reminder', {
-          body: {
+        const invokeResult = await invokeWithTimeout(
+          'generate-smart-reminder',
+          {
             projectId: project.id,
             behaviorCategory: behavior.behaviorCategory,
             blockingStepLabel: behavior.blockingStepLabel,
@@ -218,8 +315,9 @@ serve(async (req) => {
             progress: behavior.progress,
             attemptClaim: autoSend && hasPriorSent && withinWindow,
           },
-          headers: { 'x-cron-secret': cronSecret },
-        })
+          CALL_TIMEOUT_MS,
+        )
+        if (invokeResult.timedOut) timedOut += 1
         const payload = invokeResult.data as {
           error?: string
           skipped?: boolean
@@ -253,6 +351,9 @@ serve(async (req) => {
       sent,
       skipped,
       failed,
+      timedOut,
+      deferred,
+      capReached,
     }
     console.log('Smart batch summary:', JSON.stringify(summary))
     return new Response(JSON.stringify(summary), {

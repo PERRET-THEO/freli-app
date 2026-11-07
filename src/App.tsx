@@ -55,6 +55,12 @@ const Clients = lazy(() => import('./pages/Clients').then((m) => ({ default: m.C
 const ClientDetail = lazy(() =>
   import('./pages/ClientDetail').then((m) => ({ default: m.ClientDetail })),
 )
+const SalesDocuments = lazy(() =>
+  import('./pages/SalesDocuments').then((m) => ({ default: m.SalesDocuments })),
+)
+const SalesDocumentEditor = lazy(() =>
+  import('./pages/SalesDocumentEditor').then((m) => ({ default: m.SalesDocumentEditor })),
+)
 const Integrations = lazy(() =>
   import('./pages/Integrations').then((m) => ({ default: m.Integrations })),
 )
@@ -357,6 +363,30 @@ function App() {
                 element={
                   <LazyPage>
                     <ClientDetail />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="/dashboard/documents"
+                element={
+                  <LazyPage>
+                    <SalesDocuments />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="/dashboard/documents/nouveau"
+                element={
+                  <LazyPage>
+                    <SalesDocumentEditor />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="/dashboard/documents/:id"
+                element={
+                  <LazyPage>
+                    <SalesDocumentEditor />
                   </LazyPage>
                 }
               />

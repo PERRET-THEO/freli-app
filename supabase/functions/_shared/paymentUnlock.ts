@@ -88,7 +88,10 @@ export function evaluatePaymentUnlock(input: {
     sticky,
     prerequisitesMet: false,
     lockReason: 'steps',
-    lockMessage: `Disponible après les étapes ${label}`,
+    lockMessage:
+      numbers.length === 1
+        ? `Disponible après l’étape ${label}`
+        : `Disponible après les étapes ${label}`,
   }
 }
 

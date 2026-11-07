@@ -9,10 +9,11 @@ import {
 
 describe('navConfig', () => {
   it('keeps a flat primary list without section headers', () => {
-    expect(PRIMARY_NAV).toHaveLength(4)
+    expect(PRIMARY_NAV).toHaveLength(5)
     expect(PRIMARY_NAV.map((item) => item.id)).toEqual([
       'overview',
       'clients',
+      'sales',
       'contracts',
       'integrations',
     ])
@@ -29,7 +30,11 @@ describe('navConfig', () => {
       'Clients',
       'Contrats',
     ])
-    expect(MOBILE_MORE_NAV.map((item) => item.label)).toEqual(['Intégrations', 'Paramètres'])
+    expect(MOBILE_MORE_NAV.map((item) => item.label)).toEqual([
+      'Devis & factures',
+      'Intégrations',
+      'Paramètres',
+    ])
   })
 
   it('exposes command-palette destinations including create', () => {
@@ -37,5 +42,12 @@ describe('navConfig', () => {
     expect(ids).toContain('new-project')
     expect(ids).toContain('overview')
     expect(ids).toContain('settings')
+    expect(ids).toContain('sales')
+  })
+
+  it('points the sales destination at the documents list', () => {
+    const sales = PRIMARY_NAV.find((item) => item.id === 'sales')
+    expect(sales?.to).toBe('/dashboard/documents')
+    expect(sales?.label).toBe('Devis & factures')
   })
 })

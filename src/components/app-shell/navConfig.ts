@@ -9,6 +9,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   Puzzle,
+  ReceiptText,
   Search,
   Settings2,
   UserRound,
@@ -53,6 +54,14 @@ export const PRIMARY_NAV: NavDestination[] = [
     placement: 'primary',
   },
   {
+    id: 'sales',
+    label: 'Devis & factures',
+    shortLabel: 'Factures',
+    to: '/dashboard/documents',
+    icon: ReceiptText,
+    placement: 'primary',
+  },
+  {
     id: 'contracts',
     label: 'Contrats',
     to: '/dashboard/templates',
@@ -82,11 +91,12 @@ export const FOOTER_NAV: NavDestination[] = [
 export const MOBILE_PRIMARY_NAV: NavDestination[] = [
   PRIMARY_NAV[0],
   PRIMARY_NAV[1],
-  PRIMARY_NAV[2],
+  PRIMARY_NAV[3],
 ]
 
 export const MOBILE_MORE_NAV: NavDestination[] = [
-  PRIMARY_NAV[3],
+  PRIMARY_NAV[2],
+  PRIMARY_NAV[4],
   FOOTER_NAV[0],
 ]
 

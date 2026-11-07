@@ -75,6 +75,7 @@ import {
   type ContractProjectContext,
 } from '../lib/contractProjectContext'
 import { useAgencySession } from '../contexts/AgencyContext'
+import { ProjectSalesDocumentsSection } from '../components/sales/ProjectSalesDocumentsSection'
 import { supabase } from '../lib/supabase'
 
 type ClientJoin = {
@@ -1245,6 +1246,12 @@ export function ProjectDetail() {
                   ) : null}
                 </div>
               ) : null}
+
+              <ProjectSalesDocumentsSection
+                agencyId={project.agency_id}
+                projectId={project.id}
+                clientId={project.client_id}
+              />
 
               <div className="mt-5 border-t border-[var(--border)] pt-4">
                 <p className="text-xs font-body font-medium text-[var(--ink-soft)]">Google Drive</p>

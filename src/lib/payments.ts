@@ -135,7 +135,9 @@ export function getPaymentUnlockInfo(input: {
   const lockMessage =
     lockReason === 'contract'
       ? 'Disponible après la signature du contrat'
-      : `Disponible après les étapes ${formatStepRange(blockingStepNumbers)}`
+      : blockingStepNumbers.length === 1
+        ? `Disponible après l’étape ${blockingStepNumbers[0]}`
+        : `Disponible après les étapes ${formatStepRange(blockingStepNumbers)}`
 
   return {
     unlocked: false,

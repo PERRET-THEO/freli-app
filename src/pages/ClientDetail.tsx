@@ -7,6 +7,8 @@ import { ClientDocumentsPanel } from '../components/client/ClientDocumentsPanel'
 import { ClientPropertyPanel } from '../components/client/ClientPropertyPanel'
 import { ClientProjectRow, type ClientProjectListItem } from '../components/client/ClientProjectRow'
 import { ClientRecordHeader } from '../components/client/ClientRecordHeader'
+import { ClientSalesDocumentsPanel } from '../components/sales/ClientSalesDocumentsPanel'
+import { useAgencySession } from '../contexts/AgencyContext'
 import { Button, Card } from '../components/ui'
 import { useClientFieldSave } from '../hooks/useClientFieldSave'
 import {
@@ -62,6 +64,7 @@ type ChecklistLoadRow = {
 
 export function ClientDetail() {
   const { id } = useParams()
+  const { agency } = useAgencySession()
   const [client, setClient] = useState<ClientRecord | null>(null)
   const [projects, setProjects] = useState<ClientProjectListItem[]>([])
   const [activityAll, setActivityAll] = useState<ClientActivityEvent[]>([])
@@ -434,6 +437,8 @@ export function ClientDetail() {
               </ul>
             )}
           </section>
+
+          <ClientSalesDocumentsPanel agencyId={agency?.id ?? null} clientId={client.id} />
 
           <ClientDocumentsPanel items={documents} loading={docsLoading} />
 
