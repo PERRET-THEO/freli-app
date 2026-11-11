@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:sql": "node scripts/sql-tests/sales-documents.test.mjs && node scripts/sql-tests/quote-project-invoice.test.mjs"
+    "test:sql": "node scripts/sql-tests/sales-documents.test.mjs && node scripts/sql-tests/quote-project-invoice.test.mjs && node scripts/sql-tests/auto-reminder-claim.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.0",

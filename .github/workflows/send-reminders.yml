@@ -1,15 +1,12 @@
 name: Relances automatiques
 
-# Relance automatiquement les clients dont l'onboarding est en attente (> 48h).
-# Aucune action de l'agence requise : ce cron déclenche send-reminders-batch chaque jour.
+# Déclenchement MANUEL des batchs de relances (dépannage).
+# Les relances tournent toutes les heures via pg_cron côté Supabase
+# (migration 202611111010_reminder_crons_hourly.sql) :
+#   :05 smart-reminders-batch, :35 send-reminders-batch.
+# Plus de planification GitHub (passes en retard / doublons de génération IA).
 
 on:
-  schedule:
-    # Plusieurs passes/jour pour que la génération hors fenêtre puis l'envoi
-    # auto (dans ai_reminder_send_hour_*) puissent aboutir le même jour.
-    # 08 / 12 / 16 UTC ≈ 09–18h Paris en heure d'été (CEST)
-    # et ≈ 09–17h Paris en heure d'hiver (CET) — toujours dans 9h–19h.
-    - cron: '0 8,12,16 * * *'
   workflow_dispatch: {}
 
 jobs:

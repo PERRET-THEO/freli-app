@@ -16,9 +16,11 @@ type ClaimRow = {
 export async function claimAutoReminder(
   supabase: SupabaseClient,
   projectId: string,
+  options: { graceHours?: number } = {},
 ): Promise<ClaimResult> {
   const { data, error } = await supabase.rpc('claim_auto_reminder', {
     p_project_id: projectId,
+    p_grace_hours: Math.max(0, Math.round(options.graceHours ?? 0)),
   })
   if (error) {
     return { ok: false, errorCode: error.message }
