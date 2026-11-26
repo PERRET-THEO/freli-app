@@ -73,6 +73,6 @@ export const faqEntries: FaqEntry[] = [
   {
     question: 'Combien coûte Freli ?',
     answer:
-      `Freli propose un abonnement unique à ${FRELI_SUBSCRIPTION.monthlyLabelHt} / mois ou ${FRELI_SUBSCRIPTION.yearlyLabelHt} / an (−${FRELI_SUBSCRIPTION.yearlyDiscountPercent} %). Un add-on Modules IA est optionnel à ${FRELI_AI_ADDON.monthlyLabelHt} / mois (ou ${FRELI_AI_ADDON.yearlyLabelHt} / an), avec ${FRELI_AI_ADDON.includedCreditsPerMonth} crédits inclus. Les prix sont HT ; la TVA est calculée au paiement. Détails sur freli.fr/tarifs.`,
+      `Freli propose un abonnement unique à ${FRELI_SUBSCRIPTION.monthlyLabelHt} / mois ou ${FRELI_SUBSCRIPTION.yearlyLabelHt} / an (${FRELI_SUBSCRIPTION.yearlyOfferLabel}). Un add-on Modules IA est optionnel à ${FRELI_AI_ADDON.monthlyLabelHt} / mois (ou ${FRELI_AI_ADDON.yearlyLabelHt} / an), avec ${FRELI_AI_ADDON.includedCreditsPerMonth} crédits inclus. Les prix sont HT ; la TVA est calculée au paiement. Détails sur freli.fr/tarifs.`,
   },
 ]

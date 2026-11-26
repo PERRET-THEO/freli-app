@@ -48,23 +48,27 @@ export async function priceIdByLookupKey(lookupKey: string): Promise<string> {
   return typeof id === 'string' ? id.trim() : ''
 }
 
-/** Secret env → table billing_stripe_prices → lookup_key Stripe. */
+/**
+ * lookup_key Stripe (source de vérité, basculée par bootstrap-saas-prices via
+ * transfer_lookup_key) → secret env → table billing_stripe_prices.
+ * Évite qu'un secret STRIPE_PRICE_* resté sur un ancien price archivé casse le Checkout.
+ */
 export async function resolveSubscriptionPriceId(interval: BillingInterval): Promise<string> {
+  const fromLookup = await priceIdByLookupKey(subscriptionLookupKey(interval))
+  if (fromLookup) return fromLookup
   const fromEnv = priceIdForInterval(interval)
   if (fromEnv) return fromEnv
   const key = interval === 'year' ? 'STRIPE_PRICE_YEARLY' : 'STRIPE_PRICE_MONTHLY'
-  const fromDb = await priceIdFromDb(key)
-  if (fromDb) return fromDb
-  return priceIdByLookupKey(subscriptionLookupKey(interval))
+  return priceIdFromDb(key)
 }
 
 export async function resolveAiPriceId(interval: BillingInterval): Promise<string> {
+  const fromLookup = await priceIdByLookupKey(aiLookupKey(interval))
+  if (fromLookup) return fromLookup
   const fromEnv = aiPriceIdForInterval(interval)
   if (fromEnv) return fromEnv
   const key = interval === 'year' ? 'STRIPE_PRICE_AI_YEARLY' : 'STRIPE_PRICE_AI_MONTHLY'
-  const fromDb = await priceIdFromDb(key)
-  if (fromDb) return fromDb
-  return priceIdByLookupKey(aiLookupKey(interval))
+  return priceIdFromDb(key)
 }
 
 async function priceIdFromDb(key: string): Promise<string> {
@@ -110,7 +114,10 @@ export async function subscriptionHasAiAddon(
   }
 
   for (const item of items) {
-    const price = item.price as { id?: string; lookup_key?: string | null } | string | undefined
+    const price = item.price as
+      | { id?: string; lookup_key?: string | null; metadata?: Record<string, unknown> }
+      | string
+      | undefined
     if (!price) continue
     if (typeof price === 'string') {
       if (aiPriceIds.has(price)) return true
@@ -119,6 +126,9 @@ export async function subscriptionHasAiAddon(
     if (typeof price.id === 'string' && aiPriceIds.has(price.id)) return true
     const lookup = price.lookup_key ?? ''
     if (lookup === 'freli_ai_month' || lookup === 'freli_ai_year') return true
+    // Anciens prices IA archivés (lookup_key transférée) : la metadata reste sur le price.
+    const metaLookup = price.metadata?.freli_lookup
+    if (metaLookup === 'freli_ai_month' || metaLookup === 'freli_ai_year') return true
   }
   return false
 }

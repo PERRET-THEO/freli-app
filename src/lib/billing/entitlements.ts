@@ -10,21 +10,24 @@ export const FRELI_SUBSCRIPTION = {
   key: 'freli',
   name: 'Abonnement Freli',
   /** Centimes EUR HT */
-  monthlyAmountCents: 5900,
-  yearlyAmountCents: 59000,
-  monthlyLabelHt: '59 € HT',
-  yearlyLabelHt: '590 € HT',
-  yearlyEquivalentMonthlyLabelHt: '49,17 € HT',
-  yearlyDiscountPercent: 17,
+  monthlyAmountCents: 2900,
+  /** Annuel = 10 mois facturés (2 mois offerts) */
+  yearlyAmountCents: 29000,
+  monthlyLabelHt: '29 € HT',
+  yearlyLabelHt: '290 € HT',
+  yearlyEquivalentMonthlyLabelHt: '24,17 € HT',
+  yearlyFreeMonths: 2,
+  yearlyOfferLabel: '2 mois offerts',
 } as const
 
 export const FRELI_AI_ADDON = {
   key: 'freli_ai',
   name: 'Modules IA',
-  monthlyAmountCents: 2900,
-  yearlyAmountCents: 29000,
-  monthlyLabelHt: '29 € HT',
-  yearlyLabelHt: '290 € HT',
+  monthlyAmountCents: 1200,
+  /** Annuel = 10 mois facturés (2 mois offerts) */
+  yearlyAmountCents: 12000,
+  monthlyLabelHt: '12 € HT',
+  yearlyLabelHt: '120 € HT',
   includedCreditsPerMonth: 50,
   extraPackCredits: 50,
   extraPackAmountCents: 1500,

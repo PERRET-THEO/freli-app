@@ -1,11 +1,22 @@
 /**
- * One-shot: crée les Products/Prices SaaS Freli (HT, tax exclusive) avec lookup_keys.
- * Idempotent — réutilise les prices existants si lookup_key déjà présent.
+ * Synchronise les Products/Prices SaaS Freli (HT, tax exclusive) avec la grille ci-dessous.
  *
- * POST /functions/v1/bootstrap-saas-prices
- * Header: x-freli-bootstrap: <SAAS_BOOTSTRAP_TOKEN ou "freli-setup">
+ * Pour chaque lookup_key :
+ *  - price actif au bon montant → réutilisé (idempotent) ;
+ *  - price actif à un autre montant → nouveau price créé sur le même product avec
+ *    transfer_lookup_key=true, puis l'ancien est archivé (active=false).
+ *    Les abonnements existants restent sur leur ancien price ; seuls les nouveaux Checkout
+ *    utilisent le nouveau tarif.
+ *  - aucun price → product trouvé/créé puis price créé.
+ * Met aussi à jour public.billing_stripe_prices (fallback DB).
+ *
+ * POST /functions/v1/bootstrap-saas-prices            → applique
+ * POST /functions/v1/bootstrap-saas-prices?dry_run=1  → affiche le plan sans rien écrire
+ * Header obligatoire : x-freli-bootstrap: <SAAS_BOOTSTRAP_TOKEN>
+ * (secret Supabase requis — sans lui la fonction refuse tout appel).
  */
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const STRIPE_API_VERSION = '2025-04-30.basil'
 
@@ -32,13 +43,14 @@ type PriceSpec = {
   interval: 'month' | 'year'
 }
 
+/** Doit rester aligné avec src/lib/billing/entitlements.ts */
 const SPECS: PriceSpec[] = [
   {
     secretName: 'STRIPE_PRICE_MONTHLY',
     lookupKey: 'freli_subscription_month',
     productName: 'Abonnement Freli',
     productKey: 'freli_subscription',
-    amountCents: 5900,
+    amountCents: 2900,
     interval: 'month',
   },
   {
@@ -46,7 +58,7 @@ const SPECS: PriceSpec[] = [
     lookupKey: 'freli_subscription_year',
     productName: 'Abonnement Freli',
     productKey: 'freli_subscription',
-    amountCents: 59000,
+    amountCents: 29000,
     interval: 'year',
   },
   {
@@ -54,7 +66,7 @@ const SPECS: PriceSpec[] = [
     lookupKey: 'freli_ai_month',
     productName: 'Modules IA Freli',
     productKey: 'freli_ai',
-    amountCents: 2900,
+    amountCents: 1200,
     interval: 'month',
   },
   {
@@ -62,85 +74,85 @@ const SPECS: PriceSpec[] = [
     lookupKey: 'freli_ai_year',
     productName: 'Modules IA Freli',
     productKey: 'freli_ai',
-    amountCents: 29000,
+    amountCents: 12000,
     interval: 'year',
   },
 ]
+
+type StripePrice = {
+  id: string
+  product: string
+  unit_amount: number | null
+  currency: string
+  tax_behavior: string | null
+  recurring: { interval?: string; interval_count?: number } | null
+}
 
 function getStripeSecret(): string {
   return Deno.env.get('STRIPE_SECRET_KEY') ?? ''
 }
 
 function bootstrapTokenOk(req: Request): boolean {
-  const expected = (Deno.env.get('SAAS_BOOTSTRAP_TOKEN') ?? 'freli-setup').trim()
+  // Pas de valeur par défaut : la fonction est publique (verify_jwt=false).
+  const expected = (Deno.env.get('SAAS_BOOTSTRAP_TOKEN') ?? '').trim()
   const got = (req.headers.get('x-freli-bootstrap') ?? '').trim()
-  return Boolean(expected && got && got === expected)
+  return expected.length >= 16 && got === expected
 }
 
-async function stripeFormPost(
+async function stripeRequest(
+  method: 'GET' | 'POST',
   path: string,
-  params: URLSearchParams,
-): Promise<{ ok: true; json: Record<string, unknown> } | { ok: false; error: string }> {
+  params?: URLSearchParams,
+): Promise<Record<string, unknown>> {
   const secret = getStripeSecret()
-  if (!secret) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured' }
+  if (!secret) throw new Error('STRIPE_SECRET_KEY is not configured')
   const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method: 'POST',
+    method,
     headers: {
       Authorization: `Bearer ${secret}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
       'Stripe-Version': STRIPE_API_VERSION,
+      ...(method === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
     },
-    body: params.toString(),
+    body: method === 'POST' ? (params ?? new URLSearchParams()).toString() : undefined,
   })
   const json = (await res.json()) as Record<string, unknown>
   if (!res.ok) {
     const errObj = json.error as { message?: string } | undefined
-    return { ok: false, error: errObj?.message ?? 'Stripe request failed' }
+    throw new Error(`${method} ${path}: ${errObj?.message ?? 'Stripe request failed'}`)
   }
-  return { ok: true, json }
+  return json
 }
 
-async function stripeGet(
-  path: string,
-): Promise<{ ok: true; json: Record<string, unknown> } | { ok: false; error: string }> {
-  const secret = getStripeSecret()
-  if (!secret) return { ok: false, error: 'STRIPE_SECRET_KEY is not configured' }
-  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    headers: {
-      Authorization: `Bearer ${secret}`,
-      'Stripe-Version': STRIPE_API_VERSION,
-    },
-  })
-  const json = (await res.json()) as Record<string, unknown>
-  if (!res.ok) {
-    const errObj = json.error as { message?: string } | undefined
-    return { ok: false, error: errObj?.message ?? 'Stripe request failed' }
-  }
-  return { ok: true, json }
-}
-
-async function findPriceByLookupKey(lookupKey: string): Promise<string | null> {
-  const res = await stripeGet(
+async function findActivePriceByLookupKey(lookupKey: string): Promise<StripePrice | null> {
+  const json = await stripeRequest(
+    'GET',
     `prices?lookup_keys[]=${encodeURIComponent(lookupKey)}&active=true&limit=1`,
   )
-  if (!res.ok) return null
-  const data = res.json.data as Array<{ id?: string }> | undefined
-  const id = data?.[0]?.id
-  return typeof id === 'string' && id ? id : null
+  const data = (json.data as StripePrice[] | undefined) ?? []
+  return data[0] ?? null
+}
+
+function priceMatches(price: StripePrice, spec: PriceSpec): boolean {
+  return (
+    price.unit_amount === spec.amountCents &&
+    price.currency === 'eur' &&
+    price.tax_behavior === 'exclusive' &&
+    price.recurring?.interval === spec.interval &&
+    (price.recurring?.interval_count ?? 1) === 1
+  )
 }
 
 async function findOrCreateProduct(name: string, productKey: string): Promise<string> {
-  const listed = await stripeGet('products?active=true&limit=100')
-  if (listed.ok) {
-    const products = (listed.json.data as Array<Record<string, unknown>> | undefined) ?? []
-    const match = products.find((p) => {
-      const meta = (p.metadata as Record<string, string> | undefined) ?? {}
-      return meta.freli_product === productKey
-    })
-    if (match && typeof match.id === 'string') return match.id
-  }
+  const listed = await stripeRequest('GET', 'products?active=true&limit=100')
+  const products = (listed.data as Array<Record<string, unknown>> | undefined) ?? []
+  const match = products.find((p) => {
+    const meta = (p.metadata as Record<string, string> | undefined) ?? {}
+    return meta.freli_product === productKey
+  })
+  if (match && typeof match.id === 'string') return match.id
 
-  const created = await stripeFormPost(
+  const created = await stripeRequest(
+    'POST',
     'products',
     new URLSearchParams({
       name,
@@ -149,13 +161,16 @@ async function findOrCreateProduct(name: string, productKey: string): Promise<st
       tax_code: 'txcd_10000000',
     }),
   )
-  if (!created.ok) throw new Error(created.error)
-  const id = created.json.id
+  const id = created.id
   if (typeof id !== 'string' || !id) throw new Error('Stripe product create returned no id')
   return id
 }
 
-async function createPrice(spec: PriceSpec, productId: string): Promise<string> {
+async function createPrice(
+  spec: PriceSpec,
+  productId: string,
+  transferLookupKey: boolean,
+): Promise<string> {
   const params = new URLSearchParams({
     product: productId,
     currency: 'eur',
@@ -167,11 +182,32 @@ async function createPrice(spec: PriceSpec, productId: string): Promise<string> 
     'metadata[freli_lookup]': spec.lookupKey,
     'metadata[freli_secret]': spec.secretName,
   })
-  const created = await stripeFormPost('prices', params)
-  if (!created.ok) throw new Error(`${spec.lookupKey}: ${created.error}`)
-  const id = created.json.id
+  if (transferLookupKey) params.set('transfer_lookup_key', 'true')
+  const created = await stripeRequest('POST', 'prices', params)
+  const id = created.id
   if (typeof id !== 'string' || !id) throw new Error(`No price id for ${spec.lookupKey}`)
   return id
+}
+
+async function archivePrice(priceId: string): Promise<void> {
+  await stripeRequest('POST', `prices/${priceId}`, new URLSearchParams({ active: 'false' }))
+}
+
+async function upsertDbPrices(prices: Record<string, string>): Promise<string | null> {
+  const url = Deno.env.get('SUPABASE_URL') ?? ''
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  if (!url || !key) return 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing'
+  const supabase = createClient(url, key)
+  const rows = SPECS.map((spec) => ({
+    key: spec.secretName,
+    price_id: prices[spec.secretName],
+    lookup_key: spec.lookupKey,
+    amount_cents: spec.amountCents,
+    interval: spec.interval,
+    updated_at: new Date().toISOString(),
+  }))
+  const { error } = await supabase.from('billing_stripe_prices').upsert(rows, { onConflict: 'key' })
+  return error ? error.message : null
 }
 
 serve(async (req) => {
@@ -185,6 +221,8 @@ serve(async (req) => {
     return jsonResponse({ error: 'Forbidden' }, 403)
   }
 
+  const dryRun = new URL(req.url).searchParams.get('dry_run') === '1'
+
   try {
     if (!getStripeSecret()) {
       return jsonResponse({ error: 'STRIPE_SECRET_KEY is not configured' }, 500)
@@ -192,25 +230,50 @@ serve(async (req) => {
 
     const productIds = new Map<string, string>()
     const prices: Record<string, string> = {}
-    const created: string[] = []
-    const reused: string[] = []
+    const plan: Array<Record<string, unknown>> = []
 
     for (const spec of SPECS) {
-      const existing = await findPriceByLookupKey(spec.lookupKey)
-      if (existing) {
-        prices[spec.secretName] = existing
-        reused.push(spec.lookupKey)
+      const existing = await findActivePriceByLookupKey(spec.lookupKey)
+
+      if (existing && priceMatches(existing, spec)) {
+        prices[spec.secretName] = existing.id
+        plan.push({ lookupKey: spec.lookupKey, action: 'reuse', priceId: existing.id })
         continue
       }
+
+      if (existing) {
+        plan.push({
+          lookupKey: spec.lookupKey,
+          action: 'replace',
+          oldPriceId: existing.id,
+          oldAmountCents: existing.unit_amount,
+          newAmountCents: spec.amountCents,
+        })
+        if (dryRun) continue
+        const newId = await createPrice(spec, existing.product, true)
+        await archivePrice(existing.id)
+        prices[spec.secretName] = newId
+        plan[plan.length - 1].newPriceId = newId
+        continue
+      }
+
+      plan.push({ lookupKey: spec.lookupKey, action: 'create', newAmountCents: spec.amountCents })
+      if (dryRun) continue
       let productId = productIds.get(spec.productKey)
       if (!productId) {
         productId = await findOrCreateProduct(spec.productName, spec.productKey)
         productIds.set(spec.productKey, productId)
       }
-      const priceId = await createPrice(spec, productId)
-      prices[spec.secretName] = priceId
-      created.push(spec.lookupKey)
+      const newId = await createPrice(spec, productId, false)
+      prices[spec.secretName] = newId
+      plan[plan.length - 1].newPriceId = newId
     }
+
+    if (dryRun) {
+      return jsonResponse({ ok: true, dryRun: true, plan })
+    }
+
+    const dbError = await upsertDbPrices(prices)
 
     const secretsCli = [
       'supabase secrets set \\',
@@ -223,9 +286,10 @@ serve(async (req) => {
 
     return jsonResponse({
       ok: true,
-      created,
-      reused,
+      plan,
       prices,
+      dbUpdated: dbError === null,
+      dbError,
       secretsCli,
     })
   } catch (e) {

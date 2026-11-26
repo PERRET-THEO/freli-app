@@ -87,7 +87,7 @@ export function softwareApplicationJsonLd(): JsonLd {
           billingDuration: 'P1Y',
           valueAddedTaxIncluded: false,
         },
-        description: `${FRELI_SUBSCRIPTION.yearlyLabelHt} / an (−${FRELI_SUBSCRIPTION.yearlyDiscountPercent} %). TVA calculée au paiement.`,
+        description: `${FRELI_SUBSCRIPTION.yearlyLabelHt} / an (${FRELI_SUBSCRIPTION.yearlyOfferLabel}). TVA calculée au paiement.`,
       },
       {
         '@type': 'Offer',

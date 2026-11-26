@@ -23,7 +23,7 @@ const CONTENT_MARKERS = {
   '/demo': 'Réservez votre démo',
   '/a-propos': 'À propos de Freli',
   '/faq': 'Questions fréquentes',
-  '/tarifs': '59 € HT',
+  '/tarifs': '29 € HT / mois',
   '/comparatifs': 'Comparatifs Freli',
   '/vs/content-snare': 'Freli vs Content Snare',
   '/vs/clustdoc': 'Freli vs Clustdoc',

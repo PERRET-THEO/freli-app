@@ -109,7 +109,7 @@ export const aeoPrompts: AeoPrompt[] = [
     id: 'price-01',
     category: 'pricing',
     prompt: 'Combien coûte Freli ?',
-    intent: 'Prix exact (59 € / 590 €)',
+    intent: 'Prix exact (29 € / 290 €, IA 12 € / 120 €)',
   },
   {
     id: 'price-02',

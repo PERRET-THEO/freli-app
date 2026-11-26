@@ -126,7 +126,7 @@ export function Pricing() {
       path: '/tarifs',
       name: tarifsMeta.title,
       description: tarifsMeta.description,
-      dateModified: '2026-08-03',
+      dateModified: '2026-11-26',
     }),
     softwareApplicationJsonLd(),
   )
@@ -158,7 +158,7 @@ export function Pricing() {
           className="mt-8"
           value={interval}
           onChange={handleIntervalChange}
-          yearLabel={`Annuel (−${FRELI_SUBSCRIPTION.yearlyDiscountPercent} %)`}
+          yearLabel={`Annuel (${FRELI_SUBSCRIPTION.yearlyOfferLabel})`}
           layoutId="pricing-billing-interval"
           variant="dark"
         />
@@ -209,7 +209,8 @@ export function Pricing() {
                   <>
                     Base {FRELI_SUBSCRIPTION.yearlyLabelHt}
                     {includeAi ? ` + IA ${FRELI_AI_ADDON.yearlyLabelHt}` : ''} · soit{' '}
-                    {monthlyEquivalent} € HT / mois
+                    {monthlyEquivalent} € HT / mois · {FRELI_SUBSCRIPTION.yearlyOfferLabel}
+                    {' '}(engagement 12 mois)
                   </>
                 )}
               </motion.p>
@@ -276,7 +277,10 @@ export function Pricing() {
             </Link>
           </div>
           <p className="mt-3 text-xs font-body leading-relaxed text-[var(--surface-warm)]">
-            Paiement sécurisé Stripe · accès immédiat après règlement · résiliable à tout moment
+            Paiement sécurisé Stripe · accès immédiat après règlement ·{' '}
+            {interval === 'month'
+              ? 'sans engagement, résiliable à tout moment'
+              : 'engagement 12 mois, réglé en une fois'}
           </p>
           {error ? (
             <p className="mt-3 text-sm font-body text-[var(--amber)]">{error}</p>

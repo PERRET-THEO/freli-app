@@ -87,7 +87,7 @@ export const comparisonPages: ComparisonPage[] = [
       {
         question: 'Combien coûte Freli face à Content Snare ?',
         answer:
-          'Freli : abonnement unique 59 € HT / mois ou 590 € HT / an. Content Snare facture selon ses grilles US ; comparez le coût total avec DocuSign + Stripe si vous empilez les outils.',
+          'Freli : abonnement unique 29 € HT / mois ou 290 € HT / an. Content Snare facture selon ses grilles US ; comparez le coût total avec DocuSign + Stripe si vous empilez les outils.',
       },
     ],
   },
@@ -130,7 +130,7 @@ export const comparisonPages: ComparisonPage[] = [
       },
       {
         criterion: 'Positionnement prix',
-        freli: '59 € HT/mois (abo unique)',
+        freli: '29 € HT/mois (abo unique)',
         other: 'Souvent 100–190 $/mois+',
       },
     ],
@@ -155,7 +155,7 @@ export const comparisonPages: ComparisonPage[] = [
       {
         question: 'Quel est le prix de Freli ?',
         answer:
-          'Abonnement unique 59 € HT / mois ou 590 € HT / an, add-on IA optionnel à 29 € HT / mois. Détails sur freli.fr/tarifs.',
+          'Abonnement unique 29 € HT / mois ou 290 € HT / an, add-on IA optionnel à 12 € HT / mois. Détails sur freli.fr/tarifs.',
       },
     ],
   },
@@ -223,7 +223,7 @@ export const comparisonPages: ComparisonPage[] = [
       {
         question: 'Combien coûte Freli vs la stack manuelle ?',
         answer:
-          'Freli : 59 € HT / mois (ou 590 € HT / an). La stack manuelle additionne souvent Forms (gratuit) + DocuSign + temps de relance — le coût caché est surtout le temps.',
+          'Freli : 29 € HT / mois (ou 290 € HT / an). La stack manuelle additionne souvent Forms (gratuit) + DocuSign + temps de relance — le coût caché est surtout le temps.',
       },
     ],
   },
